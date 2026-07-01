@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a2b3c">
+    <meta name="description" content="Kälte Technik Management">
+    <title>KTM – Kälte Technik Management</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%232563eb'/><text x='32' y='44' text-anchor='middle' font-size='36' fill='white'>❄</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #f5f6f8; --bg-secondary: #ffffff; --bg-tertiary: #eef1f5;
+            --text-primary: #1a1d23; --text-secondary: #5a5f6b; --text-muted: #8b909c;
+            --border: #e2e5ea; --accent: #2563eb; --accent-hover: #1d4ed8; --accent-light: #eff3ff;
+            --success: #059669; --warning: #d97706; --danger: #dc2626; --info: #6366f1;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05); --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 10px 30px rgba(0,0,0,0.12); --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
+            --transition: 0.2s ease; --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --sidebar-width: 260px; --header-height: 64px;
+        }
+        [data-theme="dark"] {
+            --bg-primary: #111827; --bg-secondary: #1a1f2e; --bg-tertiary: #222837;
+            --text-primary: #e8eaed; --text-secondary: #9ca3af; --text-muted: #6b7280;
+            --border: #2d3340; --accent: #3b82f6; --accent-hover: #60a5fa; --accent-light: #1e293b;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 4px 12px rgba(0,0,0,0.4); --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary);
+            display: flex; min-height: 100vh; transition: background var(--transition), color var(--transition);
+        }
+        /* ============ SIDEBAR ============ */
+        .sidebar {
+            width: var(--sidebar-width); background: var(--bg-secondary); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; padding: 20px 16px; flex-shrink: 0; transition: all var(--transition); z-index: 100;
+        }
+        .sidebar-logo { display: flex; align-items: center; gap: 12px; padding: 8px 12px; margin-bottom: 28px; font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; }
+        .sidebar-logo .logo-icon { width: 40px; height: 40px; background: var(--accent); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 22px; }
+        .nav-section { margin-bottom: 20px; }
+        .nav-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 8px 12px; font-weight: 600; }
+        .nav-item {
+            display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: all var(--transition); font-size: 14px; color: var(--text-secondary);
+            text-decoration: none; font-weight: 500; margin-bottom: 2px;
+        }
+        .nav-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .nav-item.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+        .nav-item .nav-icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+        .nav-badge { margin-left: auto; background: var(--accent); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+        /* ============ MAIN CONTENT ============ */
+        .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .topbar {
+            height: var(--header-height); background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 24px; gap: 16px; flex-shrink: 0;
+        }
+        .search-box { flex: 1; max-width: 400px; display: flex; align-items: center; background: var(--bg-tertiary); border-radius: 24px; padding: 9px 16px; gap: 8px; }
+        .search-box input { border: none; background: transparent; flex: 1; font-size: 14px; color: var(--text-primary); outline: none; font-family: var(--font-family); }
+        .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+        .icon-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); transition: all var(--transition); }
+        .icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .content-scroll { flex: 1; overflow-y: auto; padding: 24px; }
+        .page-title { font-size: 26px; font-weight: 700; margin-bottom: 24px; letter-spacing: -0.4px; color: var(--text-primary); }
+        .stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
+        .stat-card {
+            background: var(--bg-secondary); border-radius: var(--radius-md); padding: 20px 24px;
+            box-shadow: var(--shadow-sm); border: 1px solid var(--border); transition: all var(--transition);
+        }
+        .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .stat-card .stat-value { font-size: 32px; font-weight: 700; color: var(--accent); }
+        .stat-card .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 28px; }
+        .nav-card {
+            background: var(--bg-secondary); border-radius: var(--radius-md); padding: 22px 20px;
+            box-shadow: var(--shadow-sm); border: 1px solid var(--border); cursor: pointer; transition: all var(--transition);
+            display: flex; align-items: center; gap: 16px;
+        }
+        .nav-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+        .nav-card .card-icon { width: 50px; height: 50px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+        .card-icon.blue { background: #eff3ff; } .card-icon.green { background: #ecfdf5; } .card-icon.amber { background: #fffbeb; } .card-icon.purple { background: #eef2ff; } .card-icon.red { background: #fef2f2; }
+        .nav-card .card-title { font-weight: 600; font-size: 15px; }
+        .nav-card .card-subtitle { font-size: 12px; color: var(--text-muted); }
+        .table-container { background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); overflow-x: auto; box-shadow: var(--shadow-sm); }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { background: var(--bg-tertiary); padding: 13px 16px; text-align: left; font-weight: 600; font-size: 12px; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+        td { padding: 13px 16px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--bg-tertiary); }
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .status-neu { background: #eef2ff; color: #6366f1; } .status-offen { background: #fffbeb; color: #d97706; }
+        .status-aktiv { background: #ecfdf5; color: #059669; } .status-fertig { background: #f3f4f6; color: #6b7280; }
+        .btn {
+            padding: 10px 18px; border-radius: 24px; border: none; cursor: pointer; font-size: 14px; font-weight: 600;
+            transition: all var(--transition); display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-family); white-space: nowrap;
+        }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--text-primary); } .btn-outline:hover { background: var(--bg-tertiary); }
+        .btn-danger { background: var(--danger); color: #fff; } .btn-danger:hover { opacity: 0.9; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 16px; }
+        .form-group { margin-bottom: 18px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary); }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 14px; background: var(--bg-secondary); color: var(--text-primary); font-family: var(--font-family); transition: all var(--transition);
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
+        .modal { background: var(--bg-secondary); border-radius: var(--radius-lg); width: 90%; max-width: 700px; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: var(--shadow-lg); border: 1px solid var(--border); }
+        .modal h3 { font-size: 20px; margin-bottom: 20px; font-weight: 700; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
+        .toast { padding: 14px 20px; border-radius: var(--radius-md); color: #fff; font-weight: 600; box-shadow: var(--shadow-lg); animation: slideIn 0.3s ease; display: flex; align-items: center; gap: 8px; min-width: 250px; }
+        .toast-success { background: #059669; } .toast-error { background: #dc2626; } .toast-info { background: #6366f1; }
+        @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
+        .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+        .tab-btn { padding: 12px 20px; border: none; background: transparent; cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 14px; transition: all var(--transition); border-bottom: 2px solid transparent; margin-bottom: -2px; font-family: var(--font-family); }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+        .image-card { aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); cursor: pointer; position: relative; }
+        .image-card img { width: 100%; height: 100%; object-fit: cover; }
+        .image-card .img-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; padding: 6px 10px; font-size: 11px; text-align: center; }
+        @media (max-width: 900px) {
+            .sidebar { position: fixed; left: -280px; height: 100vh; transition: left 0.3s ease; }
+            .sidebar.open { left: 0; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .card-grid { grid-template-columns: 1fr; }
+            .form-row { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 600px) {
+            .stats-row { grid-template-columns: 1fr; }
+            .modal { width: 95%; padding: 16px; margin: 8px; }
+            .topbar { padding: 0 12px; }
+            .content-scroll { padding: 16px; }
+        }
+    </style>
+</head>
+<body data-theme="light">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <div class="logo-icon">❄</div>
+            <span>KTM</span>
+        </div>
+        <nav>
+            <div class="nav-section">
+                <div class="nav-section-label">Hauptmenü</div>
+                <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Dashboard</div>
+                <div class="nav-item" data-page="customers"><span class="nav-icon">👥</span> Kunden <span class="nav-badge" id="customerCount">0</span></div>
+                <div class="nav-item" data-page="projects"><span class="nav-icon">📋</span> Projekte <span class="nav-badge" id="projectCount">0</span></div>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-label">Werkzeuge</div>
+                <div class="nav-item" data-page="materials"><span class="nav-icon">📦</span> Material</div>
+                <div class="nav-item" data-page="offers"><span class="nav-icon">📄</span> Angebote</div>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-label">System</div>
+                <div class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span> Einstellungen</div>
+                <div class="nav-item" data-page="backup"><span class="nav-icon">💾</span> Backup</div>
+                <div class="nav-item" id="syncBtn"><span class="nav-icon">🔄</span> Jetzt synchronisieren</div>
+            </div>
+        </nav>
+        <div style="margin-top:auto;padding-top:16px;">
+            <div class="nav-item" id="themeToggle"><span class="nav-icon">🌙</span> Dunkelmodus</div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-area">
+        <div class="topbar" id="topbar">
+            <button class="icon-btn" id="menuToggle" style="display:none;" title="Menü">☰</button>
+            <div class="search-box">
+                <span>🔍</span>
+                <input type="text" id="globalSearch" placeholder="Suche nach Kunden, Projekten, Material...">
+            </div>
+            <div class="topbar-actions">
+                <span id="syncStatus" style="font-size:12px;color:var(--text-muted);"></span>
+                <button class="icon-btn" title="Backup" onclick="app.navigate('backup')">💾</button>
+                <button class="icon-btn" title="Einstellungen" onclick="app.navigate('settings')">⚙️</button>
+            </div>
+        </div>
+        <div class="content-scroll" id="contentArea"></div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+    <div id="modalContainer"></div>
+
+    <script>
+        // ==================== KONFIGURATION ====================
+        const SUPABASE_URL = 'https://xnscmfplphinkqnuiknj.supabase.co';   // ← HIER ECHTE URL EINTRAGEN
+        const SUPABASE_ANON_KEY = 'sb_publishable_crnUSmznTl6eWBIV0Y-6VA_gslGmklv';   // ← HIER ECHTEN ANON KEY EINTRAGEN
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ==================== INDEXEDDB (Offline-Speicher) ====================
+        const DB_NAME = 'KTM_DB';
+        let db;
+        const idbOpen = indexedDB.open(DB_NAME, 1);
+        idbOpen.onupgradeneeded = (e) => {
+            const d = e.target.result;
+            const stores = ['customers','projects','rooms','images','materials','offers','settings'];
+            stores.forEach(s => { if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id', autoIncrement: true }); });
+        };
+        idbOpen.onsuccess = (e) => { db = e.target.result; initApp(); };
+        idbOpen.onerror = () => alert('IndexedDB nicht verfügbar!');
+
+        // Lokale DB-Wrapper
+        const localDB = {
+            getAll: (store) => new Promise(r => { const tx = db.transaction(store,'readonly'); tx.objectStore(store).getAll().onsuccess = e => r(e.target.result); }),
+            get: (store, id) => new Promise(r => { db.transaction(store,'readonly').objectStore(store).get(id).onsuccess = e => r(e.target.result); }),
+            put: (store, obj) => { const tx = db.transaction(store,'readwrite'); tx.objectStore(store).put(obj); },
+            add: (store, obj) => new Promise(r => { const tx = db.transaction(store,'readwrite'); const req = tx.objectStore(store).add(obj); req.onsuccess = () => r(req.result); }),
+            delete: (store, id) => { db.transaction(store,'readwrite').objectStore(store).delete(id); },
+            clear: (store) => { db.transaction(store,'readwrite').objectStore(store).clear(); }
+        };
+
+        // ==================== HILFSFUNKTIONEN ====================
+        function showToast(msg, type='info') {
+            const c = document.getElementById('toastContainer');
+            const t = document.createElement('div');
+            t.className = `toast toast-${type}`;
+            t.textContent = msg;
+            c.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+        function formatCurrency(val) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val||0); }
+        function formatDate(iso) { return iso ? new Date(iso).toLocaleDateString('de-DE') : '-'; }
+        function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+        function getStatusClass(status) {
+            const map = {
+                'Neu':'status-neu','Besichtigung offen':'status-offen','Besichtigt':'status-offen','Angebot offen':'status-offen',
+                'Angebot gesendet':'status-aktiv','Auftrag erhalten':'status-aktiv','Montage läuft':'status-aktiv','Fertig':'status-fertig','Archiv':'status-fertig'
+            };
+            return map[status] || 'status-neu';
+        }
+        function calculateCooling(rooms) {
+            if (!rooms || rooms.length===0) return { totalKW:0, recommendation:null, details:[] };
+            let totalW=0, details=[];
+            rooms.forEach(r => {
+                const area = (r.length||0)*(r.width||0);
+                totalW += area*80;
+                details.push({ roomName: r.name||'Unbenannt', area: +area.toFixed(1), estimatedKW: +(area*80/1000).toFixed(1) });
+            });
+            const totalKW = +(totalW/1000).toFixed(1);
+            const sizes = [2.0,2.5,3.5,4.2,5.0,6.0,7.1,8.5,10.0];
+            let rec = sizes.find(s => s>=totalKW) || sizes[sizes.length-1];
+            return { totalKW, recommendation: rec, details };
+        }
+
+        // ==================== SYNC-ENGINE (mit Merge, kein Löschen) ====================
+        async function pullTable(table) {
+            const { data, error } = await supabase.from(table).select('*');
+            if (error) throw error;
+            const tx = db.transaction(table,'readwrite');
+            const store = tx.objectStore(table);
+            for (const row of data) {
+                const clean = { ...row, _synced: true };
+                store.put(clean);   // upsert per ID
+            }
+        }
+        async function pushTable(table) {
+            const all = await localDB.getAll(table);
+            for (const rec of all) {
+                if (rec._synced) continue;
+                const payload = { ...rec };
+                delete payload.id;
+                delete payload._synced;
+                const { data, error } = await supabase.from(table).insert(payload).select();
+                if (!error && data && data.length>0) {
+                    // lokalen Eintrag durch Server-Version ersetzen
+                    const newRec = { ...payload, id: data[0].id, _synced: true };
+                    const tx = db.transaction(table,'readwrite');
+                    tx.objectStore(table).delete(rec.id);
+                    tx.objectStore(table).put(newRec);
+                }
+            }
+        }
+        async function fullSync() {
+            if (!navigator.onLine) { showToast('Keine Internetverbindung – offline', 'info'); return; }
+            document.getElementById('syncStatus').textContent = 'Sync...';
+            try {
+                const tables = ['customers','projects','rooms','images','materials','offers','settings'];
+                for (const t of tables) {
+                    await pushTable(t);
+                    await pullTable(t);
+                }
+                showToast('Synchronisation abgeschlossen ✅', 'success');
+            } catch(e) {
+                console.error(e);
+                showToast('Sync-Fehler', 'error');
+            }
+            document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
+            renderPage();   // aktuelle Ansicht neu laden
+        }
+        // Auto-Sync alle 5 Minuten, wenn online
+        setInterval(() => { if (navigator.onLine) fullSync(); }, 300000);
+
+        // ==================== APP-CONTROLLER ====================
+        const app = {
+            currentPage: 'dashboard',
+            navigate(page, param=null) {
+                this.currentPage = page;
+                document.querySelectorAll('.nav-item[data-page]').forEach(el => el.classList.remove('active'));
+                const activeNav = document.querySelector(`.nav-item[data-page="${page}"]`);
+                if (activeNav) activeNav.classList.add('active');
+                document.getElementById('sidebar').classList.remove('open');
+                renderPage(param);
+            }
+        };
+
+        // Seiten-Renderer
+        async function renderPage(param=null) {
+            const area = document.getElementById('contentArea');
+            switch(app.currentPage) {
+                case 'dashboard': await renderDashboard(area); break;
+                case 'customers': await renderCustomers(area); break;
+                case 'projects': await renderProjects(area, param); break;
+                case 'materials': await renderMaterials(area); break;
+                case 'offers': await renderOffers(area); break;
+                case 'settings': renderSettings(area); break;
+                case 'backup': renderBackup(area); break;
+                default: await renderDashboard(area);
+            }
+        }
+
+        // ==================== DASHBOARD ====================
+        async function renderDashboard(area) {
+            const customers = await localDB.getAll('customers');
+            const projects = await localDB.getAll('projects');
+            const offers = await localDB.getAll('offers');
+            document.getElementById('customerCount').textContent = customers.length;
+            document.getElementById('projectCount').textContent = projects.filter(p => !['Fertig','Archiv'].includes(p.status)).length;
+            area.innerHTML = `
+                <h1 class="page-title">Dashboard</h1>
+                <div class="stats-row">
+                    <div class="stat-card"><div class="stat-value">${customers.length}</div><div class="stat-label">Kunden</div></div>
+                    <div class="stat-card"><div class="stat-value">${projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length}</div><div class="stat-label">Offene Projekte</div></div>
+                    <div class="stat-card"><div class="stat-value">${offers.length}</div><div class="stat-label">Angebote</div></div>
+                </div>
+                <div class="card-grid">
+                    <div class="nav-card" onclick="app.navigate('customers')"><div class="card-icon blue">👥</div><div><div class="card-title">Kundenverwaltung</div><div class="card-subtitle">${customers.length} Kunden</div></div></div>
+                    <div class="nav-card" onclick="app.navigate('projects')"><div class="card-icon green">📋</div><div><div class="card-title">Projekte</div><div class="card-subtitle">${projects.length} gesamt</div></div></div>
+                    <div class="nav-card" onclick="app.navigate('materials')"><div class="card-icon amber">📦</div><div><div class="card-title">Material</div><div class="card-subtitle">${(await localDB.getAll('materials')).length} Artikel</div></div></div>
+                    <div class="nav-card" onclick="app.navigate('offers')"><div class="card-icon purple">📄</div><div><div class="card-title">Angebote</div><div class="card-subtitle">${offers.length} erstellt</div></div></div>
+                </div>
+            `;
+        }
+
+        // ==================== KUNDEN ====================
+        async function renderCustomers(area) {
+            const customers = await localDB.getAll('customers');
+            area.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <h1 class="page-title" style="margin:0;">Kunden</h1>
+                    <button class="btn btn-primary" onclick="openCustomerModal()">+ Neuer Kunde</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Name</th><th>Firma</th><th>Ort</th><th>Telefon</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            ${customers.map(c => `
+                                <tr>
+                                    <td><strong>${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}</strong></td>
+                                    <td>${escapeHtml(c.company||'-')}</td>
+                                    <td>${escapeHtml(c.city||'-')}</td>
+                                    <td>${escapeHtml(c.phone||'-')}</td>
+                                    <td><span class="status-badge ${getStatusClass(c.status)}">${escapeHtml(c.status||'Neu')}</span></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline" onclick="openCustomerModal(${c.id})">✏️</button>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteCustomer(${c.id})">🗑</button>
+                                    </td>
+                                </tr>
+                            `).join('') || '<tr><td colspan="6" style="text-align:center;">Keine Kunden</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function openCustomerModal(id=null) {
+            (async () => {
+                const cust = id ? await localDB.get('customers', id) : {};
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal">
+                        <h3>${id?'Kunde bearbeiten':'Neuer Kunde'}</h3>
+                        <div class="form-row">
+                            <div class="form-group"><label>Vorname</label><input id="cfname" value="${escapeHtml(cust.first_name||'')}"></div>
+                            <div class="form-group"><label>Nachname</label><input id="clname" value="${escapeHtml(cust.last_name||'')}"></div>
+                        </div>
+                        <div class="form-group"><label>Firma</label><input id="ccompany" value="${escapeHtml(cust.company||'')}"></div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Straße</label><input id="cstreet" value="${escapeHtml(cust.street||'')}"></div>
+                            <div class="form-group"><label>Hausnr.</label><input id="chnumber" value="${escapeHtml(cust.house_number||'')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>PLZ</label><input id="czip" value="${escapeHtml(cust.zip||'')}"></div>
+                            <div class="form-group"><label>Ort</label><input id="ccity" value="${escapeHtml(cust.city||'')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Telefon</label><input id="cphone" value="${escapeHtml(cust.phone||'')}"></div>
+                            <div class="form-group"><label>E-Mail</label><input id="cemail" value="${escapeHtml(cust.email||'')}"></div>
+                        </div>
+                        <div class="form-group"><label>Notizen</label><textarea id="cnotes">${escapeHtml(cust.notes||'')}</textarea></div>
+                        <div class="form-group"><label>Status</label>
+                            <select id="cstatus">
+                                ${['Neu','Besichtigt','Angebot gesendet','Auftrag erhalten','Fertig'].map(s => `<option ${cust.status===s?'selected':''}>${s}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button>
+                            <button class="btn btn-primary" id="saveCustomerBtn">Speichern</button>
+                        </div>
+                    </div>`;
+                document.getElementById('modalContainer').appendChild(modal);
+                document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
+                    const obj = {
+                        first_name: document.getElementById('cfname').value,
+                        last_name: document.getElementById('clname').value,
+                        company: document.getElementById('ccompany').value,
+                        street: document.getElementById('cstreet').value,
+                        house_number: document.getElementById('chnumber').value,
+                        zip: document.getElementById('czip').value,
+                        city: document.getElementById('ccity').value,
+                        phone: document.getElementById('cphone').value,
+                        email: document.getElementById('cemail').value,
+                        notes: document.getElementById('cnotes').value,
+                        status: document.getElementById('cstatus').value,
+                        _synced: false
+                    };
+                    if (id) { obj.id = id; localDB.put('customers', obj); }
+                    else await localDB.add('customers', obj);
+                    modal.remove();
+                    showToast('Kunde gespeichert', 'success');
+                    if (navigator.onLine) fullSync(); else showToast('Offline – wird später synchronisiert', 'info');
+                    renderPage();
+                });
+            })();
+        }
+
+        async function deleteCustomer(id) {
+            if (!confirm('Kunde löschen?')) return;
+            localDB.delete('customers', id);
+            showToast('Kunde gelöscht', 'info');
+            renderPage();
+        }
+
+        // ==================== PROJEKTE & RÄUME ====================
+        async function renderProjects(area, selectedProjectId=null) {
+            const projects = await localDB.getAll('projects');
+            const customers = await localDB.getAll('customers');
+            let detailHtml = '';
+            if (selectedProjectId) {
+                const project = await localDB.get('projects', selectedProjectId);
+                if (project) {
+                    const rooms = (await localDB.getAll('rooms')).filter(r => r.project_id === selectedProjectId);
+                    const images = (await localDB.getAll('images')).filter(i => i.project_id === selectedProjectId);
+                    const customer = project.customer_id ? await localDB.get('customers', project.customer_id) : null;
+                    const cooling = calculateCooling(rooms);
+                    detailHtml = `
+                        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;margin-top:20px;">
+                            <h3>📋 ${escapeHtml(project.title)}</h3>
+                            <p><strong>Kunde:</strong> ${customer?`${customer.first_name} ${customer.last_name}`:'-'}</p>
+                            <p><strong>Status:</strong> <span class="status-badge ${getStatusClass(project.status)}">${escapeHtml(project.status)}</span></p>
+                            <p><strong>Notizen:</strong> ${escapeHtml(project.notes||'-')}</p>
+                            <h4 style="margin-top:16px;">Räume</h4>
+                            <table style="font-size:14px;"><tr><th>Name</th><th>L/B/H</th><th>Fläche</th><th>Empf. kW</th><th></th></tr>
+                            ${rooms.map(r => {
+                                const area = (r.length*r.width).toFixed(1);
+                                return `<tr><td>${escapeHtml(r.name)}</td><td>${r.length} × ${r.width} × ${r.height}</td><td>${area} m²</td><td>${(area*80/1000).toFixed(1)} kW</td><td><button class="btn btn-sm btn-outline" onclick="deleteRoom(${r.id},${selectedProjectId})">🗑</button></td></tr>`;
+                            }).join('')}
+                            </table>
+                            <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="openRoomModal(${selectedProjectId})">+ Raum</button>
+                            ${cooling.recommendation ? `<div style="margin-top:12px;background:var(--accent-light);padding:10px;border-radius:8px;">❄ Empfohlene Kälteleistung: <strong>${cooling.recommendation} kW</strong></div>` : ''}
+                            <h4 style="margin-top:16px;">Bilder</h4>
+                            <div class="image-grid">${images.map(img => `<div class="image-card"><img src="${img.file_url}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><rect width=%22100%22 height=%22100%22 fill=%22%23ddd%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22>🖼</text></svg>'"><div class="img-overlay">${escapeHtml(img.category||'')}</div></div>`).join('')}</div>
+                            <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="openImageModal(${selectedProjectId})">+ Bild</button>
+                            <div style="margin-top:16px;"><button class="btn btn-sm btn-primary" onclick="createOffer(${selectedProjectId})">📄 Angebot erstellen</button></div>
+                        </div>`;
+                }
+            }
+            area.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <h1 class="page-title" style="margin:0;">Projekte</h1>
+                    <button class="btn btn-primary" onclick="openProjectModal()">+ Neues Projekt</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th>Räume</th><th></th></tr></thead>
+                        <tbody>
+                            ${projects.map(p => {
+                                const cust = customers.find(c => c.id === p.customer_id);
+                                return `<tr style="cursor:pointer" onclick="app.navigate('projects',${p.id})">
+                                    <td><strong>${escapeHtml(p.title)}</strong></td>
+                                    <td>${cust?`${cust.first_name} ${cust.last_name}`:'-'}</td>
+                                    <td><span class="status-badge ${getStatusClass(p.status)}">${escapeHtml(p.status)}</span></td>
+                                    <td>${p.room_count||0}</td>
+                                    <td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button>
+                                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteProject(${p.id})">🗑</button></td>
+                                </tr>`;
+                            }).join('') || '<tr><td colspan="5" style="text-align:center;">Keine Projekte</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+                ${detailHtml}
+            `;
+        }
+
+        function openProjectModal(id=null) {
+            (async () => {
+                const proj = id ? await localDB.get('projects', id) : {};
+                const customers = await localDB.getAll('customers');
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal">
+                        <h3>${id?'Projekt bearbeiten':'Neues Projekt'}</h3>
+                        <div class="form-group"><label>Titel</label><input id="ptitle" value="${escapeHtml(proj.title||'')}"></div>
+                        <div class="form-group"><label>Kunde</label><select id="pcustomer">
+                            <option value="">-</option>${customers.map(c => `<option value="${c.id}" ${proj.customer_id===c.id?'selected':''}>${c.first_name} ${c.last_name}</option>`)}
+                        </select></div>
+                        <div class="form-group"><label>Status</label><select id="pstatus">
+                            ${['Neu','Besichtigung offen','Besichtigt','Angebot gesendet','Montage läuft','Fertig','Archiv'].map(s => `<option ${proj.status===s?'selected':''}>${s}</option>`)}
+                        </select></div>
+                        <div class="form-group"><label>Notizen</label><textarea id="pnotes">${escapeHtml(proj.notes||'')}</textarea></div>
+                        <div class="modal-actions">
+                            <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button>
+                            <button class="btn btn-primary" id="saveProjectBtn">Speichern</button>
+                        </div>
+                    </div>`;
+                document.getElementById('modalContainer').appendChild(modal);
+                document.getElementById('saveProjectBtn').addEventListener('click', async () => {
+                    const obj = {
+                        title: document.getElementById('ptitle').value,
+                        customer_id: parseInt(document.getElementById('pcustomer').value) || null,
+                        status: document.getElementById('pstatus').value,
+                        notes: document.getElementById('pnotes').value,
+                        room_count: proj.room_count||0,
+                        _synced: false
+                    };
+                    if (id) { obj.id = id; localDB.put('projects', obj); }
+                    else await localDB.add('projects', obj);
+                    modal.remove();
+                    showToast('Projekt gespeichert', 'success');
+                    if (navigator.onLine) fullSync(); else showToast('Offline – wird später synchronisiert', 'info');
+                    renderPage();
+                });
+            })();
+        }
+
+        async function deleteProject(id) {
+            if (!confirm('Projekt löschen?')) return;
+            localDB.delete('projects', id);
+            showToast('Projekt gelöscht', 'info');
+            renderPage();
+        }
+
+        function openRoomModal(projectId) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal">
+                    <h3>Raum hinzufügen</h3>
+                    <div class="form-group"><label>Name</label><input id="rname"></div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Länge (m)</label><input type="number" id="rlength" step="0.1" value="0"></div>
+                        <div class="form-group"><label>Breite (m)</label><input type="number" id="rwidth" step="0.1" value="0"></div>
+                        <div class="form-group"><label>Höhe (m)</label><input type="number" id="rheight" step="0.1" value="2.5"></div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button>
+                        <button class="btn btn-primary" id="saveRoomBtn">Speichern</button>
+                    </div>
+                </div>`;
+            document.getElementById('modalContainer').appendChild(modal);
+            document.getElementById('saveRoomBtn').addEventListener('click', async () => {
+                const obj = {
+                    project_id: projectId,
+                    name: document.getElementById('rname').value || 'Unbenannt',
+                    length: parseFloat(document.getElementById('rlength').value)||0,
+                    width: parseFloat(document.getElementById('rwidth').value)||0,
+                    height: parseFloat(document.getElementById('rheight').value)||2.5,
+                    _synced: false
+                };
+                await localDB.add('rooms', obj);
+                // Raumzähler aktualisieren
+                const rooms = (await localDB.getAll('rooms')).filter(r => r.project_id === projectId);
+                const proj = await localDB.get('projects', projectId);
+                if (proj) { proj.room_count = rooms.length; localDB.put('projects', proj); }
+                modal.remove();
+                showToast('Raum hinzugefügt', 'success');
+                if (navigator.onLine) fullSync();
+                renderPage(projectId);
+            });
+        }
+
+        async function deleteRoom(roomId, projectId) {
+            localDB.delete('rooms', roomId);
+            const rooms = (await localDB.getAll('rooms')).filter(r => r.project_id === projectId);
+            const proj = await localDB.get('projects', projectId);
+            if (proj) { proj.room_count = rooms.length; localDB.put('projects', proj); }
+            renderPage(projectId);
+        }
+
+        // Bilder-Upload (mit Supabase Storage)
+        function openImageModal(projectId) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal">
+                    <h3>Bild hinzufügen</h3>
+                    <div class="form-group"><label>Kategorie</label><select id="imgcat"><option>Wohnzimmer</option><option>Schlafzimmer</option><option>Außengerät</option><option>Leitungsweg</option><option>Sonstiges</option></select></div>
+                    <div class="form-group"><label>Datei</label><input type="file" id="imgfile" accept="image/*"></div>
+                    <div class="modal-actions">
+                        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button>
+                        <button class="btn btn-primary" id="uploadImageBtn">Hochladen</button>
+                    </div>
+                </div>`;
+            document.getElementById('modalContainer').appendChild(modal);
+            document.getElementById('uploadImageBtn').addEventListener('click', async () => {
+                const file = document.getElementById('imgfile').files[0];
+                if (!file) { showToast('Datei auswählen', 'error'); return; }
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Date.now()}.${fileExt}`;
+                const { data, error } = await supabase.storage.from('project-images').upload(fileName, file);
+                if (error) { showToast('Upload fehlgeschlagen: '+error.message, 'error'); return; }
+                const { data: { publicUrl } } = supabase.storage.from('project-images').getPublicUrl(fileName);
+                const imgObj = {
+                    project_id: projectId,
+                    file_url: publicUrl,
+                    category: document.getElementById('imgcat').value,
+                    label: '',
+                    _synced: false
+                };
+                await localDB.add('images', imgObj);
+                modal.remove();
+                showToast('Bild gespeichert', 'success');
+                if (navigator.onLine) fullSync();
+                renderPage(projectId);
+            });
+        }
+
+        // ==================== MATERIAL ====================
+        async function renderMaterials(area) {
+            const materials = await localDB.getAll('materials');
+            area.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <h1 class="page-title" style="margin:0;">Material</h1>
+                    <button class="btn btn-primary" onclick="openMaterialModal()">+ Neues Material</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Name</th><th>Kategorie</th><th>Einheit</th><th>VK-Preis</th><th></th></tr></thead>
+                        <tbody>${materials.map(m => `<tr>
+                            <td><strong>${escapeHtml(m.name)}</strong></td><td>${escapeHtml(m.category||'')}</td><td>${m.unit||'Stk'}</td>
+                            <td>${formatCurrency(m.selling_price)}</td>
+                            <td><button class="btn btn-sm btn-outline" onclick="openMaterialModal(${m.id})">✏️</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteMaterial(${m.id})">🗑</button></td>
+                        </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;">Keine Materialien</td></tr>'}</tbody>
+                    </table>
+                </div>`;
+        }
+        function openMaterialModal(id=null) { /* ... wie Kundenmodal, aber für Material ... */ }
+        async function deleteMaterial(id) { localDB.delete('materials', id); renderPage(); }
+
+        // ==================== ANGEBOTE ====================
+        async function renderOffers(area) {
+            const offers = await localDB.getAll('offers');
+            const projects = await localDB.getAll('projects');
+            area.innerHTML = `<h1 class="page-title">Angebote</h1>...`; // ähnlich wie zuvor
+        }
+
+        function createOffer(projectId) { /* ... Angebotserstellung mit Materialauswahl ... */ }
+
+        // ==================== PDF & EXCEL ====================
+        async function exportOfferPDF(offerId) { /* jsPDF wie in der ersten Version */ }
+        async function exportMaterialsExcel() { /* SheetJS */ }
+        // ... weitere Exporte
+
+        // ==================== EINSTELLUNGEN & BACKUP ====================
+        function renderSettings(area) {
+            area.innerHTML = `<h1 class="page-title">Einstellungen</h1>...`;
+        }
+        function renderBackup(area) {
+            area.innerHTML = `<h1 class="page-title">Backup</h1>...`;
+        }
+
+        // ==================== INITIALISIERUNG ====================
+        async function initApp() {
+            document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
+            if (navigator.onLine) await fullSync();
+            // Navigation einrichten
+            document.querySelectorAll('.nav-item[data-page]').forEach(el => {
+                el.addEventListener('click', () => app.navigate(el.dataset.page));
+            });
+            document.getElementById('syncBtn').addEventListener('click', fullSync);
+            document.getElementById('themeToggle').addEventListener('click', () => {
+                const cur = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+                document.body.dataset.theme = cur;
+                document.getElementById('themeToggle').innerHTML = cur === 'dark' ? '☀️ Hellmodus' : '🌙 Dunkelmodus';
+            });
+            document.getElementById('menuToggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+            // responsive
+            const checkWidth = () => {
+                document.getElementById('menuToggle').style.display = window.innerWidth <= 900 ? 'flex' : 'none';
+                if (window.innerWidth > 900) document.getElementById('sidebar').classList.remove('open');
+            };
+            checkWidth();
+            window.addEventListener('resize', checkWidth);
+            // Suche
+            document.getElementById('globalSearch').addEventListener('input', function() {
+                // einfache Client-Suche (kann erweitert werden)
+            });
+            app.navigate('dashboard');
+        }
+    </script>
+</body>
+</html>
