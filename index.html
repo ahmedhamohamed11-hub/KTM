@@ -7,7 +7,6 @@
     <title>KTM – Kälte Technik Management</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%232563eb'/><text x='32' y='44' text-anchor='middle' font-size='36' fill='white'>❄</text></svg>">
-    <!-- Supabase nur 1x -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -99,19 +98,16 @@
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo"><div class="logo-icon">❄</div><span>KTM</span></div>
     <nav>
-        <div class="nav-section">
-            <div class="nav-section-label">Hauptmenü</div>
+        <div class="nav-section"><div class="nav-section-label">Hauptmenü</div>
             <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Dashboard</div>
             <div class="nav-item" data-page="customers"><span class="nav-icon">👥</span> Kunden <span class="nav-badge" id="customerCount">0</span></div>
             <div class="nav-item" data-page="projects"><span class="nav-icon">📋</span> Projekte <span class="nav-badge" id="projectCount">0</span></div>
         </div>
-        <div class="nav-section">
-            <div class="nav-section-label">Werkzeuge</div>
+        <div class="nav-section"><div class="nav-section-label">Werkzeuge</div>
             <div class="nav-item" data-page="materials"><span class="nav-icon">📦</span> Material</div>
             <div class="nav-item" data-page="offers"><span class="nav-icon">📄</span> Angebote</div>
         </div>
-        <div class="nav-section">
-            <div class="nav-section-label">System</div>
+        <div class="nav-section"><div class="nav-section-label">System</div>
             <div class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span> Einstellungen</div>
             <div class="nav-item" data-page="backup"><span class="nav-icon">💾</span> Backup</div>
             <div class="nav-item" id="syncBtn"><span class="nav-icon">🔄</span> Sync</div>
@@ -137,289 +133,94 @@
 <div id="modalContainer"></div>
 
 <script>
-// ==================== EINZIGE SUPABASE DEKLARATION ====================
+// ==================== SUPABASE (EINZIGE DEKLARATION) ====================
 const SUPABASE_URL = 'https://xnscmfplphinkqnuiknj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_crnUSmznTl6eWBIV0Y-6VA_gslGmklv';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-// 'supabaseClient' ist der einzige Name – kein zweites 'supabase' im gesamten Code.
 
-// ==================== DATENBANK ====================
-const DB_NAME = 'KTM_DB';
-const LS_PREFIX = 'ktm_';
-let useLocalStorage = false;
-let idb = null;
-
-async function getLS(store) { return JSON.parse(localStorage.getItem(LS_PREFIX+store) || '[]'); }
-async function setLS(store, data) { localStorage.setItem(LS_PREFIX+store, JSON.stringify(data)); }
-
-async function openDatabase() {
-    return new Promise((resolve) => {
+// ==================== DATENBANK (IndexedDB + Fallback) ====================
+const DB_NAME = 'KTM_DB'; const LS_PREFIX = 'ktm_'; let useLocalStorage = false; let idb = null;
+async function getLS(s) { return JSON.parse(localStorage.getItem(LS_PREFIX+s) || '[]'); }
+async function setLS(s, d) { localStorage.setItem(LS_PREFIX+s, JSON.stringify(d)); }
+async function openDB() {
+    return new Promise(r => {
         const req = indexedDB.open(DB_NAME, 1);
-        req.onupgradeneeded = (e) => {
-            const d = e.target.result;
-            ['customers','projects','rooms','images','materials','offers','settings'].forEach(s => {
-                if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id', autoIncrement: true });
-            });
-        };
-        req.onsuccess = (e) => {
-            idb = e.target.result;
-            resolve();
-        };
-        req.onerror = () => {
-            console.warn('IndexedDB nicht verfügbar, verwende localStorage');
-            useLocalStorage = true;
-            resolve();
-        };
+        req.onupgradeneeded = e => { const d = e.target.result; ['customers','projects','rooms','images','materials','offers','settings'].forEach(s => { if(!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id', autoIncrement: true }); }); };
+        req.onsuccess = e => { idb = e.target.result; r(); };
+        req.onerror = () => { useLocalStorage = true; r(); };
     });
 }
-
 const db = {
-    getAll: async (store) => useLocalStorage ? await getLS(store) : new Promise(r => idb.transaction(store).objectStore(store).getAll().onsuccess = e => r(e.target.result)),
-    get: async (store, id) => useLocalStorage ? (await getLS(store)).find(x => x.id == id) : new Promise(r => idb.transaction(store).objectStore(store).get(id).onsuccess = e => r(e.target.result)),
-    add: async (store, obj) => {
-        obj._synced = false;
-        if (useLocalStorage) { const all = await getLS(store); obj.id = Date.now(); all.push(obj); await setLS(store, all); return obj.id; }
-        return new Promise(r => { const req = idb.transaction(store,'readwrite').objectStore(store).add(obj); req.onsuccess = () => r(req.result); });
-    },
-    put: async (store, obj) => {
-        obj._synced = false;
-        if (useLocalStorage) { const all = await getLS(store); const idx = all.findIndex(x => x.id == obj.id); if(idx>=0) all[idx] = obj; else all.push(obj); await setLS(store, all); return; }
-        idb.transaction(store,'readwrite').objectStore(store).put(obj);
-    },
-    delete: async (store, id) => {
-        if (useLocalStorage) { const all = await getLS(store); await setLS(store, all.filter(x => x.id != id)); return; }
-        idb.transaction(store,'readwrite').objectStore(store).delete(id);
-    },
-    getByIndex: async (store, index, value) => {
-        if (useLocalStorage) { const all = await getLS(store); return all.filter(x => x[index] === value); }
-        return new Promise(r => idb.transaction(store).objectStore(store).index(index).getAll(value).onsuccess = e => r(e.target.result));
-    }
+    getAll: async s => useLocalStorage ? getLS(s) : new Promise(r => idb.transaction(s).objectStore(s).getAll().onsuccess = e => r(e.target.result)),
+    get: async (s, id) => useLocalStorage ? (await getLS(s)).find(x => x.id == id) : new Promise(r => idb.transaction(s).objectStore(s).get(id).onsuccess = e => r(e.target.result)),
+    add: async (s, o) => { o._synced = false; if(useLocalStorage) { const a = await getLS(s); o.id = Date.now(); a.push(o); await setLS(s, a); return o.id; } return new Promise(r => { const req = idb.transaction(s,'readwrite').objectStore(s).add(o); req.onsuccess = () => r(req.result); }); },
+    put: async (s, o) => { o._synced = false; if(useLocalStorage) { const a = await getLS(s); const i = a.findIndex(x => x.id == o.id); if(i>=0) a[i] = o; else a.push(o); await setLS(s, a); } else idb.transaction(s,'readwrite').objectStore(s).put(o); },
+    delete: async (s, id) => { if(useLocalStorage) { const a = await getLS(s); await setLS(s, a.filter(x => x.id != id)); } else idb.transaction(s,'readwrite').objectStore(s).delete(id); },
+    getByIndex: async (s, idx, val) => useLocalStorage ? (await getLS(s)).filter(x => x[idx] === val) : new Promise(r => idb.transaction(s).objectStore(s).index(idx).getAll(val).onsuccess = e => r(e.target.result))
 };
 
 // ==================== HILFSFUNKTIONEN ====================
-function showToast(msg, type='info') {
-    const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg;
-    document.getElementById('toastContainer').appendChild(t);
-    setTimeout(() => t.remove(), 3000);
-}
+function showToast(msg, type='info') { const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg; document.getElementById('toastContainer').appendChild(t); setTimeout(() => t.remove(), 3000); }
 function formatCurrency(v) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(v||0); }
 function formatDate(iso) { return iso ? new Date(iso).toLocaleDateString('de-DE') : '-'; }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
-function getStatusClass(st) {
-    const m = {'Neu':'status-neu','Besichtigung offen':'status-offen','Angebot gesendet':'status-aktiv','Fertig':'status-fertig'};
-    return m[st] || 'status-neu';
-}
-function calcCooling(rooms) {
-    if (!rooms || !rooms.length) return { totalKW:0, recommendation:null, details:[] };
-    let total = 0; rooms.forEach(r => total += ((r.length||0)*(r.width||0))*80);
-    const kw = Math.round(total/100)/10;
-    const sizes = [2.0,2.5,3.5,4.2,5.0,6.0,7.1,8.5,10.0];
-    return { totalKW:kw, recommendation: sizes.find(s => s>=kw) || sizes[sizes.length-1], details:[] };
-}
+function getStatusClass(st) { const m = {'Neu':'status-neu','Besichtigung offen':'status-offen','Angebot gesendet':'status-aktiv','Fertig':'status-fertig'}; return m[st] || 'status-neu'; }
+function calcCooling(rooms) { if(!rooms || !rooms.length) return { totalKW:0, recommendation:null, details:[] }; let total = 0; rooms.forEach(r => total += ((r.length||0)*(r.width||0))*80); const kw = Math.round(total/100)/10; const sizes = [2.0,2.5,3.5,4.2,5.0,6.0,7.1,8.5,10.0]; return { totalKW:kw, recommendation: sizes.find(s => s>=kw) || sizes[sizes.length-1], details:[] }; }
 
 // ==================== SYNC ====================
 const camelToSnake = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
 const snakeToCamel = Object.fromEntries(Object.entries(camelToSnake).map(([k,v])=>[v,k]));
-function toSnake(obj) { const r={}; for(const k in obj) r[camelToSnake[k]||k] = obj[k]; return r; }
-function toCamel(obj) { const r={}; for(const k in obj) r[snakeToCamel[k]||k] = obj[k]; return r; }
+function toSnake(o) { const r={}; for(const k in o) r[camelToSnake[k]||k] = o[k]; return r; }
+function toCamel(o) { const r={}; for(const k in o) r[snakeToCamel[k]||k] = o[k]; return r; }
+async function pushTable(t) { const all = await db.getAll(t); for(const rec of all) { if(rec._synced) continue; const p = toSnake({...rec}); delete p.id; delete p._synced; const { data, error } = await supabaseClient.from(t).insert(p).select(); if(!error && data?.length) { await db.delete(t, rec.id); const nr = toCamel(data[0]); nr._synced = true; await db.add(t, nr); } } }
+async function pullTable(t) { const { data, error } = await supabaseClient.from(t).select('*'); if(error) return; const ids = new Set((await db.getAll(t)).map(x=>x.id)); for(const r of data) { const rec = toCamel(r); rec._synced = true; if(ids.has(rec.id)) await db.put(t, rec); else await db.add(t, rec); } }
+async function fullSync() { if(!navigator.onLine) { showToast('Offline','info'); return; } document.getElementById('syncStatus').textContent='Sync...'; try { for(const t of ['customers','projects','rooms','images','materials','offers','settings']) { await pushTable(t); await pullTable(t); } showToast('Sync erfolgreich','success'); } catch(e) { showToast('Sync-Fehler','error'); } document.getElementById('syncStatus').textContent = navigator.onLine?'Online':'Offline'; renderPage(); }
+setInterval(() => { if(navigator.onLine) fullSync(); }, 300000);
 
-async function pushTable(table) {
-    const all = await db.getAll(table);
-    for (const rec of all) {
-        if (rec._synced) continue;
-        const payload = toSnake({...rec});
-        delete payload.id; delete payload._synced; delete payload.createdAt; delete payload.updatedAt;
-        const { data, error } = await supabaseClient.from(table).insert(payload).select();
-        if (!error && data?.length) {
-            await db.delete(table, rec.id);
-            const newRec = toCamel(data[0]); newRec._synced = true;
-            await db.add(table, newRec);
-        }
-    }
-}
-async function pullTable(table) {
-    const { data, error } = await supabaseClient.from(table).select('*');
-    if (error) return;
-    const existingIds = new Set((await db.getAll(table)).map(x=>x.id));
-    for (const row of data) {
-        const rec = toCamel(row); rec._synced = true;
-        if (existingIds.has(rec.id)) await db.put(table, rec);
-        else await db.add(table, rec);
-    }
-}
-async function fullSync() {
-    if (!navigator.onLine) { showToast('Offline', 'info'); return; }
-    document.getElementById('syncStatus').textContent = 'Sync...';
-    try {
-        for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
-            await pushTable(t); await pullTable(t);
-        }
-        showToast('Sync abgeschlossen ✅', 'success');
-    } catch(e) { showToast('Sync-Fehler', 'error'); }
-    document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
-    renderPage();
-}
-setInterval(() => { if (navigator.onLine) fullSync(); }, 300000);
+// ==================== NAVIGATION ====================
+let currentPage = 'dashboard'; let currentProjectId = null;
+function navigate(page, param) { currentPage = page; currentProjectId = param||null; document.querySelectorAll('.nav-item[data-page]').forEach(el => el.classList.remove('active')); const a = document.querySelector(`.nav-item[data-page="${page}"]`); if(a) a.classList.add('active'); renderPage(); }
+async function renderPage() { const area = document.getElementById('contentArea'); try { switch(currentPage) { case 'dashboard': await renderDashboard(area); break; case 'customers': await renderCustomers(area); break; case 'projects': await renderProjects(area); break; case 'materials': await renderMaterials(area); break; case 'offers': await renderOffers(area); break; case 'settings': await renderSettings(area); break; case 'backup': await renderBackup(area); break; default: area.innerHTML='<h1>Seite nicht gefunden</h1>'; } } catch(e) { area.innerHTML=`<h1>Fehler</h1><p>${e.message}</p>`; console.error(e); } }
 
-// ==================== NAVIGATION & SEITEN ====================
-let currentPage = 'dashboard';
-let currentProjectId = null;
+// ==================== DASHBOARD ====================
+async function renderDashboard(area) { const customers = await db.getAll('customers'); const projects = await db.getAll('projects'); const offers = await db.getAll('offers'); document.getElementById('customerCount').textContent = customers.length; document.getElementById('projectCount').textContent = projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length; area.innerHTML = `<h1 class="page-title">Dashboard</h1><div class="stats-row"><div class="stat-card"><div class="stat-value">${customers.length}</div><div class="stat-label">Kunden</div></div><div class="stat-card"><div class="stat-value">${projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length}</div><div class="stat-label">Offene Projekte</div></div><div class="stat-card"><div class="stat-value">${offers.length}</div><div class="stat-label">Angebote</div></div></div><div class="card-grid"><div class="nav-card" onclick="navigate('customers')"><div class="card-icon blue">👥</div><div class="card-title">Kunden</div><div class="card-subtitle">${customers.length} Kunden</div></div><div class="nav-card" onclick="navigate('projects')"><div class="card-icon green">📋</div><div class="card-title">Projekte</div><div class="card-subtitle">${projects.length} gesamt</div></div><div class="nav-card" onclick="navigate('materials')"><div class="card-icon amber">📦</div><div class="card-title">Material</div><div class="card-subtitle">${(await db.getAll('materials')).length} Artikel</div></div><div class="nav-card" onclick="navigate('offers')"><div class="card-icon purple">📄</div><div class="card-title">Angebote</div><div class="card-subtitle">${offers.length} erstellt</div></div></div>`; }
 
-function navigate(page, param) {
-    currentPage = page; currentProjectId = param || null;
-    document.querySelectorAll('.nav-item[data-page]').forEach(el => el.classList.remove('active'));
-    const activeEl = document.querySelector(`.nav-item[data-page="${page}"]`);
-    if (activeEl) activeEl.classList.add('active');
-    renderPage();
-}
+// ==================== KUNDEN ====================
+async function renderCustomers(area) { const customers = await db.getAll('customers'); area.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Kunden</h1><button class="btn btn-primary" onclick="openCustomerModal()">+ Neuer Kunde</button></div><div class="table-container"><table><thead><tr><th>Name</th><th>Ort</th><th>Telefon</th><th></th></tr></thead><tbody>${customers.map(c=>`<tr><td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong></td><td>${escapeHtml(c.city||'')}</td><td>${escapeHtml(c.phone||'')}</td><td><button class="btn btn-sm btn-outline" onclick="openCustomerModal(${c.id})">✏️</button><button class="btn btn-sm btn-danger" onclick="deleteCustomer(${c.id})">🗑</button></td></tr>`).join('')}</tbody></table></div>`; }
+function openCustomerModal(id=null) { (async () => { const cust = id ? await db.get('customers', id) : {}; const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>${id?'Kunde bearbeiten':'Neuer Kunde'}</h3><div class="form-row"><div class="form-group"><label>Vorname</label><input id="cfname" value="${escapeHtml(cust.firstName||'')}"></div><div class="form-group"><label>Nachname</label><input id="clname" value="${escapeHtml(cust.lastName||'')}"></div></div><div class="form-row"><div class="form-group"><label>Straße</label><input id="cstreet" value="${escapeHtml(cust.street||'')}"></div><div class="form-group"><label>Hausnr.</label><input id="chnumber" value="${escapeHtml(cust.houseNumber||'')}"></div></div><div class="form-row"><div class="form-group"><label>PLZ</label><input id="czip" value="${escapeHtml(cust.zip||'')}"></div><div class="form-group"><label>Ort</label><input id="ccity" value="${escapeHtml(cust.city||'')}"></div></div><div class="form-group"><label>Telefon</label><input id="cphone" value="${escapeHtml(cust.phone||'')}"></div><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveCust">Speichern</button></div></div>`; document.body.appendChild(modal); document.getElementById('saveCust').addEventListener('click', async () => { const obj = { firstName: document.getElementById('cfname').value, lastName: document.getElementById('clname').value, street: document.getElementById('cstreet').value, houseNumber: document.getElementById('chnumber').value, zip: document.getElementById('czip').value, city: document.getElementById('ccity').value, phone: document.getElementById('cphone').value, _synced: false }; if(id) { obj.id = id; await db.put('customers', obj); } else await db.add('customers', obj); modal.remove(); if(navigator.onLine) fullSync(); navigate('customers'); }); })(); }
+async function deleteCustomer(id) { if(confirm('Löschen?')) { await db.delete('customers', id); navigate('customers'); } }
 
-async function renderPage() {
-    const area = document.getElementById('contentArea');
-    try {
-        switch(currentPage) {
-            case 'dashboard': await renderDashboard(area); break;
-            case 'customers': await renderCustomers(area); break;
-            case 'projects': await renderProjects(area); break;
-            case 'materials': await renderMaterials(area); break;
-            case 'offers': await renderOffers(area); break;
-            case 'settings': await renderSettings(area); break;
-            case 'backup': await renderBackup(area); break;
-            default: area.innerHTML = '<h1>Seite nicht gefunden</h1>';
-        }
-    } catch(e) {
-        area.innerHTML = `<h1>Fehler</h1><p>${e.message}</p>`; console.error(e);
-    }
-}
+// ==================== PROJEKTE (mit Räumen und Bildern) ====================
+async function renderProjects(area) { const projects = await db.getAll('projects'); const customers = await db.getAll('customers'); let detail = ''; if(currentProjectId) { const p = await db.get('projects', currentProjectId); if(p) { const rooms = await db.getByIndex('rooms','projectId',currentProjectId); const images = await db.getByIndex('images','projectId',currentProjectId); const cust = customers.find(c=>c.id===p.customerId); const cool = calcCooling(rooms); detail = `<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;margin-top:20px;"><h3>📋 ${escapeHtml(p.title)}</h3><p>Kunde: ${cust?`${cust.firstName} ${cust.lastName}`:'-'}</p><p>Status: ${p.status}</p><h4>Räume</h4><table><tr><th>Name</th><th>Maße</th><th>Fläche</th><th>kW</th></tr>${rooms.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.length}x${r.width}x${r.height}</td><td>${((r.length*r.width).toFixed(1))} m²</td><td>${((r.length*r.width*80)/1000).toFixed(1)}</td></tr>`).join('')}</table><button class="btn btn-sm btn-primary" onclick="openRoomModal(${currentProjectId})">+ Raum</button>${cool.recommendation?`<p>❄️ Empf. Kälteleistung: <strong>${cool.recommendation} kW</strong></p>`:''}<h4>Bilder</h4><div class="image-grid">${images.map(img=>`<div class="image-card"><img src="${img.data}" onerror="this.style.display='none'"><div class="img-overlay">${escapeHtml(img.category||'')}</div></div>`).join('')}</div><button class="btn btn-sm btn-primary" onclick="openImageModal(${currentProjectId})">+ Bild</button><button class="btn btn-sm btn-primary" onclick="createOffer(${currentProjectId})">📄 Angebot erstellen</button></div>`; } }
+    area.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Projekte</h1><button class="btn btn-primary" onclick="openProjectModal()">+ Neues Projekt</button></div><div class="table-container"><table><thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th></th></tr></thead><tbody>${projects.map(p=>{ const cust = customers.find(c=>c.id===p.customerId); return `<tr style="cursor:pointer" onclick="navigate('projects',${p.id})"><td>${escapeHtml(p.title)}</td><td>${cust?`${cust.firstName} ${cust.lastName}`:'-'}</td><td>${p.status}</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button></td></tr>`; }).join('')}</tbody></table></div>${detail}`; }
+function openProjectModal(id=null) { (async () => { const p = id ? await db.get('projects', id) : {}; const custs = await db.getAll('customers'); const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>${id?'Projekt bearbeiten':'Neues Projekt'}</h3><div class="form-group"><label>Titel</label><input id="ptitle" value="${escapeHtml(p.title||'')}"></div><div class="form-group"><label>Kunde</label><select id="pcustomer"><option value="">-</option>${custs.map(c=>`<option value="${c.id}" ${p.customerId==c.id?'selected':''}>${c.firstName} ${c.lastName}</option>`).join('')}</select></div><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveProj">Speichern</button></div></div>`; document.body.appendChild(modal); document.getElementById('saveProj').addEventListener('click', async () => { const obj = { title: document.getElementById('ptitle').value, customerId: parseInt(document.getElementById('pcustomer').value)||null, status: 'Neu', _synced: false }; if(id) { obj.id = id; await db.put('projects', obj); } else await db.add('projects', obj); modal.remove(); if(navigator.onLine) fullSync(); navigate('projects'); }); })(); }
+function openRoomModal(projectId) { const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>Raum hinzufügen</h3><div class="form-row"><div class="form-group"><label>Länge (m)</label><input type="number" id="rlength" step="0.1" value="0"></div><div class="form-group"><label>Breite (m)</label><input type="number" id="rwidth" step="0.1" value="0"></div><div class="form-group"><label>Höhe (m)</label><input type="number" id="rheight" step="0.1" value="2.5"></div></div><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveRoom">Speichern</button></div></div>`; document.body.appendChild(modal); document.getElementById('saveRoom').addEventListener('click', async () => { const obj = { projectId, length: parseFloat(document.getElementById('rlength').value)||0, width: parseFloat(document.getElementById('rwidth').value)||0, height: parseFloat(document.getElementById('rheight').value)||2.5, name: 'Raum', _synced: false }; await db.add('rooms', obj); modal.remove(); if(navigator.onLine) fullSync(); navigate('projects', projectId); }); }
+function openImageModal(projectId) { const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>Bild hinzufügen</h3><input type="file" id="imgfile" accept="image/*"><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="uploadImg">Hochladen</button></div></div>`; document.body.appendChild(modal); document.getElementById('uploadImg').addEventListener('click', async () => { const file = document.getElementById('imgfile').files[0]; if(!file) return; const reader = new FileReader(); reader.onload = async (e) => { const obj = { projectId, data: e.target.result, category: 'Sonstiges', label: '', _synced: false }; await db.add('images', obj); modal.remove(); navigate('projects', projectId); }; reader.readAsDataURL(file); }); }
 
-// Dashboard
-async function renderDashboard(area) {
-    const customers = await db.getAll('customers');
-    const projects = await db.getAll('projects');
-    const offers = await db.getAll('offers');
-    document.getElementById('customerCount').textContent = customers.length;
-    document.getElementById('projectCount').textContent = projects.filter(p => !['Fertig','Archiv'].includes(p.status)).length;
-    area.innerHTML = `
-        <h1 class="page-title">Dashboard</h1>
-        <div class="stats-row">
-            <div class="stat-card"><div class="stat-value">${customers.length}</div><div class="stat-label">Kunden</div></div>
-            <div class="stat-card"><div class="stat-value">${projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length}</div><div class="stat-label">Offene Projekte</div></div>
-            <div class="stat-card"><div class="stat-value">${offers.length}</div><div class="stat-label">Angebote</div></div>
-        </div>
-        <div class="card-grid">
-            <div class="nav-card" onclick="navigate('customers')"><div class="card-icon blue">👥</div><div class="card-title">Kunden</div><div class="card-subtitle">${customers.length} Kunden</div></div>
-            <div class="nav-card" onclick="navigate('projects')"><div class="card-icon green">📋</div><div class="card-title">Projekte</div><div class="card-subtitle">${projects.length} gesamt</div></div>
-            <div class="nav-card" onclick="navigate('materials')"><div class="card-icon amber">📦</div><div class="card-title">Material</div><div class="card-subtitle">${(await db.getAll('materials')).length} Artikel</div></div>
-            <div class="nav-card" onclick="navigate('offers')"><div class="card-icon purple">📄</div><div class="card-title">Angebote</div><div class="card-subtitle">${offers.length} erstellt</div></div>
-        </div>`;
-}
+// ==================== MATERIAL ====================
+async function renderMaterials(area) { const materials = await db.getAll('materials'); area.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Material</h1><button class="btn btn-primary" onclick="openMaterialModal()">+ Neues Material</button></div><div class="table-container"><table><thead><tr><th>Name</th><th>Kategorie</th><th>Einheit</th><th>VK-Preis</th><th></th></tr></thead><tbody>${materials.map(m=>`<tr><td><strong>${escapeHtml(m.name)}</strong></td><td>${escapeHtml(m.category||'')}</td><td>${m.unit||'Stk'}</td><td>${formatCurrency(m.sellingPrice)}</td><td><button class="btn btn-sm btn-outline" onclick="openMaterialModal(${m.id})">✏️</button><button class="btn btn-sm btn-danger" onclick="deleteMaterial(${m.id})">🗑</button></td></tr>`).join('')}</tbody></table></div>`; }
+function openMaterialModal(id=null) { (async () => { const mat = id ? await db.get('materials', id) : {}; const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>${id?'Material bearbeiten':'Neues Material'}</h3><div class="form-group"><label>Name</label><input id="mname" value="${escapeHtml(mat.name||'')}"></div><div class="form-row"><div class="form-group"><label>Kategorie</label><input id="mcat" value="${escapeHtml(mat.category||'')}"></div><div class="form-group"><label>Einheit</label><input id="munit" value="${escapeHtml(mat.unit||'Stk')}"></div></div><div class="form-row"><div class="form-group"><label>EK (€)</label><input type="number" id="mpurchase" step="0.01" value="${mat.purchasePrice||0}"></div><div class="form-group"><label>VK (€)</label><input type="number" id="mselling" step="0.01" value="${mat.sellingPrice||0}"></div></div><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveMat">Speichern</button></div></div>`; document.body.appendChild(modal); document.getElementById('saveMat').addEventListener('click', async () => { const obj = { name: document.getElementById('mname').value, category: document.getElementById('mcat').value, unit: document.getElementById('munit').value||'Stk', purchasePrice: parseFloat(document.getElementById('mpurchase').value)||0, sellingPrice: parseFloat(document.getElementById('mselling').value)||0, _synced: false }; if(id) { obj.id = id; await db.put('materials', obj); } else await db.add('materials', obj); modal.remove(); if(navigator.onLine) fullSync(); navigate('materials'); }); })(); }
+async function deleteMaterial(id) { if(confirm('Löschen?')) { await db.delete('materials', id); navigate('materials'); } }
 
-// Kunden
-async function renderCustomers(area) {
-    const customers = await db.getAll('customers');
-    area.innerHTML = `
-        <div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Kunden</h1><button class="btn btn-primary" onclick="openCustomerModal()">+ Neuer Kunde</button></div>
-        <div class="table-container"><table><thead><tr><th>Name</th><th>Ort</th><th>Telefon</th><th></th></tr></thead><tbody>
-        ${customers.map(c => `<tr><td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong></td><td>${escapeHtml(c.city||'')}</td><td>${escapeHtml(c.phone||'')}</td><td>
-            <button class="btn btn-sm btn-outline" onclick="openCustomerModal(${c.id})">✏️</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteCustomer(${c.id})">🗑</button>
-        </td></tr>`).join('')}</tbody></table></div>`;
-}
-function openCustomerModal(id=null) {
-    (async () => {
-        const cust = id ? await db.get('customers', id) : {};
-        const modal = document.createElement('div'); modal.className = 'modal-overlay';
-        modal.innerHTML = `<div class="modal"><h3>${id?'Kunde bearbeiten':'Neuer Kunde'}</h3>
-            <div class="form-row"><div class="form-group"><label>Vorname</label><input id="cfname" value="${escapeHtml(cust.firstName||'')}"></div><div class="form-group"><label>Nachname</label><input id="clname" value="${escapeHtml(cust.lastName||'')}"></div></div>
-            <div class="form-row"><div class="form-group"><label>Straße</label><input id="cstreet" value="${escapeHtml(cust.street||'')}"></div><div class="form-group"><label>Hausnr.</label><input id="chnumber" value="${escapeHtml(cust.houseNumber||'')}"></div></div>
-            <div class="form-row"><div class="form-group"><label>PLZ</label><input id="czip" value="${escapeHtml(cust.zip||'')}"></div><div class="form-group"><label>Ort</label><input id="ccity" value="${escapeHtml(cust.city||'')}"></div></div>
-            <div class="form-group"><label>Telefon</label><input id="cphone" value="${escapeHtml(cust.phone||'')}"></div>
-            <div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveCust">Speichern</button></div>
-        </div>`;
-        document.body.appendChild(modal);
-        document.getElementById('saveCust').addEventListener('click', async () => {
-            const obj = { firstName: document.getElementById('cfname').value, lastName: document.getElementById('clname').value, street: document.getElementById('cstreet').value, houseNumber: document.getElementById('chnumber').value, zip: document.getElementById('czip').value, city: document.getElementById('ccity').value, phone: document.getElementById('cphone').value, _synced: false };
-            if (id) { obj.id = id; await db.put('customers', obj); } else await db.add('customers', obj);
-            modal.remove();
-            if (navigator.onLine) fullSync();
-            navigate('customers');
-        });
-    })();
-}
-async function deleteCustomer(id) { if (confirm('Löschen?')) { await db.delete('customers', id); navigate('customers'); } }
+// ==================== ANGEBOTE ====================
+async function renderOffers(area) { const offers = await db.getAll('offers'); const projects = await db.getAll('projects'); const customers = await db.getAll('customers'); area.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Angebote</h1></div><div class="table-container"><table><thead><tr><th>ID</th><th>Projekt</th><th>Kunde</th><th>Summe</th><th>Status</th><th></th></tr></thead><tbody>${offers.map(o=>{ const proj = projects.find(p=>p.id===o.projectId); const cust = proj ? customers.find(c=>c.id===proj.customerId) : null; return `<tr><td>#${o.id}</td><td>${escapeHtml(proj?.title||'')}</td><td>${cust?`${cust.firstName} ${cust.lastName}`:'-'}</td><td>${formatCurrency(o.totalPrice)}</td><td><span class="status-badge ${getStatusClass(o.status)}">${o.status}</span></td><td><button class="btn btn-sm btn-primary" onclick="exportOfferPDF(${o.id})">📄 PDF</button><button class="btn btn-sm btn-danger" onclick="deleteOffer(${o.id})">🗑</button></td></tr>`; }).join('')}</tbody></table></div>`; }
+async function createOffer(projectId) { const project = await db.get('projects', projectId); if(!project) return; const customer = project.customerId ? await db.get('customers', project.customerId) : null; if(!customer) { showToast('Kein Kunde zugewiesen','error'); return; } const materials = await db.getAll('materials'); const cooling = calcCooling((await db.getByIndex('rooms','projectId',projectId))); const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML = `<div class="modal"><h3>Angebot erstellen</h3><p><strong>Projekt:</strong> ${escapeHtml(project.title)}</p><p><strong>Kunde:</strong> ${customer.firstName} ${customer.lastName}</p><p><strong>Empf. Kälteleistung:</strong> ${cooling.recommendation} kW</p><div class="table-container"><table><thead><tr><th>Wählen</th><th>Artikel</th><th>Preis</th><th>Menge</th></tr></thead><tbody>${materials.map(m=>`<tr><td><input type="checkbox" class="sel" data-price="${m.sellingPrice||0}" data-name="${escapeHtml(m.name)}" data-unit="${m.unit||'Stk'}"></td><td>${escapeHtml(m.name)}</td><td>${formatCurrency(m.sellingPrice)}</td><td><input type="number" class="qty" value="1" min="1"></td></tr>`).join('')}</tbody></table></div><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="createOfferBtn">Erstellen</button></div></div>`; document.body.appendChild(modal); document.getElementById('createOfferBtn').addEventListener('click', async () => { const items = []; modal.querySelectorAll('tbody tr').forEach(row => { const cb = row.querySelector('.sel'); const qty = row.querySelector('.qty'); if(cb.checked) items.push({ name: cb.dataset.name, unit: cb.dataset.unit, price: parseFloat(cb.dataset.price), quantity: parseInt(qty.value)||1 }); }); let subtotal = 0; const positions = items.map(i => { const t = i.price*i.quantity; subtotal += t; return { ...i, total: t }; }); const vat = subtotal*0.19; const total = subtotal+vat; const offer = { projectId, customerId: project.customerId, positions, subtotal, vatRate:0.19, vatAmount:vat, totalPrice:total, coolingRecommendation:cooling.recommendation, status:'Angebot offen', _synced:false }; await db.add('offers', offer); modal.remove(); if(navigator.onLine) fullSync(); navigate('offers'); }); }
+async function exportOfferPDF(offerId) { const offer = await db.get('offers', offerId); if(!offer) return; const project = await db.get('projects', offer.projectId); const customer = offer.customerId ? await db.get('customers', offer.customerId) : null; const { jsPDF } = window.jspdf; const doc = new jsPDF(); let y=20; doc.setFontSize(18).text('Angebot', 20, y); y+=10; if(customer) { doc.setFontSize(12).text(`${customer.firstName} ${customer.lastName}`, 20, y); y+=6; } doc.setFontSize(10).text(`Projekt: ${project?.title||''}`, 20, y); y+=6; doc.text(`Datum: ${formatDate(offer.createdAt)}`, 20, y); y+=8; doc.setFontSize(10); let pos=1; (offer.positions||[]).forEach(p => { if(y>270) { doc.addPage(); y=20; } doc.text(`${pos}. ${p.name}`, 20, y); doc.text(`${p.quantity} ${p.unit} x ${formatCurrency(p.price)}`, 100, y); doc.text(formatCurrency(p.total), 150, y); y+=5; pos++; }); y+=5; doc.text(`Netto: ${formatCurrency(offer.subtotal)}`, 130, y); y+=5; doc.text(`MwSt: ${formatCurrency(offer.vatAmount)}`, 130, y); y+=5; doc.text(`Gesamt: ${formatCurrency(offer.totalPrice)}`, 130, y); doc.save(`Angebot_${offerId}.pdf`); }
+async function deleteOffer(id) { if(confirm('Angebot löschen?')) { await db.delete('offers', id); navigate('offers'); } }
 
-// Projekte (vollständig mit Räumen und Bildern)
-async function renderProjects(area) {
-    const projects = await db.getAll('projects');
-    const customers = await db.getAll('customers');
-    let detailHtml = '';
-    if (currentProjectId) {
-        const project = await db.get('projects', currentProjectId);
-        if (project) {
-            const rooms = await db.getByIndex('rooms','projectId',currentProjectId);
-            const images = await db.getByIndex('images','projectId',currentProjectId);
-            const customer = customers.find(c => c.id === project.customerId);
-            const cooling = calcCooling(rooms);
-            detailHtml = `<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:20px;">
-                <h3>📋 ${escapeHtml(project.title)}</h3><p>Kunde: ${customer?`${customer.firstName} ${customer.lastName}`:'-'}</p>
-                <p>Status: ${project.status}</p>
-                <h4>Räume</h4><table><tr><th>Name</th><th>L/B/H</th><th>Fläche</th><th>kW</th></tr>
-                ${rooms.map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${r.length}x${r.width}x${r.height}</td><td>${((r.length*r.width).toFixed(1))} m²</td><td>${((r.length*r.width*80)/1000).toFixed(1)}</td></tr>`).join('')}
-                </table><button class="btn btn-sm btn-primary" onclick="openRoomModal(${currentProjectId})">+ Raum</button>
-                ${cooling.recommendation ? `<p>❄️ Empfohlene Kälteleistung: <strong>${cooling.recommendation} kW</strong></p>`:''}
-                <h4>Bilder</h4><div class="image-grid">${images.map(img => `<div class="image-card"><img src="${img.data}" onerror="this.style.display='none'"><div class="img-overlay">${escapeHtml(img.category||'')}</div></div>`).join('')}</div>
-                <button class="btn btn-sm btn-primary" onclick="openImageModal(${currentProjectId})">+ Bild</button>
-                <button class="btn btn-sm btn-primary" onclick="createOffer(${currentProjectId})">📄 Angebot erstellen</button>
-            </div>`;
-        }
-    }
-    area.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Projekte</h1><button class="btn btn-primary" onclick="openProjectModal()">+ Neues Projekt</button></div>
-        <div class="table-container"><table><thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th></th></tr></thead><tbody>
-        ${projects.map(p => { const cust = customers.find(c => c.id === p.customerId); return `<tr style="cursor:pointer" onclick="navigate('projects',${p.id})"><td>${escapeHtml(p.title)}</td><td>${cust?`${cust.firstName} ${cust.lastName}`:'-'}</td><td>${p.status}</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button></td></tr>`; }).join('')}
-        </tbody></table></div>${detailHtml}`;
-}
+// ==================== EINSTELLUNGEN ====================
+async function renderSettings(area) { area.innerHTML = `<h1 class="page-title">Einstellungen</h1><div class="card-grid"><div class="nav-card" onclick="openCompanySettings()"><div class="card-icon blue">🏢</div><div class="card-title">Firmendaten</div></div><div class="nav-card" onclick="openPDFSettings()"><div class="card-icon purple">📄</div><div class="card-title">PDF-Footer</div></div></div>`; }
+async function openCompanySettings() { const name = (await db.get('settings','companyName'))?.value || ''; const addr = (await db.get('settings','companyAddress'))?.value || ''; const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>Firmendaten</h3><div class="form-group"><label>Firmenname</label><input id="compName" value="${escapeHtml(name)}"></div><div class="form-group"><label>Adresse</label><textarea id="compAddr">${escapeHtml(addr)}</textarea></div><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveComp">Speichern</button></div></div>`; document.body.appendChild(modal); document.getElementById('saveComp').addEventListener('click', async () => { await db.put('settings', { key:'companyName', value: document.getElementById('compName').value }); await db.put('settings', { key:'companyAddress', value: document.getElementById('compAddr').value }); modal.remove(); }); }
+async function openPDFSettings() { const footer = (await db.get('settings','pdfFooter'))?.value || ''; const modal = document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>PDF-Footer</h3><div class="form-group"><label>Text</label><textarea id="pdfFoot">${escapeHtml(footer)}</textarea></div><div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveFooter">Speichern</button></div></div>`; document.body.appendChild(modal); document.getElementById('saveFooter').addEventListener('click', async () => { await db.put('settings', { key:'pdfFooter', value: document.getElementById('pdfFoot').value }); modal.remove(); }); }
 
-function openProjectModal(id=null) {
-    (async () => {
-        const proj = id ? await db.get('projects', id) : {};
-        const customers = await db.getAll('customers');
-        const modal = document.createElement('div'); modal.className = 'modal-overlay';
-        modal.innerHTML = `<div class="modal"><h3>${id?'Projekt bearbeiten':'Neues Projekt'}</h3>
-            <div class="form-group"><label>Titel</label><input id="ptitle" value="${escapeHtml(proj.title||'')}"></div>
-            <div class="form-group"><label>Kunde</label><select id="pcustomer"><option value="">-</option>${customers.map(c => `<option value="${c.id}" ${proj.customerId==c.id?'selected':''}>${c.firstName} ${c.lastName}</option>`).join('')}</select></div>
-            <div class="modal-actions"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Abbrechen</button><button class="btn btn-primary" id="saveProj">Speichern</button></div>
-        </div>`;
-        document.body.appendChild(modal);
-        document.getElementById('saveProj').addEventListener('click', async () => {
-            const obj = { title: document.getElementById('ptitle').value, customerId: parseInt(document.getElementById('pcustomer').value)||null, status: 'Neu', _synced: false };
-            if (id) { obj.id = id; await db.put('projects', obj); } else await db.add('projects', obj);
-            modal.remove();
-            if (navigator.onLine) fullSync();
-            navigate('projects');
-        });
-    })();
-}
-
-// Weitere Module (Material, Angebote, Einstellungen, Backup) sind analog implementiert, hier aus Platzgründen nur Platzhalter.
-async function renderMaterials(area) { area.innerHTML = '<h1>Material</h1>'; }
-async function renderOffers(area) { area.innerHTML = '<h1>Angebote</h1>'; }
-async function renderSettings(area) { area.innerHTML = '<h1>Einstellungen</h1>'; }
-async function renderBackup(area) { area.innerHTML = '<h1>Backup</h1>'; }
+// ==================== BACKUP ====================
+async function renderBackup(area) { area.innerHTML = `<h1 class="page-title">Backup</h1><div class="card-grid"><div class="nav-card" onclick="createBackup()"><div class="card-icon blue">💾</div><div class="card-title">Backup erstellen</div></div><div class="nav-card" onclick="restoreBackup()"><div class="card-icon green">📥</div><div class="card-title">Backup wiederherstellen</div></div><div class="nav-card" onclick="exportAllExcel()"><div class="card-icon purple">📊</div><div class="card-title">Excel-Export (alle Daten)</div></div></div>`; }
+async function createBackup() { const data = { customers: await db.getAll('customers'), projects: await db.getAll('projects'), rooms: await db.getAll('rooms'), images: await db.getAll('images'), materials: await db.getAll('materials'), offers: await db.getAll('offers'), settings: await db.getAll('settings') }; const blob = new Blob([JSON.stringify(data)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `KTM_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); }
+async function restoreBackup() { const input = document.createElement('input'); input.type='file'; input.accept='.json'; input.onchange = async (e) => { if(!confirm('Alle vorhandenen Daten werden überschrieben. Fortfahren?')) return; const file = e.target.files[0]; const text = await file.text(); const data = JSON.parse(text); for(const t of ['customers','projects','rooms','images','materials','offers','settings']) { await db.clear(t); for(const d of data[t]||[]) await db.add(t, d); } showToast('Backup wiederhergestellt','success'); navigate('dashboard'); }; input.click(); }
+async function exportAllExcel() { const data = { customers: await db.getAll('customers'), projects: await db.getAll('projects'), materials: await db.getAll('materials') }; const wb = XLSX.utils.book_new(); const custData = [['ID','Vorname','Nachname','Ort']]; data.customers.forEach(c => custData.push([c.id, c.firstName, c.lastName, c.city])); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(custData), 'Kunden'); const projData = [['ID','Titel','Kunde']]; data.projects.forEach(p => projData.push([p.id, p.title, p.customerId])); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(projData), 'Projekte'); const matData = [['ID','Name','VK-Preis']]; data.materials.forEach(m => matData.push([m.id, m.name, m.sellingPrice])); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matData), 'Material'); XLSX.writeFile(wb, 'KTM_Export.xlsx'); }
 
 // ==================== INIT ====================
-async function init() {
-    await openDatabase();
-    document.querySelectorAll('.nav-item[data-page]').forEach(el => el.addEventListener('click', () => navigate(el.dataset.page)));
-    document.getElementById('syncBtn').addEventListener('click', fullSync);
-    document.getElementById('themeToggle').addEventListener('click', () => {
-        document.body.dataset.theme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
-    });
-    document.getElementById('menuToggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
-    window.addEventListener('resize', () => {
-        document.getElementById('menuToggle').style.display = window.innerWidth <= 900 ? 'flex' : 'none';
-    });
-    if (navigator.onLine) await fullSync();
-    navigate('dashboard');
-}
+async function init() { await openDB(); document.querySelectorAll('.nav-item[data-page]').forEach(el => el.addEventListener('click', () => navigate(el.dataset.page))); document.getElementById('syncBtn').addEventListener('click', fullSync); document.getElementById('themeToggle').addEventListener('click', () => { document.body.dataset.theme = document.body.dataset.theme==='dark'?'light':'dark'; }); document.getElementById('menuToggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open')); window.addEventListener('resize', () => { document.getElementById('menuToggle').style.display = window.innerWidth <= 900 ? 'flex' : 'none'; }); if(navigator.onLine) await fullSync(); navigate('dashboard'); }
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
