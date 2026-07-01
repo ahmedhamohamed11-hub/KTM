@@ -16,8 +16,7 @@
             --bg-primary: #f5f6f8; --bg-secondary: #ffffff; --bg-tertiary: #eef1f5;
             --text-primary: #1a1d23; --text-secondary: #5a5f6b; --text-muted: #8b909c;
             --border: #e2e5ea; --accent: #2563eb; --accent-hover: #1d4ed8; --accent-light: #eff3ff;
-            --success: #059669; --success-light: #ecfdf5; --warning: #d97706; --warning-light: #fffbeb;
-            --danger: #dc2626; --danger-light: #fef2f2; --info: #6366f1; --info-light: #eef2ff;
+            --success: #059669; --warning: #d97706; --danger: #dc2626; --info: #6366f1;
             --shadow-sm: 0 1px 2px rgba(0,0,0,0.05); --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
             --shadow-lg: 0 10px 30px rgba(0,0,0,0.12); --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
             --transition: 0.2s ease; --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -27,7 +26,6 @@
             --bg-primary: #111827; --bg-secondary: #1a1f2e; --bg-tertiary: #222837;
             --text-primary: #e8eaed; --text-secondary: #9ca3af; --text-muted: #6b7280;
             --border: #2d3340; --accent: #3b82f6; --accent-hover: #60a5fa; --accent-light: #1e293b;
-            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 4px 12px rgba(0,0,0,0.4); --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); display: flex; min-height: 100vh; transition: background var(--transition), color var(--transition); }
@@ -96,14 +94,7 @@
 </head>
 <body data-theme="light">
 
-<div id="splash" style="position:fixed;inset:0;background:var(--bg-primary);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
-    <div style="font-size:48px;">❄️</div>
-    <div style="font-weight:700;font-size:20px;">KTM</div>
-    <div style="color:var(--text-muted);">Wird geladen...</div>
-</div>
-
 <div class="toast-container" id="toastContainer"></div>
-
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo"><div class="logo-icon">❄</div><span>KTM</span></div>
     <nav>
@@ -129,7 +120,6 @@
         <div class="nav-item" id="themeToggle"><span class="nav-icon">🌙</span> Dunkelmodus</div>
     </div>
 </aside>
-
 <div class="main-area">
     <div class="topbar">
         <button class="icon-btn" id="menuToggle" style="display:none;">☰</button>
@@ -140,74 +130,17 @@
             <button class="icon-btn" onclick="app.navigate('settings')">⚙️</button>
         </div>
     </div>
-    <div class="content-scroll" id="contentArea"></div>
+    <div class="content-scroll" id="contentArea"><h1>Wird geladen...</h1></div>
 </div>
 <div id="modalContainer"></div>
 
 <script>
-// ==================== SUPABASE KONFIGURATION ====================
+// ==================== KONFIGURATION ====================
 const SUPABASE_URL = 'https://xnscmfplphinkqnuiknj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_crnUSmznTl6eWBIV0Y-6VA_gslGmklv';
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ==================== SYNCHRONISATION ====================
-const FIELD_MAP = {
-    firstName:'first_name', lastName:'last_name', houseNumber:'house_number',
-    customerId:'customer_id', projectId:'project_id', roomCount:'room_count',
-    purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price',
-    vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation',
-    coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at'
-};
-const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
-function toSnake(obj) { const r={}; for(const k in obj) r[FIELD_MAP[k]||k]=obj[k]; return r; }
-function toCamel(obj) { const r={}; for(const k in obj) r[REVERSE_MAP[k]||k]=obj[k]; return r; }
-
-async function syncPush(table) {
-    const all = await db.getAll(table);
-    for (const rec of all) {
-        if (rec._synced) continue;
-        const payload = toSnake({...rec});
-        delete payload.id; delete payload._synced;
-        const { data, error } = await supabaseClient.from(table).insert(payload).select();
-        if (!error && data?.length) {
-            await db.delete(table, rec.id);
-            const newRec = toCamel(data[0]);
-            newRec._synced = true;
-            await db.add(table, newRec);
-        }
-    }
-}
-async function syncPull(table) {
-    const { data, error } = await supabaseClient.from(table).select('*');
-    if (error) return;
-    const ids = new Set((await db.getAll(table)).map(r => r.id));
-    for (const row of data) {
-        const rec = toCamel(row); rec._synced = true;
-        if (ids.has(rec.id)) await db.put(table, rec);
-        else await db.add(table, rec);
-    }
-}
-async function fullSync() {
-    if (!navigator.onLine) { showToast('Offline', 'info'); return; }
-    const badge = document.getElementById('syncBadge');
-    document.getElementById('syncStatus').textContent = 'Sync...';
-    if (badge) badge.textContent = '⏳';
-    try {
-        for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
-            await syncPush(t); await syncPull(t);
-        }
-        showToast('Synchronisiert ✅', 'success');
-        if (badge) badge.textContent = '✅';
-        setTimeout(() => { if (badge) badge.textContent = ''; }, 3000);
-    } catch (e) { showToast('Sync-Fehler', 'error'); console.error(e); }
-    document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
-    app.navigate(app.currentPage, app.currentProjectId);
-}
-window.addEventListener('online', () => { document.getElementById('syncStatus').textContent = 'Online'; fullSync(); });
-window.addEventListener('offline', () => { document.getElementById('syncStatus').textContent = 'Offline'; });
-setInterval(() => { if (navigator.onLine) fullSync(); }, 300000);
-
-// ==================== DATENBANK (Original KlimaPro) ====================
+// ==================== DATENBANK ====================
 const DB_NAME = 'KTM_DB';
 class DatabaseManager {
     constructor() { this.db = null; }
@@ -224,74 +157,81 @@ class DatabaseManager {
             req.onerror = () => reject(req.error);
         });
     }
-    async add(store, data) {
-        data._synced = false;
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(store, 'readwrite');
-            const req = tx.objectStore(store).add(data);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-    async put(store, data) {
-        data._synced = false;
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(store, 'readwrite');
-            const req = tx.objectStore(store).put(data);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
+    async add(store, data) { data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).add(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
+    async put(store, data) { data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).put(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
     async get(store, id) { return new Promise(r => { this.db.transaction(store).objectStore(store).get(id).onsuccess = e => r(e.target.result); }); }
     async getAll(store) { return new Promise(r => { this.db.transaction(store).objectStore(store).getAll().onsuccess = e => r(e.target.result); }); }
     async delete(store, id) { return new Promise(r => { this.db.transaction(store,'readwrite').objectStore(store).delete(id).onsuccess = () => r(); }); }
     async clear(store) { return new Promise(r => { this.db.transaction(store,'readwrite').objectStore(store).clear().onsuccess = () => r(); }); }
-    async getByIndex(store, index, value) {
-        return new Promise(r => {
-            const tx = this.db.transaction(store);
-            const req = tx.objectStore(store).index(index).getAll(value);
-            req.onsuccess = e => r(e.target.result);
-        });
+    async getByIndex(store, index, value) { return new Promise(r => { const tx = this.db.transaction(store); const req = tx.objectStore(store).index(index).getAll(value); req.onsuccess = e => r(e.target.result); }); }
+    async exportAllData() {
+        return {
+            customers: await this.getAll('customers'), projects: await this.getAll('projects'), rooms: await this.getAll('rooms'),
+            images: await this.getAll('images'), materials: await this.getAll('materials'), offers: await this.getAll('offers'),
+            settings: await this.getAll('settings'), exportDate: new Date().toISOString(), version: '1.0'
+        };
+    }
+    async importAllData(data) {
+        await this.clear('customers'); await this.clear('projects'); await this.clear('rooms'); await this.clear('images');
+        await this.clear('materials'); await this.clear('offers'); await this.clear('settings');
+        for (const c of data.customers || []) await this.add('customers', c);
+        for (const p of data.projects || []) await this.add('projects', p);
+        for (const r of data.rooms || []) await this.add('rooms', r);
+        for (const i of data.images || []) await this.add('images', i);
+        for (const m of data.materials || []) await this.add('materials', m);
+        for (const o of data.offers || []) await this.add('offers', o);
+        for (const s of data.settings || []) await this.put('settings', s);
     }
 }
 const db = new DatabaseManager();
 
+// ==================== SYNC ====================
+const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
+const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
+function toSnake(o) { const r={}; for(const k in o) r[FIELD_MAP[k]||k]=o[k]; return r; }
+function toCamel(o) { const r={}; for(const k in o) r[REVERSE_MAP[k]||k]=o[k]; return r; }
+
+async function syncPush(table) {
+    const all = await db.getAll(table);
+    for (const rec of all) { if(rec._synced) continue;
+        const p = toSnake({...rec}); delete p.id; delete p._synced;
+        const { data, error } = await sb.from(table).insert(p).select();
+        if (!error && data?.length) { await db.delete(table, rec.id); const nr = toCamel(data[0]); nr._synced = true; await db.add(table, nr); }
+    }
+}
+async function syncPull(table) {
+    const { data, error } = await sb.from(table).select('*'); if(error) return;
+    const ids = new Set((await db.getAll(table)).map(r=>r.id));
+    for (const row of data) { const rec = toCamel(row); rec._synced = true; if(ids.has(rec.id)) await db.put(table, rec); else await db.add(table, rec); }
+}
+async function fullSync() {
+    if(!navigator.onLine) { showToast('Offline','info'); return; }
+    document.getElementById('syncStatus').textContent = 'Sync...';
+    try { for(const t of ['customers','projects','rooms','images','materials','offers','settings']) { await syncPush(t); await syncPull(t); }
+        showToast('Sync abgeschlossen ✅','success'); } catch(e) { showToast('Sync-Fehler','error'); console.error(e); }
+    document.getElementById('syncStatus').textContent = navigator.onLine?'Online':'Offline';
+    app.navigate(app.currentPage, app.currentProjectId);
+}
+window.addEventListener('online', () => { document.getElementById('syncStatus').textContent='Online'; fullSync(); });
+window.addEventListener('offline', () => { document.getElementById('syncStatus').textContent='Offline'; });
+setInterval(() => { if(navigator.onLine) fullSync(); }, 300000);
+
 // ==================== HILFSFUNKTIONEN ====================
-function showToast(msg, type='info') {
-    const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg;
-    document.getElementById('toastContainer').appendChild(t);
-    setTimeout(() => t.remove(), 3000);
-}
-function formatCurrency(v) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(v||0); }
-function formatDate(iso) { return iso ? new Date(iso).toLocaleDateString('de-DE') : '-'; }
-function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
-function getStatusClass(st) { return { 'Neu':'status-neu', 'Besichtigung offen':'status-offen', 'Angebot gesendet':'status-aktiv', 'Fertig':'status-fertig' }[st] || 'status-neu'; }
-function calcCooling(rooms) {
-    if (!rooms?.length) return { totalKW:0, recommendation:null };
-    let total = 0;
-    rooms.forEach(r => total += (r.length||0)*(r.width||0)*80);
-    const kw = Math.round(total/100)/10;
-    const sizes = [2.0,2.5,3.5,4.2,5.0,6.0,7.1,8.5,10.0];
-    return { totalKW:kw, recommendation: sizes.find(s => s>=kw) || sizes[sizes.length-1], details:[] };
-}
-function showModal(title, html, onSave) {
-    const modal = document.createElement('div'); modal.className = 'modal-overlay';
-    modal.innerHTML = `<div class="modal"><h3>${title}</h3>${html}<div class="modal-actions"><button class="btn btn-outline cancel-btn">Abbrechen</button><button class="btn btn-primary save-btn">Speichern</button></div></div>`;
-    document.body.appendChild(modal);
-    modal.querySelector('.cancel-btn').onclick = () => modal.remove();
-    modal.querySelector('.save-btn').onclick = () => { if (onSave) onSave(modal); };
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
-}
+function showToast(msg, type='info') { const t=document.createElement('div'); t.className=`toast toast-${type}`; t.textContent=msg; document.getElementById('toastContainer').appendChild(t); setTimeout(()=>t.remove(),3000); }
+function formatCurrency(v) { return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0); }
+function formatDate(iso) { return iso?new Date(iso).toLocaleDateString('de-DE'):'-'; }
+function escapeHtml(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+function getStatusClass(st) { const m={'Neu':'status-neu','Besichtigung offen':'status-offen','Angebot gesendet':'status-aktiv','Fertig':'status-fertig'}; return m[st]||'status-neu'; }
+function calcCooling(rooms) { if(!rooms?.length) return {totalKW:0,recommendation:null}; let total=0; rooms.forEach(r=>total+=(r.length||0)*(r.width||0)*80); const kw=Math.round(total/100)/10; const sizes=[2.0,2.5,3.5,4.2,5.0,6.0,7.1,8.5,10.0]; return {totalKW:kw,recommendation:sizes.find(s=>s>=kw)||sizes[sizes.length-1],details:[]}; }
+function showModal(title, html, onSave) { const modal=document.createElement('div'); modal.className='modal-overlay'; modal.innerHTML=`<div class="modal"><h3>${title}</h3>${html}<div class="modal-actions"><button class="btn btn-outline cancel-btn">Abbrechen</button><button class="btn btn-primary save-btn">Speichern</button></div></div>`; document.body.appendChild(modal); modal.querySelector('.cancel-btn').onclick=()=>modal.remove(); modal.querySelector('.save-btn').onclick=()=>{if(onSave)onSave(modal);}; modal.addEventListener('click',(e)=>{if(e.target===modal)modal.remove();}); }
 
 // ==================== SEITEN ====================
 const contentArea = document.getElementById('contentArea');
-let currentPage = 'dashboard';
-let currentProjectId = null;
 
 async function renderDashboard() {
     const [customers, projects, offers, materials] = await Promise.all([db.getAll('customers'), db.getAll('projects'), db.getAll('offers'), db.getAll('materials')]);
     document.getElementById('customerCount').textContent = customers.length;
-    document.getElementById('projectCount').textContent = projects.filter(p => !['Fertig','Archiv'].includes(p.status)).length;
+    document.getElementById('projectCount').textContent = projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length;
     contentArea.innerHTML = `
         <h1 class="page-title">Dashboard</h1>
         <div class="stats-row">
@@ -311,46 +251,210 @@ async function renderCustomers() {
     const customers = await db.getAll('customers');
     contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Kunden</h1><button class="btn btn-primary" onclick="openCustomerModal()">+ Neuer Kunde</button></div>
         <div class="table-container"><table><thead><tr><th>Name</th><th>Ort</th><th>Telefon</th><th></th></tr></thead><tbody>
-        ${customers.map(c => `<tr><td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong></td><td>${escapeHtml(c.city||'')}</td><td>${escapeHtml(c.phone||'')}</td><td>
+        ${customers.map(c=>`<tr><td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong></td><td>${escapeHtml(c.city||'')}</td><td>${escapeHtml(c.phone||'')}</td><td>
             <button class="btn btn-sm btn-outline" onclick="openCustomerModal(${c.id})">✏️</button>
             <button class="btn btn-sm btn-danger" onclick="deleteCustomer(${c.id})">🗑</button>
         </td></tr>`).join('')}</tbody></table></div>`;
 }
+
 async function openCustomerModal(id) {
     const cust = id ? await db.get('customers', id) : {};
-    showModal(id ? 'Kunde bearbeiten' : 'Neuer Kunde', `
+    showModal(id?'Kunde bearbeiten':'Neuer Kunde', `
         <div class="form-row"><div class="form-group"><label>Vorname</label><input id="cfname" value="${escapeHtml(cust.firstName||'')}"></div><div class="form-group"><label>Nachname</label><input id="clname" value="${escapeHtml(cust.lastName||'')}"></div></div>
         <div class="form-row"><div class="form-group"><label>Straße</label><input id="cstreet" value="${escapeHtml(cust.street||'')}"></div><div class="form-group"><label>Hausnr.</label><input id="chnumber" value="${escapeHtml(cust.houseNumber||'')}"></div></div>
         <div class="form-row"><div class="form-group"><label>PLZ</label><input id="czip" value="${escapeHtml(cust.zip||'')}"></div><div class="form-group"><label>Ort</label><input id="ccity" value="${escapeHtml(cust.city||'')}"></div></div>
         <div class="form-group"><label>Telefon</label><input id="cphone" value="${escapeHtml(cust.phone||'')}"></div>
     `, async (modal) => {
         const data = { firstName: modal.querySelector('#cfname').value, lastName: modal.querySelector('#clname').value, street: modal.querySelector('#cstreet').value, houseNumber: modal.querySelector('#chnumber').value, zip: modal.querySelector('#czip').value, city: modal.querySelector('#ccity').value, phone: modal.querySelector('#cphone').value };
-        if (id) { data.id = id; await db.put('customers', data); } else await db.add('customers', data);
-        modal.remove();
-        renderCustomers();
-        if (navigator.onLine) fullSync();
+        if(id) { data.id = id; await db.put('customers', data); } else await db.add('customers', data);
+        modal.remove(); renderCustomers(); if(navigator.onLine) fullSync();
     });
 }
-async function deleteCustomer(id) { if (confirm('Löschen?')) { await db.delete('customers', id); renderCustomers(); } }
+async function deleteCustomer(id) { if(confirm('Löschen?')) { await db.delete('customers', id); renderCustomers(); } }
 
-// Projekte, Räume, Bilder, Material, Angebote, PDF, Excel, Backup, Einstellungen – alle wie in der ersten Version, nur mit Sync-Aufrufen nach Änderungen.
-// (Aus Platzgründen hier nicht vollständig, aber identisch zur ersten Offline-Version. Bitte aus der ersten Antwort kopieren.)
+async function renderProjects(projectId) {
+    const projects = await db.getAll('projects'); const customers = await db.getAll('customers');
+    let detail = '';
+    if(projectId) {
+        const p = await db.get('projects', projectId);
+        if(p) {
+            const rooms = await db.getByIndex('rooms','projectId',projectId);
+            const images = await db.getByIndex('images','projectId',projectId);
+            const cust = customers.find(c=>c.id===p.customerId);
+            const cool = calcCooling(rooms);
+            detail = `<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;margin-top:20px;">
+                <h3>📋 ${escapeHtml(p.title)}</h3><p>Kunde: ${cust?`${cust.firstName} ${cust.lastName}`:'-'}</p><p>Status: ${p.status}</p>
+                <button class="btn btn-sm btn-outline" onclick="openProjectModal(${projectId})">✏️</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteProject(${projectId})">🗑</button>
+                <h4>Räume</h4><table><tr><th>Name</th><th>Maße</th><th>Fläche</th><th>kW</th></tr>
+                ${rooms.map(r=>`<tr><td>${escapeHtml(r.name||'Raum')}</td><td>${r.length}x${r.width}x${r.height}</td><td>${((r.length*r.width).toFixed(1))} m²</td><td>${((r.length*r.width*80)/1000).toFixed(1)}</td></tr>`).join('')}</table>
+                <button class="btn btn-sm btn-primary" onclick="openRoomModal(${projectId})">+ Raum</button>
+                ${cool.recommendation?`<p>❄️ Empf. Kälteleistung: <strong>${cool.recommendation} kW</strong></p>`:''}
+                <h4>Bilder</h4><div class="image-grid">${images.map(i=>`<div class="image-card"><img src="${i.data}" onerror="this.style.display='none'"><div class="img-overlay">${escapeHtml(i.category||'')}</div></div>`).join('')}</div>
+                <button class="btn btn-sm btn-primary" onclick="openImageModal(${projectId})">+ Bild</button>
+                <button class="btn btn-sm btn-primary" onclick="createOffer(${projectId})">📄 Angebot</button>
+            </div>`;
+        }
+    }
+    contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Projekte</h1><button class="btn btn-primary" onclick="openProjectModal()">+ Neues Projekt</button></div>
+        <div class="table-container"><table><thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th></th></tr></thead><tbody>
+        ${projects.map(p=>{ const c=customers.find(x=>x.id===p.customerId); return `<tr style="cursor:pointer" onclick="app.navigate('projects',${p.id})"><td>${escapeHtml(p.title)}</td><td>${c?`${c.firstName} ${c.lastName}`:'-'}</td><td>${p.status}</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button></td></tr>`; }).join('')}
+        </tbody></table></div>${detail}`;
+}
+
+async function openProjectModal(id) {
+    const p = id ? await db.get('projects', id) : {}; const custs = await db.getAll('customers');
+    showModal(id?'Projekt bearbeiten':'Neues Projekt', `
+        <div class="form-group"><label>Titel</label><input id="ptitle" value="${escapeHtml(p.title||'')}"></div>
+        <div class="form-group"><label>Kunde</label><select id="pcustomer"><option value="">-</option>${custs.map(c=>`<option value="${c.id}" ${p.customerId==c.id?'selected':''}>${c.firstName} ${c.lastName}</option>`).join('')}</select></div>
+    `, async (modal) => {
+        const obj = { title: modal.querySelector('#ptitle').value, customerId: parseInt(modal.querySelector('#pcustomer').value)||null, status: p.status||'Neu' };
+        if(id) { obj.id = id; await db.put('projects', obj); } else { const nid = await db.add('projects', obj); obj.id = nid; }
+        modal.remove(); app.navigate('projects', obj.id); if(navigator.onLine) fullSync();
+    });
+}
+
+async function deleteProject(id) {
+    if(!confirm('Projekt und alle zugehörigen Daten löschen?')) return;
+    const rooms = await db.getByIndex('rooms','projectId',id); for(const r of rooms) await db.delete('rooms', r.id);
+    const images = await db.getByIndex('images','projectId',id); for(const i of images) await db.delete('images', i.id);
+    const offers = await db.getByIndex('offers','projectId',id); for(const o of offers) await db.delete('offers', o.id);
+    await db.delete('projects', id); showToast('Projekt gelöscht','info'); app.navigate('projects');
+}
+
+function openRoomModal(projectId) {
+    showModal('Raum hinzufügen', `
+        <div class="form-row"><div class="form-group"><label>Länge (m)</label><input type="number" id="rlength" step="0.1" value="0"></div><div class="form-group"><label>Breite (m)</label><input type="number" id="rwidth" step="0.1" value="0"></div><div class="form-group"><label>Höhe (m)</label><input type="number" id="rheight" step="0.1" value="2.5"></div></div>
+    `, async (modal) => {
+        const obj = { projectId, length: parseFloat(modal.querySelector('#rlength').value)||0, width: parseFloat(modal.querySelector('#rwidth').value)||0, height: parseFloat(modal.querySelector('#rheight').value)||2.5, name: 'Raum' };
+        await db.add('rooms', obj); modal.remove(); app.navigate('projects', projectId); if(navigator.onLine) fullSync();
+    });
+}
+
+function openImageModal(projectId) {
+    showModal('Bild hinzufügen', `<input type="file" id="imgfile" accept="image/*">`, async (modal) => {
+        const file = modal.querySelector('#imgfile').files[0]; if(!file) return;
+        const reader = new FileReader(); reader.onload = async (e) => {
+            await db.add('images', { projectId, data: e.target.result, category: 'Sonstiges', label: '' });
+            modal.remove(); app.navigate('projects', projectId); if(navigator.onLine) fullSync();
+        }; reader.readAsDataURL(file);
+    });
+}
+
+async function renderMaterials() {
+    const materials = await db.getAll('materials');
+    contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Material</h1><button class="btn btn-primary" onclick="openMaterialModal()">+ Neues Material</button></div>
+        <div class="table-container"><table><thead><tr><th>Name</th><th>Kategorie</th><th>Einheit</th><th>VK-Preis</th><th></th></tr></thead><tbody>
+        ${materials.map(m=>`<tr><td><strong>${escapeHtml(m.name)}</strong></td><td>${escapeHtml(m.category||'')}</td><td>${m.unit||'Stk'}</td><td>${formatCurrency(m.sellingPrice)}</td><td>
+            <button class="btn btn-sm btn-outline" onclick="openMaterialModal(${m.id})">✏️</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteMaterial(${m.id})">🗑</button>
+        </td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function openMaterialModal(id) {
+    const mat = id ? await db.get('materials', id) : {};
+    showModal(id?'Material bearbeiten':'Neues Material', `
+        <div class="form-group"><label>Name</label><input id="mname" value="${escapeHtml(mat.name||'')}"></div>
+        <div class="form-row"><div class="form-group"><label>Kategorie</label><input id="mcat" value="${escapeHtml(mat.category||'')}"></div><div class="form-group"><label>Einheit</label><input id="munit" value="${escapeHtml(mat.unit||'Stk')}"></div></div>
+        <div class="form-row"><div class="form-group"><label>EK (€)</label><input type="number" id="mpurchase" step="0.01" value="${mat.purchasePrice||0}"></div><div class="form-group"><label>VK (€)</label><input type="number" id="mselling" step="0.01" value="${mat.sellingPrice||0}"></div></div>
+    `, async (modal) => {
+        const obj = { name: modal.querySelector('#mname').value, category: modal.querySelector('#mcat').value, unit: modal.querySelector('#munit').value||'Stk', purchasePrice: parseFloat(modal.querySelector('#mpurchase').value)||0, sellingPrice: parseFloat(modal.querySelector('#mselling').value)||0 };
+        if(id) { obj.id = id; await db.put('materials', obj); } else await db.add('materials', obj);
+        modal.remove(); renderMaterials(); if(navigator.onLine) fullSync();
+    });
+}
+async function deleteMaterial(id) { if(confirm('Löschen?')) { await db.delete('materials', id); renderMaterials(); } }
+
+async function renderOffers() {
+    const offers = await db.getAll('offers'); const projects = await db.getAll('projects'); const customers = await db.getAll('customers');
+    contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Angebote</h1></div>
+        <div class="table-container"><table><thead><tr><th>ID</th><th>Projekt</th><th>Kunde</th><th>Summe</th><th>Status</th><th></th></tr></thead><tbody>
+        ${offers.map(o=>{ const proj = projects.find(p=>p.id===o.projectId); const cust = proj ? customers.find(c=>c.id===proj.customerId) : null; return `<tr><td>#${o.id}</td><td>${escapeHtml(proj?.title||'')}</td><td>${cust?`${cust.firstName} ${cust.lastName}`:'-'}</td><td>${formatCurrency(o.totalPrice)}</td><td><span class="status-badge ${getStatusClass(o.status)}">${o.status}</span></td><td>
+            <button class="btn btn-sm btn-primary" onclick="exportOfferPDF(${o.id})">📄 PDF</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteOffer(${o.id})">🗑</button>
+        </td></tr>`; }).join('')}</tbody></table></div>`;
+}
+
+async function createOffer(projectId) {
+    const project = await db.get('projects', projectId); if(!project) return;
+    const customer = project.customerId ? await db.get('customers', project.customerId) : null;
+    if(!customer) { showToast('Kein Kunde zugewiesen','error'); return; }
+    const materials = await db.getAll('materials'); const cooling = calcCooling(await db.getByIndex('rooms','projectId',projectId));
+    showModal('Angebot erstellen', `
+        <p><strong>Projekt:</strong> ${escapeHtml(project.title)}</p><p><strong>Kunde:</strong> ${customer.firstName} ${customer.lastName}</p>
+        <p><strong>Empf. Kälteleistung:</strong> ${cooling.recommendation||'?'} kW</p>
+        <div class="table-container"><table><thead><tr><th>Wählen</th><th>Artikel</th><th>Preis</th><th>Menge</th></tr></thead><tbody>
+        ${materials.map(m=>`<tr><td><input type="checkbox" class="sel" data-price="${m.sellingPrice||0}" data-name="${escapeHtml(m.name)}" data-unit="${m.unit||'Stk'}"></td><td>${escapeHtml(m.name)}</td><td>${formatCurrency(m.sellingPrice)}</td><td><input type="number" class="qty" value="1" min="1"></td></tr>`).join('')}
+        </tbody></table></div>
+    `, async (modal) => {
+        const items = []; modal.querySelectorAll('tbody tr').forEach(row=>{ const cb=row.querySelector('.sel'); const qty=row.querySelector('.qty'); if(cb.checked) items.push({ name:cb.dataset.name, unit:cb.dataset.unit, price:parseFloat(cb.dataset.price), quantity:parseInt(qty.value)||1 }); });
+        let subtotal = 0; const positions = items.map(i=>{ const t=i.price*i.quantity; subtotal+=t; return {...i,total:t}; });
+        const vat = subtotal*0.19; const offer = { projectId, customerId:project.customerId, positions, subtotal, vatRate:0.19, vatAmount:vat, totalPrice:subtotal+vat, coolingRecommendation:cooling.recommendation, status:'Angebot offen' };
+        await db.add('offers', offer); modal.remove(); renderOffers(); if(navigator.onLine) fullSync();
+    });
+}
+
+async function exportOfferPDF(offerId) {
+    const offer = await db.get('offers', offerId); if(!offer) return;
+    const project = await db.get('projects', offer.projectId); const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+    const { jsPDF } = window.jspdf; const doc = new jsPDF(); let y=20;
+    doc.setFontSize(18).text('Angebot',20,y); y+=10;
+    if(customer) { doc.setFontSize(12).text(`${customer.firstName} ${customer.lastName}`,20,y); y+=6; }
+    doc.setFontSize(10).text(`Projekt: ${project?.title||''}`,20,y); y+=6;
+    doc.text(`Datum: ${formatDate(offer.createdAt)}`,20,y); y+=8;
+    let pos=1; (offer.positions||[]).forEach(p=>{ if(y>270){doc.addPage();y=20;} doc.text(`${pos}. ${p.name}`,20,y); doc.text(`${p.quantity} ${p.unit} x ${formatCurrency(p.price)}`,100,y); doc.text(formatCurrency(p.total),150,y); y+=5; pos++; });
+    y+=5; doc.text(`Netto: ${formatCurrency(offer.subtotal)}`,130,y); y+=5; doc.text(`MwSt: ${formatCurrency(offer.vatAmount)}`,130,y); y+=5; doc.text(`Gesamt: ${formatCurrency(offer.totalPrice)}`,130,y);
+    doc.save(`Angebot_${offerId}.pdf`); showToast('PDF exportiert','success');
+}
+async function deleteOffer(id) { if(confirm('Angebot löschen?')) { await db.delete('offers', id); renderOffers(); } }
+
+async function renderSettings() {
+    contentArea.innerHTML = `<h1 class="page-title">Einstellungen</h1><div class="card-grid">
+        <div class="nav-card" onclick="openCompanySettings()"><div class="card-icon blue">🏢</div><div><div class="card-title">Firmendaten</div></div></div>
+        <div class="nav-card" onclick="openPDFSettings()"><div class="card-icon purple">📄</div><div><div class="card-title">PDF-Footer</div></div></div>
+    </div>`;
+}
+async function openCompanySettings() {
+    const name = (await db.get('settings','companyName'))?.value||''; const addr = (await db.get('settings','companyAddress'))?.value||'';
+    showModal('Firmendaten', `<div class="form-group"><label>Name</label><input id="cn" value="${escapeHtml(name)}"></div><div class="form-group"><label>Adresse</label><textarea id="ca">${escapeHtml(addr)}</textarea></div>`, async (modal) => {
+        await db.put('settings',{key:'companyName',value:modal.querySelector('#cn').value}); await db.put('settings',{key:'companyAddress',value:modal.querySelector('#ca').value});
+        modal.remove(); if(navigator.onLine) fullSync();
+    });
+}
+async function openPDFSettings() {
+    const footer = (await db.get('settings','pdfFooter'))?.value||'';
+    showModal('PDF-Footer', `<div class="form-group"><label>Text</label><textarea id="pf">${escapeHtml(footer)}</textarea></div>`, async (modal) => {
+        await db.put('settings',{key:'pdfFooter',value:modal.querySelector('#pf').value}); modal.remove(); if(navigator.onLine) fullSync();
+    });
+}
+
+async function renderBackup() {
+    contentArea.innerHTML = `<h1 class="page-title">Backup</h1><div class="card-grid">
+        <div class="nav-card" onclick="createBackup()"><div class="card-icon blue">💾</div><div><div class="card-title">Backup erstellen</div></div></div>
+        <div class="nav-card" onclick="restoreBackup()"><div class="card-icon green">📥</div><div><div class="card-title">Backup wiederherstellen</div></div></div>
+        <div class="nav-card" onclick="exportAllExcel()"><div class="card-icon purple">📊</div><div><div class="card-title">Excel-Export</div></div></div>
+    </div>`;
+}
+async function createBackup() { const data=await db.exportAllData(); const blob=new Blob([JSON.stringify(data)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`KTM_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); showToast('Backup erstellt','success'); }
+async function restoreBackup() { const input=document.createElement('input'); input.type='file'; input.accept='.json'; input.onchange=async(e)=>{ if(!confirm('Alle Daten überschreiben?'))return; const file=e.target.files[0]; const text=await file.text(); const data=JSON.parse(text); await db.importAllData(data); showToast('Backup wiederhergestellt','success'); app.navigate('dashboard'); }; input.click(); }
+async function exportAllExcel() { const data={customers:await db.getAll('customers'),projects:await db.getAll('projects'),materials:await db.getAll('materials')}; const wb=XLSX.utils.book_new(); const cd=[['ID','Vorname','Nachname','Ort']]; data.customers.forEach(c=>cd.push([c.id,c.firstName,c.lastName,c.city])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cd),'Kunden'); const pd=[['ID','Titel','Kunde']]; data.projects.forEach(p=>pd.push([p.id,p.title,p.customerId])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pd),'Projekte'); const md=[['ID','Name','VK']]; data.materials.forEach(m=>md.push([m.id,m.name,m.sellingPrice])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(md),'Material'); XLSX.writeFile(wb,'KTM_Export.xlsx'); showToast('Excel exportiert','success'); }
 
 // ==================== APP-CONTROLLER ====================
 const app = {
-    currentPage: 'dashboard',
-    currentProjectId: null,
+    currentPage: 'dashboard', currentProjectId: null,
     navigate(page, param) {
-        this.currentPage = page;
-        this.currentProjectId = param || null;
+        this.currentPage = page; this.currentProjectId = param || null;
         document.querySelectorAll('.nav-item[data-page]').forEach(el => el.classList.remove('active'));
-        const el = document.querySelector(`.nav-item[data-page="${page}"]`);
-        if (el) el.classList.add('active');
+        const el = document.querySelector(`.nav-item[data-page="${page}"]`); if(el) el.classList.add('active');
         document.getElementById('sidebar').classList.remove('open');
         switch(page) {
             case 'dashboard': renderDashboard(); break;
             case 'customers': renderCustomers(); break;
-            // case 'projects': renderProjects(param); break; ...
+            case 'projects': renderProjects(param); break;
+            case 'materials': renderMaterials(); break;
+            case 'offers': renderOffers(); break;
+            case 'settings': renderSettings(); break;
+            case 'backup': renderBackup(); break;
             default: contentArea.innerHTML = '<h1>Seite nicht gefunden</h1>';
         }
     },
@@ -360,14 +464,9 @@ const app = {
         if (navigator.onLine) await fullSync();
         document.querySelectorAll('.nav-item[data-page]').forEach(el => el.addEventListener('click', () => this.navigate(el.dataset.page)));
         document.getElementById('syncBtn').addEventListener('click', fullSync);
-        document.getElementById('themeToggle').addEventListener('click', () => {
-            document.body.dataset.theme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
-        });
+        document.getElementById('themeToggle').addEventListener('click', () => { document.body.dataset.theme = document.body.dataset.theme==='dark'?'light':'dark'; });
         document.getElementById('menuToggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
-        window.addEventListener('resize', () => {
-            document.getElementById('menuToggle').style.display = window.innerWidth <= 900 ? 'flex' : 'none';
-        });
-        document.getElementById('splash').style.display = 'none';
+        window.addEventListener('resize', () => { document.getElementById('menuToggle').style.display = window.innerWidth <= 900 ? 'flex' : 'none'; });
         this.navigate('dashboard');
     }
 };
