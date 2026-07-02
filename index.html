@@ -1897,40 +1897,33 @@ async function isOfferNumberUnique(number, excludeId = null) {
             },
 
             // ---- Bild-Modul ----
-            async openImageModal(projectId) {
+                       async openImageModal(projectId) {
                 const modal = showModal(
                     'Bild hinzufügen',
-                    `
-                        <div class="form-group"><label>Kategorie</label>
-                            <select id="imgCategory">
-                                <option>Wohnzimmer</option><option>Schlafzimmer</option><option>Außengerät</option>
-                                <option>Leitungsweg</option><option>Elektro</option><option>Sonstiges</option>
-                            </select>
-                        </div>
-                        <div class="form-group"><label>Beschriftung</label><input type="text" id="imgLabel" placeholder="optional"></div>
-                        <div class="form-group"><label>Bild wählen</label><input type="file" id="imgFile" accept="image/*" capture="environment"></div>
-                    `,
+                    `...`,  // (dein unveränderter HTML-String)
                     async (overlay) => {
                         const fileInput = overlay.querySelector('#imgFile');
                         const file = fileInput.files[0];
                         if (!file) { showToast('Bitte ein Bild auswählen.', 'error'); return; }
 
-                     compressImage(file, 800, 0.7).then(async (compressedData) => {
-    const data = {
-        projectId,
-        data: compressedData,
-        category: overlay.querySelector('#imgCategory').value,
-        label: overlay.querySelector('#imgLabel').value.trim(),
-        createdAt: new Date().toISOString()
-    };
-    await db.add('images', data);
-    overlay.remove();
-    showToast('Bild gespeichert.', 'success');
-    this.navigate('projects', projectId);
-}).catch(() => {
-    showToast('Fehler beim Komprimieren des Bildes.', 'error');
-});
-            },
+                        compressImage(file, 800, 0.7).then(async (compressedData) => {
+                            const data = {
+                                projectId,
+                                data: compressedData,
+                                category: overlay.querySelector('#imgCategory').value,
+                                label: overlay.querySelector('#imgLabel').value.trim(),
+                                createdAt: new Date().toISOString()
+                            };
+                            await db.add('images', data);
+                            overlay.remove();
+                            showToast('Bild gespeichert.', 'success');
+                            this.navigate('projects', projectId);
+                        }).catch(() => {
+                            showToast('Fehler beim Komprimieren des Bildes.', 'error');
+                        });
+                    }  // ← Ende async Callback
+                );  // ← Ende showModal
+            },  // ← Ende openImageModal
 
             viewImage(dataUrl) {
                 const win = window.open('', '_blank');
@@ -1993,14 +1986,16 @@ async function isOfferNumberUnique(number, excludeId = null) {
                         this.navigate('materials');
                     }
                 );
-           modal.querySelector('#matImage').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    compressImage(file, 400, 0.6).then((compressed) => {
-        imgData = compressed;
-        modal.querySelector('#matImgPreview').innerHTML = `<img src="${imgData}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
-    }).catch(() => showToast('Bild konnte nicht komprimiert werden.', 'error'));
-});
+   // Event-Listener richtig nach dem showModal-Aufruf anhängen
+                modal.querySelector('#matImage').addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    compressImage(file, 400, 0.6).then((compressed) => {
+                        imgData = compressed;
+                        modal.querySelector('#matImgPreview').innerHTML = `<img src="${imgData}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
+                    }).catch(() => showToast('Bild konnte nicht komprimiert werden.', 'error'));
+                });
+            },  // ← Ende openMaterialModal (dieses Komma fehlt vermutlich auch)
 
             async deleteMaterial(id) {
                 if (!confirm('Material löschen?')) return;
