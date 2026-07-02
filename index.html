@@ -1484,22 +1484,32 @@
         // ============================================================
         // ============ APP-CONTROLLER ================================
         // ============================================================
-        const app = {
+       const app = {
             currentPage: 'dashboard',
             currentProjectId: null,
 
             async init() {
                 await db.init();
-                document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
+                updateSyncStatus('offline', 'Initialisiere...');
+                
                 this.setupNavigation();
                 this.setupSearch();
                 this.setupTheme();
                 this.navigate('dashboard');
                 document.getElementById('splash').style.display = 'none';
                 this.setupResponsive();
+
+                // Start synchronisation process
+                if (navigator.onLine) {
+                    await initialFullSync();
+                    initRealtime();
+                } else {
+                    updateSyncStatus('offline', '🔴 Offline');
+                }
             },
 
             setupNavigation() {
+                // ...
                 document.querySelectorAll('.nav-item[data-page]').forEach(item => {
                     item.addEventListener('click', (e) => {
                         const page = item.dataset.page;
