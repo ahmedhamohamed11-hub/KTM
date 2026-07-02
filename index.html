@@ -8,12 +8,13 @@
     <title>KTM – Kälte Technik Management</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%232563eb'/><text x='32' y='44' text-anchor='middle' font-size='36' fill='white'>❄</text></svg>">
-
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
+    
     <style>
+        /* ============ CSS-VARIABLEN & DESIGN-SYSTEM ============ */
         :root {
             --bg-primary: #f5f6f8;
             --bg-secondary: #ffffff;
@@ -72,6 +73,7 @@
             transition: background var(--transition), color var(--transition);
         }
 
+        /* ============ SIDEBAR ============ */
         .sidebar {
             width: var(--sidebar-width);
             background: var(--bg-secondary);
@@ -144,6 +146,7 @@
             font-weight: 600;
         }
 
+        /* ============ MAIN CONTENT ============ */
         .main-area {
             flex: 1;
             display: flex;
@@ -205,6 +208,7 @@
             padding: 24px;
         }
 
+        /* ============ DASHBOARD KACHELN ============ */
         .page-title {
             font-size: 26px;
             font-weight: 700;
@@ -273,6 +277,7 @@
         .nav-card .card-title { font-weight: 600; font-size: 15px; }
         .nav-card .card-subtitle { font-size: 12px; color: var(--text-muted); }
 
+        /* ============ TABELLEN ============ */
         .table-container {
             background: var(--bg-secondary);
             border-radius: var(--radius-md);
@@ -316,6 +321,7 @@
         .status-aktiv { background: #ecfdf5; color: #059669; }
         .status-fertig { background: #f3f4f6; color: #6b7280; }
 
+        /* ============ BUTTONS ============ */
         .btn {
             padding: 10px 18px;
             border-radius: 24px;
@@ -337,8 +343,8 @@
         .btn-danger { background: var(--danger); color: #fff; }
         .btn-danger:hover { opacity: 0.9; }
         .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 16px; }
-        .btn-icon { width: 36px; height: 36px; padding: 0; border-radius: 50%; justify-content: center; }
 
+        /* ============ FORMULARE ============ */
         .form-group { margin-bottom: 18px; }
         .form-group label {
             display: block;
@@ -373,6 +379,7 @@
             gap: 14px;
         }
 
+        /* ============ MODAL ============ */
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -409,6 +416,7 @@
         }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+        /* ============ TOAST ============ */
         .toast-container {
             position: fixed;
             bottom: 24px;
@@ -436,30 +444,7 @@
         .toast-info { background: #6366f1; }
         @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
 
-        .tabs {
-            display: flex;
-            gap: 0;
-            border-bottom: 2px solid var(--border);
-            margin-bottom: 20px;
-        }
-        .tab-btn {
-            padding: 12px 20px;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            font-weight: 600;
-            color: var(--text-muted);
-            font-size: 14px;
-            transition: all var(--transition);
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-            font-family: var(--font-family);
-        }
-        .tab-btn.active {
-            color: var(--accent);
-            border-bottom-color: var(--accent);
-        }
-
+        /* ============ IMAGE GRID ============ */
         .image-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -487,6 +472,7 @@
             text-align: center;
         }
 
+        /* ============ RESPONSIVE ============ */
         @media (max-width: 900px) {
             .sidebar {
                 position: fixed;
@@ -506,6 +492,7 @@
             .content-scroll { padding: 16px; }
         }
 
+        /* ============ PRINT ============ */
         @media print {
             .sidebar, .topbar, .toast-container { display: none !important; }
             .main-area { margin: 0; }
@@ -513,6 +500,7 @@
             .modal-overlay { position: static; }
         }
 
+        /* ============ SPLASH ============ */
         .splash-screen {
             position: fixed;
             inset: 0;
@@ -533,11 +521,10 @@
 </head>
 <body data-theme="light">
 
-    <!-- SPLASH SCREEN -->
     <div class="splash-screen" id="splash">
         <div class="splash-logo">❄️</div>
         <div style="font-weight:700;font-size:20px;">KTM</div>
-        <div style="color:var(--text-muted);font-size:13px;">Kälte Technik Management – Wird geladen…</div>
+        <div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div>
     </div>
 
     <div class="toast-container" id="toastContainer"></div>
@@ -599,71 +586,57 @@
                 <input type="text" id="globalSearch" placeholder="Suche nach Kunden, Projekten, Material...">
             </div>
             <div class="topbar-actions">
-                <span id="syncStatus" style="font-size:12px;color:var(--text-muted);margin-right:8px;"></span>
+                <span id="syncStatus" style="font-size:12px;color:var(--text-muted);margin-right:8px;">Online</span>
                 <button class="icon-btn" title="Backup" onclick="app.navigate('backup')">💾</button>
                 <button class="icon-btn" title="Einstellungen" onclick="app.navigate('settings')">⚙️</button>
             </div>
         </div>
         <div class="content-scroll" id="contentArea">
-            <!-- Dynamisch gefüllt -->
-        </div>
+            </div>
     </div>
 
     <div id="modalContainer"></div>
 
     <script>
         // ============================================================
-        // SUPABASE-KONFIGURATION (aus neuem Code)
+        // ============ SUPABASE & SYNC LOGIK =========================
         // ============================================================
         const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
         const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // ============================================================
-        // SYNCHRONISATION (Snake/Camel-Mapping)
-        // ============================================================
-        const FIELD_MAP = {
-            firstName:'first_name', lastName:'last_name', houseNumber:'house_number',
-            customerId:'customer_id', projectId:'project_id', roomCount:'room_count',
-            purchasePrice:'purchase_price', sellingPrice:'selling_price',
-            totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount',
-            coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details',
-            createdAt:'created_at', updatedAt:'updated_at'
-        };
+        const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
-
-        function toSnake(obj) {
-            const result = {};
-            for (const key in obj) {
-                if (['id','_synced'].includes(key)) continue;
-                result[FIELD_MAP[key] || key] = obj[key];
-            }
-            return result;
+        
+        function toSnake(o) { 
+            const r={}; 
+            for(const k in o) { 
+                if(['id','_synced'].includes(k)) continue; 
+                r[FIELD_MAP[k]||k]=o[k]; 
+            } 
+            return r; 
         }
-        function toCamel(obj) {
-            const result = {};
-            for (const key in obj) result[REVERSE_MAP[key] || key] = obj[key];
-            return result;
+        function toCamel(o) { 
+            const r={}; 
+            for(const k in o) r[REVERSE_MAP[k]||k]=o[k]; 
+            return r; 
         }
 
         async function syncPush(table) {
             const all = await db.getAll(table);
-            for (const rec of all) {
-                if (rec._synced) continue;
-                const payload = toSnake(rec);
+            for (const rec of all) { 
+                if(rec._synced) continue;
+                const p = toSnake(rec);
                 try {
-                    const { data, error } = await sb.from(table).insert(payload).select();
-                    if (!error && data?.length) {
-                        await db.delete(table, rec.id);
-                        const newRec = toCamel(data[0]);
-                        newRec._synced = true;
-                        await db.add(table, newRec);
-                    } else if (error) {
-                        console.warn(`Push ${table}:`, error.message);
+                    const { data, error } = await sb.from(table).insert(p).select();
+                    if (!error && data?.length) { 
+                        await db.delete(table, rec.id); 
+                        const nr = toCamel(data[0]); 
+                        nr._synced = true; 
+                        await db.add(table, nr); 
                     }
-                } catch (e) {
-                    console.warn(`Push-Exception ${table}:`, e.message);
-                }
+                    else if (error) console.warn(`Push ${table}:`, error.message);
+                } catch(e) { console.warn(`Push-Ex ${table}:`, e.message); }
             }
         }
 
@@ -671,106 +644,101 @@
             try {
                 const { data, error } = await sb.from(table).select('*');
                 if (error) { console.warn(`Pull ${table}:`, error.message); return; }
-                const localIds = new Set((await db.getAll(table)).map(r => r.id));
-                for (const row of data) {
-                    const rec = toCamel(row);
-                    rec._synced = true;
-                    if (localIds.has(rec.id)) {
-                        await db.put(table, rec);
-                    } else {
-                        await db.add(table, rec);
-                    }
+                const ids = new Set((await db.getAll(table)).map(r=>r.id));
+                for (const row of data) { 
+                    const rec = toCamel(row); 
+                    rec._synced = true; 
+                    if(ids.has(rec.id)) await db.put(table, rec); 
+                    else await db.add(table, rec); 
                 }
-            } catch (e) {
-                console.warn(`Pull-Exception ${table}:`, e.message);
-            }
+            } catch(e) { console.warn(`Pull-Ex ${table}:`, e.message); }
         }
 
         async function fullSync() {
-            if (!navigator.onLine) { showToast('Keine Internetverbindung – Offline-Modus', 'info'); return; }
-            document.getElementById('syncStatus').textContent = 'Sync…';
+            if (!navigator.onLine) { showToast('Offline. Synchronisation nicht möglich.', 'info'); return; }
+            document.getElementById('syncStatus').textContent = 'Sync...';
             try {
-                const tables = ['customers','projects','rooms','images','materials','offers','settings'];
-                for (const t of tables) {
-                    await syncPush(t);
-                    await syncPull(t);
+                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { 
+                    await syncPush(t); 
+                    await syncPull(t); 
                 }
-                showToast('Synchronisation abgeschlossen', 'success');
-            } catch (e) {
-                showToast('Sync-Fehler: ' + e.message, 'error');
-                console.error(e);
+                showToast('Sync abgeschlossen', 'success');
+            } catch(e) { 
+                showToast('Sync-Fehler', 'error'); 
+                console.error(e); 
             }
-            document.getElementById('syncStatus').textContent = navigator.onLine ? '🟢 Online' : '🔴 Offline';
+            document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
             app.navigate(app.currentPage, app.currentProjectId);
         }
 
         // ============================================================
-        // INDEXEDDB-DATENBANK (erweiterte Struktur aus erstem Code)
+        // ============ DATENBANK-SCHICHT (IndexedDB) =================
         // ============================================================
         const DB_NAME = 'KTM_DB';
-        const DB_VERSION = 3;
+        const DB_VERSION = 2; // Geupdatet auf Version 2 aus Code 2
 
         class DatabaseManager {
-            constructor() { this.db = null; }
+            constructor() {
+                this.db = null;
+            }
 
             async init() {
                 return new Promise((resolve, reject) => {
                     const request = indexedDB.open(DB_NAME, DB_VERSION);
                     request.onupgradeneeded = (e) => {
                         const db = e.target.result;
-                        // Kunden
-                        if (!db.objectStoreNames.contains('customers')) {
-                            const store = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
-                            store.createIndex('name', 'lastName', { unique: false });
-                            store.createIndex('status', 'status', { unique: false });
-                            store.createIndex('created', 'createdAt', { unique: false });
-                        }
-                        // Projekte
-                        if (!db.objectStoreNames.contains('projects')) {
-                            const store = db.createObjectStore('projects', { keyPath: 'id', autoIncrement: true });
-                            store.createIndex('customerId', 'customerId', { unique: false });
-                            store.createIndex('status', 'status', { unique: false });
-                        }
-                        // Räume
-                        if (!db.objectStoreNames.contains('rooms')) {
-                            const store = db.createObjectStore('rooms', { keyPath: 'id', autoIncrement: true });
-                            store.createIndex('projectId', 'projectId', { unique: false });
-                        }
-                        // Bilder
-                        if (!db.objectStoreNames.contains('images')) {
-                            const store = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
-                            store.createIndex('projectId', 'projectId', { unique: false });
-                        }
-                        // Material
-                        if (!db.objectStoreNames.contains('materials')) {
-                            const store = db.createObjectStore('materials', { keyPath: 'id', autoIncrement: true });
-                            store.createIndex('category', 'category', { unique: false });
-                        }
-                        // Angebote
-                        if (!db.objectStoreNames.contains('offers')) {
-                            const store = db.createObjectStore('offers', { keyPath: 'id', autoIncrement: true });
-                            store.createIndex('projectId', 'projectId', { unique: false });
-                        }
-                        // Einstellungen
-                        if (!db.objectStoreNames.contains('settings')) {
-                            db.createObjectStore('settings', { keyPath: 'key' });
-                        }
+                        const tx = e.target.transaction;
+                        
+                        // Alle Stores definieren
+                        const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'];
+                        const indexedStores = ['rooms', 'images', 'offers'];
+                        
+                        stores.forEach(s => {
+                            let store;
+                            if (!db.objectStoreNames.contains(s)) {
+                                store = db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
+                            } else {
+                                store = tx.objectStore(s);
+                            }
+                            
+                            // Spezifische Indizes anlegen
+                            if (s === 'customers' && !store.indexNames.contains('name')) {
+                                store.createIndex('name', 'lastName', { unique: false });
+                                store.createIndex('status', 'status', { unique: false });
+                            }
+                            if (s === 'projects' && !store.indexNames.contains('customerId')) {
+                                store.createIndex('customerId', 'customerId', { unique: false });
+                                store.createIndex('status', 'status', { unique: false });
+                            }
+                            if (s === 'materials' && !store.indexNames.contains('category')) {
+                                store.createIndex('category', 'category', { unique: false });
+                            }
+                            
+                            // v2 Update: Fehlende projectId Indizes hinzufügen
+                            if (indexedStores.includes(s) && !store.indexNames.contains('projectId')) {
+                                store.createIndex('projectId', 'projectId', { unique: false });
+                            }
+                        });
                     };
                     request.onsuccess = (e) => {
                         this.db = e.target.result;
                         resolve(this.db);
                     };
-                    request.onerror = (e) => reject(e.target.error);
+                    request.onerror = (e) => {
+                        console.error('DB-Fehler:', e.target.error);
+                        reject(e.target.error);
+                    };
                 });
             }
 
+            // Generische CRUD-Operationen mit _synced Flag
             async add(storeName, data) {
+                if (data._synced === undefined && storeName !== 'settings') data._synced = false;
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
                     const store = tx.objectStore(storeName);
                     data.createdAt = data.createdAt || new Date().toISOString();
                     data.updatedAt = new Date().toISOString();
-                    if (data._synced === undefined) data._synced = false;
                     const request = store.add(data);
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
@@ -778,11 +746,11 @@
             }
 
             async put(storeName, data) {
+                if (data._synced === undefined && storeName !== 'settings') data._synced = false;
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
                     const store = tx.objectStore(storeName);
                     data.updatedAt = new Date().toISOString();
-                    if (data._synced === undefined) data._synced = false;
                     const request = store.put(data);
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
@@ -840,6 +808,7 @@
                 });
             }
 
+            // Spezifische Queries
             async getProjectWithDetails(projectId) {
                 const project = await this.get('projects', projectId);
                 if (!project) return null;
@@ -856,6 +825,7 @@
                 return { ...customer, projects };
             }
 
+            // Backup
             async exportAllData() {
                 const data = {
                     customers: await this.getAll('customers'),
@@ -866,14 +836,20 @@
                     offers: await this.getAll('offers'),
                     settings: await this.getAll('settings'),
                     exportDate: new Date().toISOString(),
-                    version: '1.0'
+                    version: '2.0'
                 };
                 return data;
             }
 
             async importAllData(data) {
-                const stores = ['customers','projects','rooms','images','materials','offers','settings'];
-                for (const s of stores) await this.clear(s);
+                await this.clear('customers');
+                await this.clear('projects');
+                await this.clear('rooms');
+                await this.clear('images');
+                await this.clear('materials');
+                await this.clear('offers');
+                await this.clear('settings');
+
                 for (const c of data.customers || []) await this.add('customers', c);
                 for (const p of data.projects || []) await this.add('projects', p);
                 for (const r of data.rooms || []) await this.add('rooms', r);
@@ -887,21 +863,30 @@
         const db = new DatabaseManager();
 
         // ============================================================
-        // KÄLTELEISTUNGS-BERECHNUNG
+        // ============ KÄLTELEISTUNGS-BERECHNUNG =====================
         // ============================================================
         function calculateCoolingCapacity(rooms) {
             if (!rooms || rooms.length === 0) return { totalKW: 0, recommendation: null, details: [] };
+
             let totalWatts = 0;
             const details = [];
+
             for (const room of rooms) {
                 const area = (room.length || 0) * (room.width || 0);
                 const volume = area * (room.height || 2.5);
+
+                // Faustformel: 60-100 W/m² je nach Raumtyp (konservativ 80 W/m² für Wohnräume)
                 let wattsPerSqm = 80;
-                const name = (room.name || '').toLowerCase();
-                if (name.includes('dach') || name.includes('wintergarten')) wattsPerSqm = 120;
-                if (name.includes('keller')) wattsPerSqm = 60;
+                if (room.name && (room.name.toLowerCase().includes('dach') || room.name.toLowerCase().includes('wintergarten'))) {
+                    wattsPerSqm = 120;
+                }
+                if (room.name && room.name.toLowerCase().includes('keller')) {
+                    wattsPerSqm = 60;
+                }
+
                 const roomWatts = area * wattsPerSqm;
                 totalWatts += roomWatts;
+
                 details.push({
                     roomName: room.name || 'Unbenannt',
                     area: Math.round(area * 100) / 100,
@@ -910,18 +895,26 @@
                     estimatedKW: Math.round(roomWatts / 100) / 10
                 });
             }
+
             const totalKW = Math.round(totalWatts / 100) / 10;
             const availableSizes = [2.0, 2.5, 3.5, 4.2, 5.0, 6.0, 7.1, 8.5, 10.0];
+
             let recommendation = availableSizes[0];
             for (const size of availableSizes) {
-                if (size >= totalKW) { recommendation = size; break; }
+                if (size >= totalKW) {
+                    recommendation = size;
+                    break;
+                }
             }
-            if (totalKW > availableSizes[availableSizes.length - 1]) recommendation = availableSizes[availableSizes.length - 1];
+            if (totalKW > availableSizes[availableSizes.length - 1]) {
+                recommendation = availableSizes[availableSizes.length - 1];
+            }
+
             return { totalKW, recommendation, details };
         }
 
         // ============================================================
-        // UI-HILFSFUNKTIONEN
+        // ============ UI-HILFSFUNKTIONEN ============================
         // ============================================================
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
@@ -963,12 +956,6 @@
             return map[status] || 'status-neu';
         }
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str || '';
-            return div.innerHTML;
-        }
-
         function showModal(title, contentHtml, onSave, onCancel) {
             const container = document.getElementById('modalContainer');
             const overlay = document.createElement('div');
@@ -984,6 +971,7 @@
                 </div>
             `;
             container.appendChild(overlay);
+
             overlay.querySelector('.cancel-btn')?.addEventListener('click', () => {
                 overlay.remove();
                 if (onCancel) onCancel();
@@ -997,8 +985,14 @@
             return overlay;
         }
 
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         // ============================================================
-        // SEITEN-RENDERER
+        // ============ SEITEN-RENDERER ===============================
         // ============================================================
         const contentArea = document.getElementById('contentArea');
 
@@ -1008,12 +1002,13 @@
                 const projects = await db.getAll('projects');
                 const offers = await db.getAll('offers');
                 const materials = await db.getAll('materials');
+
                 const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
-                const gesendeteAngebote = offers.filter(o => o.status === 'gesendet' || o.status === 'Angebot gesendet').length;
+                const gesendeteAngebote = offers.filter(o => o.status === 'Angebot gesendet').length;
                 const fertigeProjekte = projects.filter(p => p.status === 'Fertig').length;
 
                 document.getElementById('customerCount').textContent = customers.length;
-                document.getElementById('projectCount').textContent = offeneProjekte;
+                document.getElementById('projectCount').textContent = projects.length;
 
                 contentArea.innerHTML = `
                     <h1 class="page-title">Dashboard</h1>
@@ -1058,6 +1053,7 @@
                             <div><div class="card-title">Einstellungen</div><div class="card-subtitle">System anpassen</div></div>
                         </div>
                     </div>
+
                     <h3 style="margin-top:16px;margin-bottom:12px;">Letzte Projekte</h3>
                     <div class="table-container">
                         <table>
@@ -1117,9 +1113,7 @@
             (async () => {
                 const projects = await db.getAll('projects');
                 const customers = await db.getAll('customers');
-                document.getElementById('projectCount').textContent = projects.filter(p => !['Fertig','Archiv'].includes(p.status)).length;
-
-                const statusOptions = ['Neu','Besichtigung offen','Besichtigt','Angebot offen','Angebot gesendet','Auftrag erhalten','Material bestellt','Montage geplant','Montage läuft','Fertig','Archiv'];
+                document.getElementById('projectCount').textContent = projects.length;
 
                 let detailHtml = '';
                 if (selectedProjectId) {
@@ -1336,7 +1330,7 @@
         }
 
         // ============================================================
-        // APP-CONTROLLER (mit allen Methoden aus erstem Code + Sync)
+        // ============ APP-CONTROLLER ================================
         // ============================================================
         const app = {
             currentPage: 'dashboard',
@@ -1344,13 +1338,13 @@
 
             async init() {
                 await db.init();
-                document.getElementById('syncStatus').textContent = navigator.onLine ? '🟢 Online' : '🔴 Offline';
+                document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
                 this.setupNavigation();
                 this.setupSearch();
                 this.setupTheme();
-                this.setupResponsive();
                 this.navigate('dashboard');
                 document.getElementById('splash').style.display = 'none';
+                this.setupResponsive();
             },
 
             setupNavigation() {
@@ -1366,10 +1360,17 @@
             navigate(page, param = null) {
                 this.currentPage = page;
                 this.currentProjectId = param;
-                document.querySelectorAll('.nav-item[data-page]').forEach(item => item.classList.remove('active'));
-                const activeEl = document.querySelector(`.nav-item[data-page="${page}"]`);
-                if (activeEl) activeEl.classList.add('active');
+
+                // Aktualisiere aktive Navigation
+                document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+                    item.classList.remove('active');
+                    if (item.dataset.page === page) item.classList.add('active');
+                });
+
+                // Schließe Sidebar auf Mobile
                 document.getElementById('sidebar').classList.remove('open');
+
+                // Rendere Seite
                 switch (page) {
                     case 'dashboard': renderDashboard(); break;
                     case 'customers': renderCustomers(); break;
@@ -1391,9 +1392,11 @@
                         this.navigate(this.currentPage, this.currentProjectId);
                         return;
                     }
+                    // Globale Suche
                     const customers = await db.getAll('customers');
                     const projects = await db.getAll('projects');
                     const materials = await db.getAll('materials');
+
                     const results = [
                         ...customers.filter(c =>
                             (c.firstName + ' ' + c.lastName).toLowerCase().includes(query) ||
@@ -1409,6 +1412,7 @@
                             (m.name || '').toLowerCase().includes(query)
                         ).map(m => ({ type: 'Material', title: m.name, id: m.id, link: 'materials' })),
                     ];
+
                     contentArea.innerHTML = `
                         <h1 class="page-title">Suchergebnisse für "${escapeHtml(query)}"</h1>
                         <div class="table-container">
@@ -1433,14 +1437,13 @@
                 const toggle = document.getElementById('themeToggle');
                 const saved = localStorage.getItem('klima-theme') || 'light';
                 document.body.dataset.theme = saved;
-                toggle.querySelector('.nav-icon').textContent = saved === 'dark' ? '☀️' : '🌙';
-                toggle.childNodes[toggle.childNodes.length - 1].textContent = saved === 'dark' ? ' Hellmodus' : ' Dunkelmodus';
+                toggle.innerHTML = saved === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
+
                 toggle.addEventListener('click', () => {
                     const newTheme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
                     document.body.dataset.theme = newTheme;
                     localStorage.setItem('klima-theme', newTheme);
-                    toggle.querySelector('.nav-icon').textContent = newTheme === 'dark' ? '☀️' : '🌙';
-                    toggle.childNodes[toggle.childNodes.length - 1].textContent = newTheme === 'dark' ? ' Hellmodus' : ' Dunkelmodus';
+                    toggle.innerHTML = newTheme === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
                 });
             },
 
@@ -1465,7 +1468,7 @@
                 });
             },
 
-            // ---- Kunden ----
+            // ---- Kunden-Modul ----
             async openCustomerModal(id = null) {
                 const customer = id ? await db.get('customers', id) : null;
                 const modal = showModal(
@@ -1540,13 +1543,14 @@
                 const copy = { ...original };
                 delete copy.id;
                 delete copy.createdAt;
+                delete copy._synced; // Damit die Kopie neu synchronisiert wird
                 copy.firstName = copy.firstName + ' (Kopie)';
                 await db.add('customers', copy);
                 showToast('Kunde dupliziert.', 'success');
                 this.navigate('customers');
             },
 
-            // ---- Projekte ----
+            // ---- Projekt-Modul ----
             async openProjectModal(id = null) {
                 const project = id ? await db.get('projects', id) : null;
                 const customers = await db.getAll('customers');
@@ -1591,18 +1595,23 @@
 
             async deleteProject(id) {
                 if (!confirm('Projekt und alle zugehörigen Räume, Bilder und Angebote wirklich löschen?')) return;
-                const rooms = await db.getByIndex('rooms', 'projectId', id);
-                const images = await db.getByIndex('images', 'projectId', id);
-                const offers = await db.getByIndex('offers', 'projectId', id);
-                for (const r of rooms) await db.delete('rooms', r.id);
-                for (const i of images) await db.delete('images', i.id);
-                for (const o of offers) await db.delete('offers', o.id);
-                await db.delete('projects', id);
-                showToast('Projekt gelöscht.', 'info');
-                this.navigate('projects');
+                try {
+                    const rooms = await db.getByIndex('rooms', 'projectId', id);
+                    const images = await db.getByIndex('images', 'projectId', id);
+                    const offers = await db.getByIndex('offers', 'projectId', id);
+                    for (const r of rooms) await db.delete('rooms', r.id);
+                    for (const i of images) await db.delete('images', i.id);
+                    for (const o of offers) await db.delete('offers', o.id);
+                    await db.delete('projects', id);
+                    showToast('Projekt gelöscht.', 'info');
+                    this.navigate('projects');
+                } catch(e) {
+                    console.error('Löschen fehlgeschlagen:', e);
+                    showToast('Fehler beim Löschen.', 'error');
+                }
             },
 
-            // ---- Räume ----
+            // ---- Raum-Modul ----
             async openRoomModal(projectId) {
                 const modal = showModal(
                     'Raum hinzufügen',
@@ -1653,7 +1662,7 @@
                 this.navigate('projects', projectId);
             },
 
-            // ---- Bilder ----
+            // ---- Bild-Modul ----
             async openImageModal(projectId) {
                 const modal = showModal(
                     'Bild hinzufügen',
@@ -1671,6 +1680,7 @@
                         const fileInput = overlay.querySelector('#imgFile');
                         const file = fileInput.files[0];
                         if (!file) { showToast('Bitte ein Bild auswählen.', 'error'); return; }
+
                         const reader = new FileReader();
                         reader.onload = async (e) => {
                             const data = {
@@ -1696,7 +1706,7 @@
                 win.document.title = 'Bildvorschau';
             },
 
-            // ---- Material ----
+            // ---- Material-Modul ----
             async openMaterialModal(id = null) {
                 const mat = id ? await db.get('materials', id) : null;
                 const modal = showModal(
@@ -1744,20 +1754,22 @@
                 this.navigate('materials');
             },
 
-            // ---- Angebote ----
+            // ---- Angebots-Modul ----
             async createOffer(projectId) {
                 const project = await db.getProjectWithDetails(projectId);
                 if (!project) { showToast('Projekt nicht gefunden.', 'error'); return; }
                 const customer = project.customerId ? await db.get('customers', project.customerId) : null;
                 if (!customer) { showToast('Kein Kunde zugewiesen.', 'error'); return; }
+
                 const materials = await db.getAll('materials');
                 const cooling = calculateCoolingCapacity(project.rooms || []);
+
                 const modal = showModal(
                     'Angebot erstellen - Material auswählen',
                     `
                         <p><strong>Projekt:</strong> ${escapeHtml(project.title)}</p>
                         <p><strong>Kunde:</strong> ${escapeHtml(customer.firstName)} ${escapeHtml(customer.lastName)}</p>
-                        <p><strong>Empf. Kälteleistung:</strong> ${cooling.recommendation} kW</p>
+                        <p><strong>Empf. Kälteleistung:</strong> ${cooling.recommendation || '?'} kW</p>
                         <div class="table-container" style="max-height:300px;overflow-y:auto;margin-top:12px;">
                             <table>
                                 <thead><tr><th>Auswählen</th><th>Artikel</th><th>Preis</th><th>Menge</th></tr></thead>
@@ -1790,15 +1802,18 @@
                                 });
                             }
                         });
+
                         let subtotal = 0;
                         const positions = selectedItems.map(item => {
                             const total = item.price * item.quantity;
                             subtotal += total;
                             return { ...item, total };
                         });
+
                         const vatRate = 0.19;
                         const vatAmount = subtotal * vatRate;
                         const totalPrice = subtotal + vatAmount;
+
                         const offerData = {
                             projectId,
                             customerId: project.customerId,
@@ -1812,9 +1827,11 @@
                             status: 'Angebot offen',
                             createdAt: new Date().toISOString(),
                         };
+
                         await db.add('offers', offerData);
                         project.status = 'Angebot offen';
                         await db.put('projects', project);
+
                         overlay.remove();
                         showToast('Angebot erstellt.', 'success');
                         this.navigate('offers');
@@ -1827,59 +1844,95 @@
                 if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
                 const project = await db.get('projects', offer.projectId);
                 const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
                 let y = 20;
                 const companyName = (await db.get('settings', 'companyName'))?.value || 'Ihr Unternehmen';
                 const companyAddress = (await db.get('settings', 'companyAddress'))?.value || '';
+
                 doc.setFontSize(18);
                 doc.setFont('helvetica', 'bold');
                 doc.text(companyName, 20, y);
                 y += 7;
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'normal');
-                if (companyAddress) { doc.text(companyAddress, 20, y); y += 5; }
+                if (companyAddress) {
+                    doc.text(companyAddress, 20, y);
+                    y += 5;
+                }
                 y += 5;
                 doc.setFontSize(14);
                 doc.setFont('helvetica', 'bold');
                 doc.text('ANGEBOT', 20, y);
                 y += 10;
+
                 doc.setFontSize(10);
                 doc.setFont('helvetica', 'normal');
                 if (customer) {
-                    doc.text(`Kunde: ${customer.firstName} ${customer.lastName}`, 20, y); y += 5;
+                    doc.text(`Kunde: ${customer.firstName} ${customer.lastName}`, 20, y);
+                    y += 5;
                     if (customer.company) { doc.text(`Firma: ${customer.company}`, 20, y); y += 5; }
-                    doc.text(`Adresse: ${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`, 20, y); y += 5;
+                    doc.text(`Adresse: ${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`, 20, y);
+                    y += 5;
                     if (customer.phone) { doc.text(`Telefon: ${customer.phone}`, 20, y); y += 5; }
                 }
                 y += 5;
+
                 doc.setFont('helvetica', 'bold');
-                doc.text(`Projekt: ${project?.title || 'Unbenannt'}`, 20, y); y += 5;
+                doc.text(`Projekt: ${project?.title || 'Unbenannt'}`, 20, y);
+                y += 5;
                 doc.setFont('helvetica', 'normal');
-                doc.text(`Datum: ${formatDate(offer.createdAt)}`, 20, y); y += 5;
-                doc.text(`Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, 20, y); y += 8;
+                doc.text(`Datum: ${formatDate(offer.createdAt)}`, 20, y);
+                y += 5;
+                doc.text(`Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, 20, y);
+                y += 8;
+
                 doc.setFont('helvetica', 'bold');
                 doc.setFillColor(240, 240, 240);
                 doc.rect(20, y, 170, 7, 'F');
-                doc.text('Pos.', 22, y + 5); doc.text('Bezeichnung', 35, y + 5); doc.text('Einheit', 100, y + 5); doc.text('Menge', 120, y + 5); doc.text('Einzelpreis', 140, y + 5); doc.text('Gesamt', 165, y + 5);
+                doc.text('Pos.', 22, y + 5);
+                doc.text('Bezeichnung', 35, y + 5);
+                doc.text('Einheit', 100, y + 5);
+                doc.text('Menge', 120, y + 5);
+                doc.text('Einzelpreis', 140, y + 5);
+                doc.text('Gesamt', 165, y + 5);
                 y += 9;
+
                 doc.setFont('helvetica', 'normal');
                 let posNum = 1;
                 for (const pos of offer.positions || []) {
                     if (y > 250) { doc.addPage(); y = 20; }
-                    doc.text(`${posNum}.`, 22, y); doc.text(pos.name || '', 35, y); doc.text(pos.unit || 'Stk', 100, y); doc.text(`${pos.quantity}`, 120, y); doc.text(formatCurrency(pos.price), 140, y); doc.text(formatCurrency(pos.total), 165, y);
-                    y += 6; posNum++;
+                    doc.text(`${posNum}.`, 22, y);
+                    doc.text(pos.name || '', 35, y);
+                    doc.text(pos.unit || 'Stk', 100, y);
+                    doc.text(`${pos.quantity}`, 120, y);
+                    doc.text(formatCurrency(pos.price), 140, y);
+                    doc.text(formatCurrency(pos.total), 165, y);
+                    y += 6;
+                    posNum++;
                 }
+
                 y += 5;
-                doc.line(20, y, 190, y); y += 7;
+                doc.line(20, y, 190, y);
+                y += 7;
                 doc.setFont('helvetica', 'bold');
-                doc.text(`Zwischensumme:`, 120, y); doc.text(formatCurrency(offer.subtotal || 0), 165, y); y += 6;
-                doc.text(`MwSt. (19%):`, 120, y); doc.text(formatCurrency(offer.vatAmount || 0), 165, y); y += 6;
+                doc.text(`Zwischensumme:`, 120, y);
+                doc.text(formatCurrency(offer.subtotal || 0), 165, y);
+                y += 6;
+                doc.text(`MwSt. (19%):`, 120, y);
+                doc.text(formatCurrency(offer.vatAmount || 0), 165, y);
+                y += 6;
                 doc.setFontSize(12);
-                doc.text(`Gesamtsumme:`, 120, y); doc.text(formatCurrency(offer.totalPrice || 0), 165, y);
+                doc.text(`Gesamtsumme:`, 120, y);
+                doc.text(formatCurrency(offer.totalPrice || 0), 165, y);
+
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'normal');
-                doc.text('Angebot freibleibend - Es gelten unsere AGB.', 20, 280);
+                const pdfFooter = (await db.get('settings', 'pdfFooter'))?.value || 'Angebot freibleibend - Es gelten unsere AGB.';
+                doc.text(pdfFooter, 20, 280);
+
                 doc.save(`Angebot_${offer.id}_${customer?.lastName || 'Kunde'}.pdf`);
                 showToast('PDF exportiert.', 'success');
             },
@@ -1895,11 +1948,13 @@
             async exportMaterialsExcel() {
                 const materials = await db.getAll('materials');
                 const wsData = [['Artikelname', 'Kategorie', 'Einheit', 'Einkaufspreis', 'Verkaufspreis', 'Notizen']];
-                for (const m of materials) wsData.push([m.name, m.category, m.unit, m.purchasePrice, m.sellingPrice, m.notes]);
+                for (const m of materials) {
+                    wsData.push([m.name, m.category, m.unit, m.purchasePrice, m.sellingPrice, m.notes]);
+                }
                 const ws = XLSX.utils.aoa_to_sheet(wsData);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Materialien');
-                XLSX.writeFile(wb, 'Materialliste.xlsx');
+                XLSX.writeFile(wb, 'KTM_Materialliste.xlsx');
                 showToast('Material-Excel exportiert.', 'success');
             },
 
@@ -1910,29 +1965,41 @@
                 input.onchange = async (e) => {
                     const file = e.target.files[0];
                     const data = await file.arrayBuffer();
-                    const wb = XLSX.read(data, { type: 'array' });
+                    const wb = XLSX.read(data);
                     const sheetName = wb.SheetNames.find(n => /material/i.test(n)) || wb.SheetNames[0];
-                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-                    let imported = 0;
-                    for (const row of rows) {
-                        const artikel = (row['Artikel'] || row['Artikelname'] || '').toString().trim();
-                        if (!artikel) continue;
-                        const hersteller = (row['Hersteller'] || '').toString().trim();
-                        const name = hersteller ? `${hersteller} ${artikel}` : artikel;
-                        const existing = await db.getAll('materials');
-                        if (existing.some(m => m.name === name)) continue;
-                        await db.add('materials', {
-                            name,
-                            category: (row['Kategorie'] || '').toString().trim(),
-                            unit: (row['Einheit'] || 'Stk').toString().trim() || 'Stk',
-                            purchasePrice: parseFloat(row['Einkaufspreis'] || row['EK Netto'] || 0) || 0,
-                            sellingPrice: parseFloat(row['Verkaufspreis'] || row['VK Netto'] || 0) || 0,
-                            notes: (row['Notizen'] || '').toString().trim(),
-                            createdAt: new Date().toISOString(),
-                        });
-                        imported++;
+                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
+                    
+                    const existing = await db.getAll('materials');
+                    const existingNames = new Set(existing.map(m => m.name));
+                    let imported = 0, skipped = 0;
+
+                    for (let i = 1; i < rows.length; i++) {
+                        // Support für beide Formate (alt und neu)
+                        let name, category, unit, purchasePrice, sellingPrice, notes;
+                        
+                        // Versuche Spaltenstruktur automatisch zu erkennen oder Fallback zu nutzen
+                        if(rows[i].length >= 5 && typeof rows[0][0] === 'string' && rows[0][0].toLowerCase().includes('artikel')) {
+                            name = rows[i][0]; category = rows[i][1]; unit = rows[i][2]; purchasePrice = rows[i][3]; sellingPrice = rows[i][4]; notes = rows[i][5];
+                        } else {
+                            name = rows[i][0]; category = rows[i][1]; unit = rows[i][2]; purchasePrice = rows[i][3]; sellingPrice = rows[i][4];
+                        }
+
+                        if (name) {
+                            if (existingNames.has(name.toString())) { skipped++; continue; }
+                            await db.add('materials', {
+                                name: String(name),
+                                category: String(category || ''),
+                                unit: String(unit || 'Stk'),
+                                purchasePrice: parseFloat(purchasePrice) || 0,
+                                sellingPrice: parseFloat(sellingPrice) || 0,
+                                notes: String(notes || ''),
+                                createdAt: new Date().toISOString(),
+                            });
+                            existingNames.add(String(name));
+                            imported++;
+                        }
                     }
-                    showToast(`${imported} Materialien importiert.`, 'success');
+                    showToast(`${imported} Artikel importiert${skipped ? `, ${skipped} übersprungen` : ''}`, 'success');
                     this.navigate('materials');
                 };
                 input.click();
@@ -1948,22 +2015,26 @@
                 const ws = XLSX.utils.aoa_to_sheet(wsData);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Angebote');
-                XLSX.writeFile(wb, 'Angebote.xlsx');
+                XLSX.writeFile(wb, 'KTM_Angebote.xlsx');
                 showToast('Angebote exportiert.', 'success');
             },
 
             async exportAllExcel() {
                 const data = await db.exportAllData();
                 const wb = XLSX.utils.book_new();
+
                 const custData = [['ID','Vorname','Nachname','Firma','Straße','PLZ','Ort','Telefon','Status']];
                 for (const c of data.customers) custData.push([c.id,c.firstName,c.lastName,c.company,c.street,c.zip,c.city,c.phone,c.status]);
                 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(custData), 'Kunden');
+
                 const projData = [['ID','Titel','Kunden-ID','Status','Notizen','Datum']];
                 for (const p of data.projects) projData.push([p.id,p.title,p.customerId,p.status,p.notes,formatDate(p.createdAt)]);
                 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(projData), 'Projekte');
+
                 const matData = [['ID','Name','Kategorie','Einheit','Einkaufspreis','Verkaufspreis']];
                 for (const m of data.materials) matData.push([m.id,m.name,m.category,m.unit,m.purchasePrice,m.sellingPrice]);
                 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matData), 'Materialien');
+
                 XLSX.writeFile(wb, 'KTM_KomplettExport.xlsx');
                 showToast('Komplett-Export erstellt.', 'success');
             },
@@ -1976,20 +2047,21 @@
                     if (!confirm('Achtung: Alle vorhandenen Daten werden überschrieben! Fortfahren?')) return;
                     const file = e.target.files[0];
                     const data = await file.arrayBuffer();
-                    const wb = XLSX.read(data, { type: 'array' });
+                    const wb = XLSX.read(data);
                     const importData = { customers: [], projects: [], materials: [] };
+
                     if (wb.SheetNames.includes('Kunden')) {
                         const rows = XLSX.utils.sheet_to_json(wb.Sheets['Kunden'], { header: 1 });
                         for (let i = 1; i < rows.length; i++) {
                             const [id, firstName, lastName, company, street, zip, city, phone, status] = rows[i];
-                            if (firstName) importData.customers.push({ firstName, lastName, company, street, zip, city, phone, status: status || 'Neu', createdAt: new Date().toISOString() });
+                            importData.customers.push({ id, firstName, lastName, company, street, zip, city, phone, status, createdAt: new Date().toISOString() });
                         }
                     }
                     if (wb.SheetNames.includes('Materialien')) {
                         const rows = XLSX.utils.sheet_to_json(wb.Sheets['Materialien'], { header: 1 });
                         for (let i = 1; i < rows.length; i++) {
                             const [id, name, category, unit, purchasePrice, sellingPrice] = rows[i];
-                            if (name) importData.materials.push({ name, category, unit, purchasePrice: parseFloat(purchasePrice)||0, sellingPrice: parseFloat(sellingPrice)||0, createdAt: new Date().toISOString() });
+                            importData.materials.push({ name, category, unit, purchasePrice: parseFloat(purchasePrice)||0, sellingPrice: parseFloat(sellingPrice)||0, createdAt: new Date().toISOString() });
                         }
                     }
                     await db.clear('customers');
@@ -2035,26 +2107,34 @@
             async openCompanySettings() {
                 const companyName = (await db.get('settings', 'companyName'))?.value || '';
                 const companyAddress = (await db.get('settings', 'companyAddress'))?.value || '';
-                showModal('Firmendaten', `
-                    <div class="form-group"><label>Firmenname</label><input type="text" id="setCompanyName" value="${escapeHtml(companyName)}"></div>
-                    <div class="form-group"><label>Adresse (für PDF)</label><textarea id="setCompanyAddress" rows="3">${escapeHtml(companyAddress)}</textarea></div>
-                `, async (overlay) => {
-                    await db.put('settings', { key: 'companyName', value: overlay.querySelector('#setCompanyName').value.trim() });
-                    await db.put('settings', { key: 'companyAddress', value: overlay.querySelector('#setCompanyAddress').value.trim() });
-                    overlay.remove();
-                    showToast('Firmendaten gespeichert.', 'success');
-                });
+                const modal = showModal(
+                    'Firmendaten',
+                    `
+                        <div class="form-group"><label>Firmenname</label><input type="text" id="setCompanyName" value="${escapeHtml(companyName)}"></div>
+                        <div class="form-group"><label>Adresse (für PDF)</label><textarea id="setCompanyAddress" rows="3">${escapeHtml(companyAddress)}</textarea></div>
+                    `,
+                    async (overlay) => {
+                        await db.put('settings', { key: 'companyName', value: overlay.querySelector('#setCompanyName').value.trim() });
+                        await db.put('settings', { key: 'companyAddress', value: overlay.querySelector('#setCompanyAddress').value.trim() });
+                        overlay.remove();
+                        showToast('Firmendaten gespeichert.', 'success');
+                    }
+                );
             },
 
             async openPDFSettings() {
                 const pdfFooter = (await db.get('settings', 'pdfFooter'))?.value || 'Angebot freibleibend - Es gelten unsere AGB.';
-                showModal('PDF-Einstellungen', `
-                    <div class="form-group"><label>Footer-Text</label><textarea id="setPdfFooter" rows="3">${escapeHtml(pdfFooter)}</textarea></div>
-                `, async (overlay) => {
-                    await db.put('settings', { key: 'pdfFooter', value: overlay.querySelector('#setPdfFooter').value.trim() });
-                    overlay.remove();
-                    showToast('PDF-Einstellungen gespeichert.', 'success');
-                });
+                const modal = showModal(
+                    'PDF-Einstellungen',
+                    `
+                        <div class="form-group"><label>Footer-Text</label><textarea id="setPdfFooter" rows="3">${escapeHtml(pdfFooter)}</textarea></div>
+                    `,
+                    async (overlay) => {
+                        await db.put('settings', { key: 'pdfFooter', value: overlay.querySelector('#setPdfFooter').value.trim() });
+                        overlay.remove();
+                        showToast('PDF-Einstellungen gespeichert.', 'success');
+                    }
+                );
             },
 
             async openFieldSettings() {
@@ -2068,18 +2148,21 @@
                 for (const store of stores) await db.clear(store);
                 showToast('Alle Daten gelöscht.', 'info');
                 this.navigate('dashboard');
-            },
+            }
         };
 
         // ============================================================
-        // INITIALISIERUNG
+        // ============ INITIALISIERUNG ===============================
         // ============================================================
         document.addEventListener('DOMContentLoaded', () => {
             app.init();
         });
 
+        // Service Worker registrieren
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(() => {});
+            navigator.serviceWorker.register('sw.js').catch(() => {
+                // Läuft auch ohne SW
+            });
         }
     </script>
 </body>
