@@ -1969,14 +1969,20 @@ async function isOfferNumberUnique(number, excludeId = null) {
                     }
                 );
                 modal.querySelector('#matImage').addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                        imgData = ev.target.result;
-                        modal.querySelector('#matImgPreview').innerHTML = `<img src="${imgData}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
-                    };
-                    reader.readAsDataURL(file);
+                 compressImage(file, 800, 0.7).then(async (compressedData) => {
+    const data = {
+        projectId,
+        data: compressedData,
+        category: overlay.querySelector('#imgCategory').value,
+        label: overlay.querySelector('#imgLabel').value.trim(),
+        createdAt: new Date().toISOString(),
+    };
+    await db.add('images', data);
+    overlay.remove();
+    showToast('Bild gespeichert.', 'success');
+    this.navigate('projects', projectId);
+}).catch(() => {
+    showToast('Fehler beim Komprimieren des Bildes.', 'error');
                 });
             },
 
