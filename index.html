@@ -472,8 +472,41 @@
         } catch (e) {
             console.warn('Supabase-Initialisierung fehlgeschlagen:', e);
         }
+const FIELD_MAP = {
+  firstName: 'first_name',
+  lastName: 'last_name',
+  houseNumber: 'house_number',
+  customerId: 'customer_id',
+  projectId: 'project_id',
 
-        const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at', siteAddress:'site_address', articleNumber:'article_number', offerNumber:'offer_number', contactPerson:'contact_person', contactPhone:'contact_phone', contactEmail:'contact_email', validUntil:'valid_until', discountRate:'discount_rate', discountAmount:'discount_amount', netAfterDiscount:'net_after_discount' };
+  offerNumber: 'offer_number',
+  offerDate: 'offer_date',
+  validUntil: 'valid_until',
+  validUntilEnabled: 'valid_until_enabled',
+
+  vatEnabled: 'vat_enabled',
+  vatRate: 'vat_rate',
+  vatAmount: 'vat_amount',
+
+  discountEnabled: 'discount_enabled',
+  discountRate: 'discount_rate',
+  discountAmount: 'discount_amount',
+
+  netAfterDiscount: 'net_after_discount',
+
+  totalPrice: 'total_price',
+  coolingRecommendation: 'cooling_recommendation',
+  coolingDetails: 'cooling_details',
+
+  contactPerson: 'contact_person',
+  contactPhone: 'contact_phone',
+  contactEmail: 'contact_email',
+
+  siteAddress: 'site_address',
+
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
+};
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
 function toSnake(o) {
     const r = {};
