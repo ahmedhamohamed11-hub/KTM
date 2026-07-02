@@ -473,7 +473,7 @@
             console.warn('Supabase-Initialisierung fehlgeschlagen:', e);
         }
 
-        const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
+        const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at', siteAddress:'site_address', articleNumber:'article_number', offerNumber:'offer_number', contactPerson:'contact_person', contactPhone:'contact_phone', contactEmail:'contact_email', validUntil:'valid_until', discountRate:'discount_rate', discountAmount:'discount_amount', netAfterDiscount:'net_after_discount' };
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
 
         function toSnake(o) {
@@ -734,6 +734,7 @@
                 await backgroundSyncPush();
 
                 // 2. Alle Daten aus Supabase herunterladen
+                const failedTables = [];
                 for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
                     const { data, error } = await sb.from(t).select('*');
                     if (!error && data) {
@@ -745,15 +746,28 @@
                         }
                     } else if (error) {
                         console.warn(`Sync-Fehler bei Tabelle "${t}":`, error.message);
+                        failedTables.push({ table: t, message: error.message });
                     }
                 }
-                updateSyncStatus('online', '🟢 Online');
+                if (failedTables.length > 0) {
+                    // Sichtbar machen statt nur in der Konsole zu verstecken: sonst merkt man
+                    // z.B. ein fehlendes Datenbank-Schema erst, wenn Daten "verschwunden" scheinen.
+                    updateSyncStatus('offline', '🟡 Sync unvollständig');
+                    const details = failedTables.map(f => `${f.table}: ${f.message}`).join(' | ');
+                    console.error('Folgende Tabellen konnten nicht synchronisiert werden:', details);
+                    showToast(`Sync unvollständig (${failedTables.length} Tabelle${failedTables.length > 1 ? 'n' : ''}). Details in der Konsole (F12).`, 'error');
+                } else {
+                    updateSyncStatus('online', '🟢 Online');
+                }
                 app.navigate(app.currentPage, app.currentProjectId);
             } catch(e) {
                 console.error("Sync Error:", e);
                 updateSyncStatus('offline', '🔴 Sync Fehler');
+                showToast(`Synchronisierung fehlgeschlagen: ${e.message || e}`, 'error');
             }
         }
+
+        const _pushErrorsWarned = new Set();
 
         async function backgroundSyncPush() {
             if (!navigator.onLine || !supabaseAvailable) return;
@@ -786,6 +800,16 @@
 
                             if (idChanged) {
                                 await remapForeignKeys(t, oldPK, nr.id);
+                            }
+                        } else if (error) {
+                            console.warn(`Sync-Push-Fehler bei Tabelle "${t}":`, error.message);
+                            // Nur einmal pro Tabelle und Sitzung anzeigen, damit bei einem dauerhaften
+                            // Problem (z.B. fehlende Tabelle/Spalte) nicht bei jedem Speichern erneut
+                            // ein Toast erscheint – der Datensatz bleibt aber lokal als "nicht synced"
+                            // markiert und wird bei jedem weiteren Versuch erneut hochgeladen.
+                            if (!_pushErrorsWarned.has(t)) {
+                                _pushErrorsWarned.add(t);
+                                showToast(`"${t}" konnte nicht synchronisiert werden: ${error.message}`, 'error');
                             }
                         }
                     }
