@@ -642,7 +642,7 @@
 
     <script>
         // ============================================================
-        // ============ SUPABASE & SYNC LOGIK =========================
+        // ============ SUPABASE & SYNC LOGIK (REALTIME) ==============
         // ============================================================
         const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
@@ -665,65 +665,148 @@
             return r; 
         }
 
-        async function syncPush(table) {
-            const all = await db.getAll(table);
-            for (const rec of all) { 
-                if(rec._synced) continue;
-                const p = toSnake(rec);
-                try {
-                    const { data, error } = await sb.from(table).insert(p).select();
-                    if (!error && data?.length) { 
-                        await db.delete(table, rec.id); 
-                        const nr = toCamel(data[0]); 
-                        nr._synced = true; 
-                        await db.add(table, nr); 
+        // ---- Echtzeit-Status UI ----
+        function updateSyncStatus(status, text) {
+            const statusEl = document.getElementById('syncStatus');
+            statusEl.textContent = text;
+            if (status === 'online') statusEl.style.color = '#059669'; // Grün
+            if (status === 'syncing') statusEl.style.color = '#d97706'; // Gelb
+            if (status === 'offline') statusEl.style.color = '#dc2626'; // Rot
+        }
+
+        // ---- Realtime Subscription ----
+        let realtimeChannel = null;
+
+        function initRealtime() {
+            if (realtimeChannel) sb.removeChannel(realtimeChannel);
+
+            realtimeChannel = sb.channel('public-tables-changes')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public' },
+                    (payload) => handleRemoteChange(payload)
+                )
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        updateSyncStatus('online', '🟢 Online & Live');
+                    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                        updateSyncStatus('offline', '🔴 Getrennt');
                     }
-                    else if (error) console.warn(`Push ${table}:`, error.message);
-                } catch(e) { console.warn(`Push-Ex ${table}:`, e.message); }
-            }
+                });
         }
 
-        async function syncPull(table) {
-            try {
-                const { data, error } = await sb.from(table).select('*');
-                if (error) { console.warn(`Pull ${table}:`, error.message); return; }
-                const ids = new Set((await db.getAll(table)).map(r=>r.id));
-                for (const row of data) { 
-                    const rec = toCamel(row); 
-                    rec._synced = true; 
-                    if(ids.has(rec.id)) await db.put(table, rec); 
-                    else await db.add(table, rec); 
-                }
-            } catch(e) { console.warn(`Pull-Ex ${table}:`, e.message); }
-        }
+        async function handleRemoteChange(payload) {
+            const table = payload.table;
+            const eventType = payload.eventType; // INSERT, UPDATE, DELETE
+            
+            if (eventType === 'DELETE') {
+                await db.deleteLocalOnly(table, payload.old.id);
+            } else {
+                const remoteData = payload.new;
+                const localData = toCamel(remoteData);
+                localData._synced = true;
 
-        async function fullSync() {
-            if (!navigator.onLine) { showToast('Offline. Synchronisation nicht möglich.', 'info'); return; }
-            document.getElementById('syncStatus').textContent = 'Sync...';
-            try {
-                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { 
-                    await syncPush(t); 
-                    await syncPull(t); 
+                // Konfliktlösung: Existiert der Datensatz lokal und ist neuer?
+                const existing = await db.get(table, localData.id);
+                if (existing) {
+                    const localTime = new Date(existing.updatedAt || 0).getTime();
+                    const remoteTime = new Date(localData.updatedAt || 0).getTime();
+                    
+                    if (localTime > remoteTime && !existing._synced) {
+                        // Lokaler Datensatz ist neuer und ungesynct -> Remote überschreiben (Push)
+                        backgroundSyncPush();
+                        return;
+                    }
                 }
-                showToast('Sync abgeschlossen', 'success');
-            } catch(e) { 
-                showToast('Sync-Fehler', 'error'); 
-                console.error(e); 
+                await db.putLocalOnly(table, localData);
             }
-            document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
+            
+            // UI aktualisieren, ohne die Seite neu zu laden
             app.navigate(app.currentPage, app.currentProjectId);
         }
+
+        // ---- Hintergrund-Synchronisation (Push) ----
+        let isSyncing = false;
+        async function backgroundSyncPush() {
+            if (!navigator.onLine || isSyncing) return;
+            isSyncing = true;
+            updateSyncStatus('syncing', '☁️ Uploading...');
+
+            try {
+                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { 
+                    const all = await db.getAll(t);
+                    const unsynced = all.filter(r => !r._synced);
+                    
+                    for (const rec of unsynced) {
+                        const p = toSnake(rec);
+                        // Wenn der Datensatz keine ID in der DB hat, mach ein Insert, ansonsten ein Upsert
+                        const { data, error } = await sb.from(t).upsert(p).select();
+                        if (!error && data?.length) { 
+                            // Alte lokale ID löschen, neue von Supabase übernehmen
+                            await db.deleteLocalOnly(t, rec.id); 
+                            const nr = toCamel(data[0]); 
+                            nr._synced = true; 
+                            await db.addLocalOnly(t, nr); 
+                        }
+                    }
+                }
+                updateSyncStatus('online', '🟢 Online & Live');
+            } catch(e) { 
+                console.warn('Background Sync Fehler:', e);
+                updateSyncStatus('offline', '🔴 Sync-Fehler');
+            } finally {
+                isSyncing = false;
+            }
+        }
+
+        // Initiale Synchronisation beim Start oder Wiederverbinden
+        async function initialFullSync() {
+            if (!navigator.onLine) return;
+            updateSyncStatus('syncing', '☁️ Lade Daten...');
+            
+            // Zuerst Push lokaler Änderungen
+            await backgroundSyncPush();
+
+            // Dann Pull aller Tabellen (vereinfacht, holt nur Updates die neuer sind als lokaler Max-Timestamp)
+            try {
+                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
+                    const { data, error } = await sb.from(t).select('*');
+                    if (!error && data) {
+                        for (const row of data) {
+                            const rec = toCamel(row);
+                            rec._synced = true;
+                            
+                            const existing = await db.get(t, rec.id);
+                            if (!existing || new Date(rec.updatedAt) > new Date(existing.updatedAt)) {
+                                await db.putLocalOnly(t, rec);
+                            }
+                        }
+                    }
+                }
+            } catch(e) { console.warn('Initial Pull Error', e); }
+            
+            app.navigate(app.currentPage, app.currentProjectId);
+            updateSyncStatus('online', '🟢 Online & Live');
+        }
+
+        // Online/Offline Listener
+        window.addEventListener('online', () => {
+            initialFullSync();
+            initRealtime();
+        });
+        window.addEventListener('offline', () => {
+            updateSyncStatus('offline', '🔴 Offline (Lokal)');
+        });
+
 
         // ============================================================
         // ============ DATENBANK-SCHICHT (IndexedDB) =================
         // ============================================================
         const DB_NAME = 'KTM_DB';
-        const DB_VERSION = 2; // Geupdatet auf Version 2 aus Code 2
+        const DB_VERSION = 2;
 
         class DatabaseManager {
-            constructor() {
-                this.db = null;
-            }
+            constructor() { this.db = null; }
 
             async init() {
                 return new Promise((resolve, reject) => {
@@ -732,7 +815,6 @@
                         const db = e.target.result;
                         const tx = e.target.transaction;
                         
-                        // Alle Stores definieren
                         const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'];
                         const indexedStores = ['rooms', 'images', 'offers'];
                         
@@ -744,7 +826,6 @@
                                 store = tx.objectStore(s);
                             }
                             
-                            // Spezifische Indizes anlegen
                             if (s === 'customers' && !store.indexNames.contains('name')) {
                                 store.createIndex('name', 'lastName', { unique: false });
                                 store.createIndex('status', 'status', { unique: false });
@@ -756,71 +837,39 @@
                             if (s === 'materials' && !store.indexNames.contains('category')) {
                                 store.createIndex('category', 'category', { unique: false });
                             }
-                            
-                            // v2 Update: Fehlende projectId Indizes hinzufügen
                             if (indexedStores.includes(s) && !store.indexNames.contains('projectId')) {
                                 store.createIndex('projectId', 'projectId', { unique: false });
                             }
                         });
                     };
-                    request.onsuccess = (e) => {
-                        this.db = e.target.result;
-                        resolve(this.db);
-                    };
-                    request.onerror = (e) => {
-                        console.error('DB-Fehler:', e.target.error);
-                        reject(e.target.error);
-                    };
+                    request.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); };
+                    request.onerror = (e) => { console.error('DB-Fehler:', e.target.error); reject(e.target.error); };
                 });
             }
 
-            // Generische CRUD-Operationen mit _synced Flag
-            async add(storeName, data) {
-                if (data._synced === undefined && storeName !== 'settings') data._synced = false;
+            // ---- Interne (Local Only) Methoden ----
+            // Verhindern Endlosschleifen, wenn Daten von Supabase empfangen werden
+            async addLocalOnly(storeName, data) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
                     const store = tx.objectStore(storeName);
-                    data.createdAt = data.createdAt || new Date().toISOString();
-                    data.updatedAt = new Date().toISOString();
                     const request = store.add(data);
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
                 });
             }
 
-            async put(storeName, data) {
-                if (data._synced === undefined && storeName !== 'settings') data._synced = false;
+            async putLocalOnly(storeName, data) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
                     const store = tx.objectStore(storeName);
-                    data.updatedAt = new Date().toISOString();
                     const request = store.put(data);
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
                 });
             }
 
-            async get(storeName, id) {
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(storeName, 'readonly');
-                    const store = tx.objectStore(storeName);
-                    const request = store.get(id);
-                    request.onsuccess = () => resolve(request.result);
-                    request.onerror = () => reject(request.error);
-                });
-            }
-
-            async getAll(storeName) {
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(storeName, 'readonly');
-                    const store = tx.objectStore(storeName);
-                    const request = store.getAll();
-                    request.onsuccess = () => resolve(request.result);
-                    request.onerror = () => reject(request.error);
-                });
-            }
-
-            async delete(storeName, id) {
+            async deleteLocalOnly(storeName, id) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
                     const store = tx.objectStore(storeName);
@@ -830,12 +879,68 @@
                 });
             }
 
+            // ---- Öffentliche Methoden (Trigger Push) ----
+            async add(storeName, data) {
+                data._synced = false;
+                data.createdAt = data.createdAt || new Date().toISOString();
+                data.updatedAt = new Date().toISOString();
+                
+                // Lokale ID generieren falls nötig, IndexedDB macht das via autoIncrement
+                const result = await this.addLocalOnly(storeName, data);
+                
+                // Wenn auto-increment, holen wir das Objekt nochmal um die ID zu haben
+                if (storeName !== 'settings' && !data.id) {
+                    data.id = result;
+                    await this.putLocalOnly(storeName, data);
+                }
+
+                backgroundSyncPush();
+                return result;
+            }
+
+            async put(storeName, data) {
+                data._synced = false;
+                data.updatedAt = new Date().toISOString();
+                const result = await this.putLocalOnly(storeName, data);
+                backgroundSyncPush();
+                return result;
+            }
+
+            async delete(storeName, id) {
+                await this.deleteLocalOnly(storeName, id);
+                
+                // Supabase Löschung triggern
+                if (navigator.onLine) {
+                    sb.from(storeName).delete().eq(storeName === 'settings' ? 'key' : 'id', id).then(() => {
+                        console.log(`Deleted remote ${storeName} ${id}`);
+                    }).catch(console.warn);
+                }
+                return;
+            }
+
+            // ---- Lese-Methoden bleiben unverändert ----
+            async get(storeName, id) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readonly');
+                    const request = tx.objectStore(storeName).get(id);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async getAll(storeName) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readonly');
+                    const request = tx.objectStore(storeName).getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
             async getByIndex(storeName, indexName, value) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readonly');
-                    const store = tx.objectStore(storeName);
-                    const index = store.index(indexName);
-                    const request = index.getAll(value);
+                    const request = tx.objectStore(storeName).index(indexName).getAll(value);
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
                 });
@@ -844,8 +949,7 @@
             async clear(storeName) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
-                    const store = tx.objectStore(storeName);
-                    const request = store.clear();
+                    const request = tx.objectStore(storeName).clear();
                     request.onsuccess = () => resolve();
                     request.onerror = () => reject(request.error);
                 });
@@ -868,9 +972,8 @@
                 return { ...customer, projects };
             }
 
-            // Backup
             async exportAllData() {
-                const data = {
+                return {
                     customers: await this.getAll('customers'),
                     projects: await this.getAll('projects'),
                     rooms: await this.getAll('rooms'),
@@ -881,25 +984,18 @@
                     exportDate: new Date().toISOString(),
                     version: '2.0'
                 };
-                return data;
             }
 
             async importAllData(data) {
-                await this.clear('customers');
-                await this.clear('projects');
-                await this.clear('rooms');
-                await this.clear('images');
-                await this.clear('materials');
-                await this.clear('offers');
-                await this.clear('settings');
-
-                for (const c of data.customers || []) await this.add('customers', c);
-                for (const p of data.projects || []) await this.add('projects', p);
-                for (const r of data.rooms || []) await this.add('rooms', r);
-                for (const i of data.images || []) await this.add('images', i);
-                for (const m of data.materials || []) await this.add('materials', m);
-                for (const o of data.offers || []) await this.add('offers', o);
-                for (const s of data.settings || []) await this.put('settings', s);
+                for(const s of ['customers','projects','rooms','images','materials','offers','settings']) await this.clear(s);
+                for (const c of data.customers || []) await this.addLocalOnly('customers', c);
+                for (const p of data.projects || []) await this.addLocalOnly('projects', p);
+                for (const r of data.rooms || []) await this.addLocalOnly('rooms', r);
+                for (const i of data.images || []) await this.addLocalOnly('images', i);
+                for (const m of data.materials || []) await this.addLocalOnly('materials', m);
+                for (const o of data.offers || []) await this.addLocalOnly('offers', o);
+                for (const s of data.settings || []) await this.putLocalOnly('settings', s);
+                backgroundSyncPush(); // Alles neu hochladen
             }
         }
 
