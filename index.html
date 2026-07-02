@@ -475,15 +475,18 @@
 
         const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at', siteAddress:'site_address', articleNumber:'article_number', offerNumber:'offer_number', contactPerson:'contact_person', contactPhone:'contact_phone', contactEmail:'contact_email', validUntil:'valid_until', discountRate:'discount_rate', discountAmount:'discount_amount', netAfterDiscount:'net_after_discount' };
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
-
-        function toSnake(o) {
-            const r={};
-            for(const k in o) {
-                if(['_synced','_remote'].includes(k)) continue;
-                r[FIELD_MAP[k]||k]=o[k];
-            }
-            return r;
+function toSnake(o) {
+    const r = {};
+    for (const k in o) {
+        if (['_synced','_remote','rooms','images','offers'].includes(k)) continue;
+        const mapped = FIELD_MAP[k] || k;
+        // Nur Felder, die auch als Spalten existieren (oder im FIELD_MAP stehen), weitergeben
+        if (FIELD_MAP[k] || [...KNOWN_COLUMNS].includes(k)) {
+            r[mapped] = o[k];
         }
+    }
+    return r;
+}
 
         function toCamel(o) {
             const r={};
@@ -644,13 +647,20 @@
 
             // ---- Spezifische Helfer ----
             async getProjectWithDetails(projectId) {
-                const project = await this.get('projects', projectId);
-                if (!project) return null;
-                const rooms = await this.getByIndex('rooms', 'projectId', projectId);
-                const images = await this.getByIndex('images', 'projectId', projectId);
-                const offers = await this.getByIndex('offers', 'projectId', projectId);
-                return { ...project, rooms, images, offers };
-            }
+    const project = await this.get('projects', projectId);
+    if (!project) return null;
+    const rooms = await this.getByIndex('rooms', 'projectId', projectId);
+    const images = await this.getByIndex('images', 'projectId', projectId);
+    const offers = await this.getByIndex('offers', 'projectId', projectId);
+    // Wichtig: Kopie des Projekts ohne die Zusatzfelder zurückgeben,
+    // damit beim Sync keine nicht existierenden Spalten gesendet werden.
+    return {
+        ...project,
+        rooms,
+        images,
+        offers
+    };
+}
 
             async exportAllData() {
                 return {
