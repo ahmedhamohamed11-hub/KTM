@@ -641,17 +641,17 @@
     <div id="modalContainer"></div>
 
     <script>
-        // ============================================================
-        // ============ SUPABASE & SYNC LOGIK (REALTIME) ==============
-        // ============================================================
-        const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
-        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      // ============================================================
+// ============ SUPABASE & SYNC LOGIK (KORRIGIERT) ============
+// ============================================================
+const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
-        const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
+const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
+const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
 
-        function toSnake(o) { 
+function toSnake(o) { 
     const r={}; 
     for(const k in o) { 
         if(['_synced','_remote'].includes(k)) continue; 
@@ -659,213 +659,83 @@
     } 
     return r; 
 }
-        }
-        function toCamel(o) {
-            const r={};
-            for(const k in o) r[REVERSE_MAP[k]||k]=o[k];
-            return r;
-        }
 
-        // ---- FIX: Primärschlüssel-Helper ----
-        // Alle Tabellen nutzen keyPath 'id', NUR 'settings' nutzt keyPath 'key'.
-        // Vorher wurde in backgroundSyncPush() und handleRemoteChange() überall
-        // hart .id verwendet, wodurch Settings-Datensätze (Firmenlogo, Zahlungs-
-        // bedingungen, Angebots-Counter etc.) beim Sync einen DataError auslösten
-        // und dadurch den GESAMTEN Push-Durchlauf für alle Tabellen abbrachen.
-        function getPK(table, rec) {
-            if (!rec) return undefined;
-            return table === 'settings' ? rec.key : rec.id;
-        }
-
-        // ---- Echtzeit-Status UI ----
-        function updateSyncStatus(status, text) {
-            const statusEl = document.getElementById('syncStatus');
-            statusEl.textContent = text;
-            if (status === 'online') statusEl.style.color = '#059669'; // Grün
-            if (status === 'syncing') statusEl.style.color = '#d97706'; // Gelb
-            if (status === 'offline') statusEl.style.color = '#dc2626'; // Rot
-        }
-
-        // ---- Realtime Subscription ----
-        let realtimeChannel = null;
-
-        function initRealtime() {
-            if (realtimeChannel) sb.removeChannel(realtimeChannel);
-
-            realtimeChannel = sb.channel('public-tables-changes')
-                .on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public' },
-                    (payload) => handleRemoteChange(payload)
-                )
-                .subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        updateSyncStatus('online', '🟢 Online & Live');
-                    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                        updateSyncStatus('offline', '🔴 Getrennt');
-                    }
-                });
-        }
-
-        async function handleRemoteChange(payload) {
-            const table = payload.table;
-            const eventType = payload.eventType; // INSERT, UPDATE, DELETE
-
-            if (eventType === 'DELETE') {
-                // FIX: getPK() statt payload.old.id (settings hat keine .id, nur .key)
-                await db.deleteLocalOnly(table, getPK(table, payload.old));
-            } else {
-                const remoteData = payload.new;
-                const localData = toCamel(remoteData);
-                localData._synced = true;
-                localData._remote = true;
-                
-                // FIX: getPK() statt localData.id
-                const existing = await db.get(table, getPK(table, localData));
-
-                // Konfliktlösung: Existiert der Datensatz lokal und ist neuer?
-                if (existing) {
-                    const localTime = new Date(existing.updatedAt || 0).getTime();
-                    const remoteTime = new Date(localData.updatedAt || 0).getTime();
-
-                    if (localTime > remoteTime && !existing._synced) {
-                        // Lokaler Datensatz ist neuer und ungesynct -> Remote überschreiben (Push)
-                        backgroundSyncPush();
-                        return;
-                    }
-                }
-                await db.putLocalOnly(table, localData);
-            }
-
-            // UI aktualisieren, ohne die Seite neu zu laden
-            app.navigate(app.currentPage, app.currentProjectId);
-        }
-
-        // ---- Hintergrund-Synchronisation (Push) ----
-        let isSyncing = false;
-        async function backgroundSyncPush() {
-            if (!navigator.onLine || isSyncing) return;
-            isSyncing = true;
-            updateSyncStatus('syncing', '☁️ Uploading...');
-
-            try {
-                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
-                    const all = await db.getAll(t);
-                    const unsynced = all.filter(r => !r._synced);
-for (const rec of unsynced) {
-    const p = toSnake(rec);
-    if (!rec._remote) delete p.id; // neu -> Supabase vergibt eigene ID
-    const { data, error } = await sb.from(t)
-        .upsert(p, rec._remote ? { onConflict: 'id' } : undefined)
-        .select();
-    if (!error && data?.length) { 
-        await db.deleteLocalOnly(t, rec.id); 
-        const nr = toCamel(data[0]); 
-        nr._synced = true; 
-        nr._remote = true;
-        await db.addLocalOnly(t, nr); 
-    } else if (error) {
-        console.warn(`Sync-Fehler ${t}:`, error);
-    }
+function toCamel(o) { 
+    const r={}; 
+    for(const k in o) r[REVERSE_MAP[k]||k]=o[k]; 
+    return r; 
 }
+
+async function handleRemoteChange(payload) {
+    const { table, eventType, new: newRec, old: oldRec } = payload;
+    if (eventType === 'DELETE') {
+        await db.deleteLocalOnly(table, oldRec.key || oldRec.id);
+    } else {
+        const localData = toCamel(newRec);
+        localData._synced = true;
+        localData._remote = true;
+        await db.putLocalOnly(table, localData);
+    }
+    app.navigate(app.currentPage, app.currentProjectId);
+}
+
+// ---- Hintergrund-Sync (Push) ----
+async function backgroundSyncPush() {
+    if (!navigator.onLine) return;
+    try {
+        for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { 
+            const unsynced = (await db.getAll(t)).filter(r => !r._synced);
+            for (const rec of unsynced) {
+                const p = toSnake(rec);
+                if (!rec._remote) delete p.id; // Neu -> Supabase vergibt ID
+                
+                const { data, error } = await sb.from(t)
+                    .upsert(p, rec._remote ? { onConflict: t === 'settings' ? 'key' : 'id' } : undefined)
+                    .select();
+
+                if (!error && data?.length) { 
+                    await db.deleteLocalOnly(t, getPK(t, rec)); 
+                    const nr = toCamel(data[0]); 
+                    nr._synced = true; 
+                    nr._remote = true;
+                    await db.addLocalOnly(t, nr); 
                 }
-                updateSyncStatus('online', '🟢 Online & Live');
-            } catch(e) {
-                console.warn('Background Sync Fehler:', e);
-                updateSyncStatus('offline', '🔴 Sync-Fehler');
-            } finally {
-                isSyncing = false;
             }
         }
+    } catch(e) { console.warn('Sync-Fehler:', e); }
+}
 
-        // Initiale Synchronisation beim Start oder Wiederverbinden
-        async function initialFullSync() {
-            if (!navigator.onLine) return;
-            updateSyncStatus('syncing', '☁️ Lade Daten...');
-
-            // Zuerst Push lokaler Änderungen
-            await backgroundSyncPush();
-
-            // Dann Pull aller Tabellen (vereinfacht, holt nur Updates die neuer sind als lokaler Max-Timestamp)
-            try {
-                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
-                    const { data, error } = await sb.from(t).select('*');
-                    if (!error && data) {
-                        for (const row of data) {
-                            const rec = toCamel(row);
-                            rec._synced = true;
-                            rec._remote = true;
-                            const existing = await db.get(t, getPK(t, rec));
-                            if (!existing || new Date(rec.updatedAt) > new Date(existing.updatedAt)) {
-                                await db.putLocalOnly(t, rec);
-                            }
-                        }
-                    }
-                }
-            } catch(e) { console.warn('Initial Pull Error', e); }
-
-            app.navigate(app.currentPage, app.currentProjectId);
-            updateSyncStatus('online', '🟢 Online & Live');
-        }
-
-        // Online/Offline Listener
-        window.addEventListener('online', () => {
-            initialFullSync();
-            initRealtime();
-        });
-        window.addEventListener('offline', () => {
-            updateSyncStatus('offline', '🔴 Offline (Lokal)');
-        });
-
-
-        // ============================================================
-        // ============ DATENBANK-SCHICHT (IndexedDB) =================
-        // ============================================================
-        const DB_NAME = 'KTM_DB';
-        const DB_VERSION = 2;
-
-        class DatabaseManager {
-            constructor() { this.db = null; }
-
-            async init() {
-                return new Promise((resolve, reject) => {
-                    const request = indexedDB.open(DB_NAME, DB_VERSION);
-                    request.onupgradeneeded = (e) => {
-                        const db = e.target.result;
-                        const tx = e.target.transaction;
-
-                        const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'];
-                        const indexedStores = ['rooms', 'images', 'offers'];
-
-                        stores.forEach(s => {
-                            let store;
-                            if (!db.objectStoreNames.contains(s)) {
-                                store = db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
-                            } else {
-                                store = tx.objectStore(s);
-                            }
-
-                            if (s === 'customers' && !store.indexNames.contains('name')) {
-                                store.createIndex('name', 'lastName', { unique: false });
-                                store.createIndex('status', 'status', { unique: false });
-                            }
-                            if (s === 'projects' && !store.indexNames.contains('customerId')) {
-                                store.createIndex('customerId', 'customerId', { unique: false });
-                                store.createIndex('status', 'status', { unique: false });
-                            }
-                            if (s === 'materials' && !store.indexNames.contains('category')) {
-                                store.createIndex('category', 'category', { unique: false });
-                            }
-                            if (indexedStores.includes(s) && !store.indexNames.contains('projectId')) {
-                                store.createIndex('projectId', 'projectId', { unique: false });
-                            }
-                        });
-                    };
-                    request.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); };
-                    request.onerror = (e) => { console.error('DB-Fehler:', e.target.error); reject(e.target.error); };
+// ============================================================
+// ============ DATENBANK-SCHICHT (KORRIGIERT) ================
+// ============================================================
+class DatabaseManager {
+    constructor() { this.db = null; }
+    async init() {
+        return new Promise(r => {
+            const req = indexedDB.open('KTM_DB', 2);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'].forEach(s => {
+                    if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                 });
-            }
+            };
+            req.onsuccess = (e) => { this.db = e.target.result; r(); };
+        });
+    }
 
+    async putLocalOnly(s, d) { return new Promise(r => { const tx = this.db.transaction(s, 'readwrite'); tx.objectStore(s).put(d); tx.oncomplete = r; }); }
+    async deleteLocalOnly(s, id) { return new Promise(r => { const tx = this.db.transaction(s, 'readwrite'); tx.objectStore(s).delete(id); tx.oncomplete = r; }); }
+    async addLocalOnly(s, d) { return new Promise(r => { const tx = this.db.transaction(s, 'readwrite'); tx.objectStore(s).add(d); tx.oncomplete = r; }); }
+    
+    async getAll(s) { return new Promise(r => { const req = this.db.transaction(s).objectStore(s).getAll(); req.onsuccess = () => r(req.result); }); }
+    async get(s, id) { return new Promise(r => { const req = this.db.transaction(s).objectStore(s).get(id); req.onsuccess = () => r(req.result); }); }
+    
+    async add(s, d) { d._synced = false; await this.addLocalOnly(s, d); backgroundSyncPush(); }
+    async put(s, d) { d._synced = false; await this.putLocalOnly(s, d); backgroundSyncPush(); }
+    async delete(s, id) { await this.deleteLocalOnly(s, id); if(navigator.onLine) sb.from(s).delete().eq(s==='settings'?'key':'id', id); }
+    async clear(s) { return new Promise(r => { const tx = this.db.transaction(s, 'readwrite'); tx.objectStore(s).clear(); tx.oncomplete = r; }); }
+}
+const db = new DatabaseManager();
             // ---- Interne (Local Only) Methoden ----
             // Verhindern Endlosschleifen, wenn Daten von Supabase empfangen werden
             async addLocalOnly(storeName, data) {
