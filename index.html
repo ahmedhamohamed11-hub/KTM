@@ -906,6 +906,13 @@
         function formatCurrency(amount) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount || 0); }
         function formatDate(isoString) { return !isoString ? '-' : new Date(isoString).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
 
+        function toLocalDateString(date) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
         function getStatusClass(status) {
             const map = {
                 'Neu': 'status-neu', 'Besichtigung offen': 'status-offen', 'Besichtigt': 'status-offen',
@@ -2069,7 +2076,7 @@
                         if (selected.length === 0) { showToast('Bitte mindestens eine Position wählen.', 'error'); return; }
                         const calc = computeOfferTotals();
                         const validDays = parseInt(overlay.querySelector('#offerValidDays').value) || 14;
-                        const validUntil = new Date(Date.now() + validDays * 86400000).toISOString();
+                        const validUntil = toLocalDateString(new Date(Date.now() + validDays * 86400000));
                         const offerNumber = await generateOfferNumber();
 
                         const offerData = {
