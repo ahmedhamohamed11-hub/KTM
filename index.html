@@ -667,14 +667,28 @@ async put(storeName, data) {
     return result;
 }
 
-            async delete(storeName, id) {
-                await this.deleteLocalOnly(storeName, id);
-                if (navigator.onLine && supabaseAvailable) {
-                    sb.from(storeName).delete().eq(storeName === 'settings' ? 'key' : 'id', id).then(() => {
-                        console.log(`Deleted remote ${storeName} ${id}`);
-                    }).catch(console.warn);
-                }
-            }
+         async delete(storeName, id) {
+
+    await this.deleteLocalOnly(storeName, id);
+
+    if (!navigator.onLine || !supabaseAvailable) return;
+
+    try {
+
+        const { error } = await sb
+            .from(storeName)
+            .delete()
+            .eq(storeName === 'settings' ? 'key' : 'id', id);
+
+        if (error) {
+            console.error(error);
+        }
+
+    } catch (e) {
+        console.error(e);
+    }
+
+}
 
             async getProjectWithDetails(projectId) {
     const project = await this.get('projects', projectId);
@@ -728,10 +742,23 @@ async put(storeName, data) {
             if (eventType === 'DELETE') {
                 await db.deleteLocalOnly(table, oldRec.key || oldRec.id);
             } else {
-                const localData = toCamel(newRec);
-                localData._synced = true;
-                localData._remote = true;
-                await db.putLocalOnly(table, localData);
+               const localData = toCamel(newRec);
+
+const existing = await db.get(table, localData.id);
+
+if (
+    existing &&
+    existing.updatedAt &&
+    localData.updatedAt &&
+    new Date(existing.updatedAt) >= new Date(localData.updatedAt)
+) {
+    return;
+}
+
+localData._synced = true;
+localData._remote = true;
+
+await db.putLocalOnly(table, localData);
             }
             app.navigate(app.currentPage, app.currentProjectId);
         }
@@ -843,11 +870,14 @@ async function backgroundSyncPush() {
                             const nr = toCamel(data[0]);
                             nr._synced = true;
                             nr._remote = true;
-
+                            nr.updatedAt = new Date().toISOString();
                             const idChanged = !rec._remote && oldPK !== undefined && oldPK !== nr.id;
 
-                            await db.deleteLocalOnly(t, oldPK);
-                            await db.addLocalOnly(t, nr);
+                            if (oldPK !== nr.id) {
+    await db.deleteLocalOnly(t, oldPK);
+}
+
+await db.putLocalOnly(t, nr);
 
                             if (idChanged) {
                                 await remapForeignKeys(t, oldPK, nr.id);
