@@ -8,560 +8,2079 @@
     <title>KTM – Kälte Technik Management</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%232563eb'/><text x='32' y='44' text-anchor='middle' font-size='36' fill='white'>❄</text></svg>">
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
     <style>
         :root {
-            --bg-primary: #f5f6f8; --bg-secondary: #ffffff; --bg-tertiary: #eef1f5;
-            --text-primary: #1a1d23; --text-secondary: #5a5f6b; --text-muted: #8b909c;
-            --border: #e2e5ea; --accent: #2563eb; --accent-hover: #1d4ed8; --accent-light: #eff3ff;
-            --success: #059669; --warning: #d97706; --danger: #dc2626; --info: #6366f1;
-            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05); --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-            --shadow-lg: 0 10px 30px rgba(0,0,0,0.12); --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
-            --transition: 0.2s ease; --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            --sidebar-width: 260px; --header-height: 64px;
+            --bg-primary: #f5f6f8;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #eef1f5;
+            --text-primary: #1a1d23;
+            --text-secondary: #5a5f6b;
+            --text-muted: #8b909c;
+            --border: #e2e5ea;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+            --accent-light: #eff3ff;
+            --success: #059669;
+            --success-light: #ecfdf5;
+            --warning: #d97706;
+            --warning-light: #fffbeb;
+            --danger: #dc2626;
+            --danger-light: #fef2f2;
+            --info: #6366f1;
+            --info-light: #eef2ff;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 10px 30px rgba(0,0,0,0.12);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --transition: 0.2s ease;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --sidebar-width: 260px;
+            --header-height: 64px;
         }
+
         [data-theme="dark"] {
-            --bg-primary: #111827; --bg-secondary: #1a1f2e; --bg-tertiary: #222837;
-            --text-primary: #e8eaed; --text-secondary: #9ca3af; --text-muted: #6b7280;
-            --border: #2d3340; --accent: #3b82f6; --accent-hover: #60a5fa; --accent-light: #1e293b;
+            --bg-primary: #111827;
+            --bg-secondary: #1a1f2e;
+            --bg-tertiary: #222837;
+            --text-primary: #e8eaed;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #2d3340;
+            --accent: #3b82f6;
+            --accent-hover: #60a5fa;
+            --accent-light: #1e293b;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
         }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); display: flex; min-height: 100vh; transition: background var(--transition), color var(--transition); }
-        .sidebar { width: var(--sidebar-width); background: var(--bg-secondary); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 16px; flex-shrink: 0; transition: left 0.3s; z-index: 100; }
-        .sidebar-logo { display: flex; align-items: center; gap: 12px; padding: 8px 12px; margin-bottom: 28px; font-size: 20px; font-weight: 700; color: var(--accent); }
-        .sidebar-logo .logo-icon { width: 40px; height: 40px; background: var(--accent); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 22px; }
+
+        body {
+            font-family: var(--font-family);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            min-height: 100vh;
+            transition: background var(--transition), color var(--transition);
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 16px;
+            flex-shrink: 0;
+            transition: all var(--transition);
+            z-index: 100;
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            margin-bottom: 28px;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.3px;
+        }
+        .sidebar-logo .logo-icon {
+            width: 40px; height: 40px;
+            background: var(--accent);
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 22px;
+        }
         .nav-section { margin-bottom: 20px; }
-        .nav-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 8px 12px; font-weight: 600; }
-        .nav-item { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; color: var(--text-secondary); font-weight: 500; margin-bottom: 2px; transition: all var(--transition); }
-        .nav-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-        .nav-item.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+        .nav-section-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            padding: 8px 12px;
+            font-weight: 600;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 11px 14px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .nav-item:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .nav-item.active {
+            background: var(--accent-light);
+            color: var(--accent);
+            font-weight: 600;
+        }
         .nav-item .nav-icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
-        .nav-badge { margin-left: auto; background: var(--accent); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
-        .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .topbar { height: var(--header-height); background: var(--bg-secondary); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; gap: 16px; flex-shrink: 0; }
-        .search-box { flex: 1; max-width: 400px; display: flex; align-items: center; background: var(--bg-tertiary); border-radius: 24px; padding: 9px 16px; gap: 8px; }
-        .search-box input { border: none; background: transparent; flex: 1; font-size: 14px; color: var(--text-primary); outline: none; font-family: var(--font-family); }
-        .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-        .icon-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); transition: all var(--transition); }
+        .nav-badge {
+            margin-left: auto;
+            background: var(--accent);
+            color: #fff;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .topbar {
+            height: var(--header-height);
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+        .search-box {
+            flex: 1;
+            max-width: 400px;
+            display: flex;
+            align-items: center;
+            background: var(--bg-tertiary);
+            border-radius: 24px;
+            padding: 9px 16px;
+            gap: 8px;
+        }
+        .search-box input {
+            border: none;
+            background: transparent;
+            flex: 1;
+            font-size: 14px;
+            color: var(--text-primary);
+            outline: none;
+            font-family: var(--font-family);
+        }
+        .search-box .search-icon { color: var(--text-muted); font-size: 16px; }
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+        }
+        .icon-btn {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--text-secondary);
+            transition: all var(--transition);
+        }
         .icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-        .content-scroll { flex: 1; overflow-y: auto; padding: 24px; }
-        .page-title { font-size: 26px; font-weight: 700; margin-bottom: 24px; }
-        .stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
-        .stat-card { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 20px 24px; box-shadow: var(--shadow-sm); border: 1px solid var(--border); }
-        .stat-card .stat-value { font-size: 32px; font-weight: 700; color: var(--accent); }
-        .stat-card .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 28px; }
-        .nav-card { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 22px 20px; box-shadow: var(--shadow-sm); border: 1px solid var(--border); cursor: pointer; transition: all var(--transition); display: flex; align-items: center; gap: 16px; }
+
+        .content-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .page-title {
+            font-size: 26px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            letter-spacing: -0.4px;
+            color: var(--text-primary);
+        }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .stat-card {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            padding: 20px 24px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+            transition: all var(--transition);
+        }
+        .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -1px;
+        }
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .nav-card {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            padding: 22px 20px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
         .nav-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-        .nav-card .card-icon { width: 50px; height: 50px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
-        .card-icon.blue { background: #eff3ff; } .card-icon.green { background: #ecfdf5; } .card-icon.amber { background: #fffbeb; } .card-icon.purple { background: #eef2ff; } .card-icon.red { background: #fef2f2; }
-        .nav-card .card-title { font-weight: 600; font-size: 15px; } .nav-card .card-subtitle { font-size: 12px; color: var(--text-muted); }
-        .table-container { background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); overflow-x: auto; box-shadow: var(--shadow-sm); }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th { background: var(--bg-tertiary); padding: 13px 16px; text-align: left; font-weight: 600; font-size: 12px; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); }
-        td { padding: 13px 16px; border-bottom: 1px solid var(--border); }
+        .nav-card .card-icon {
+            width: 50px; height: 50px;
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+        .card-icon.blue { background: #eff3ff; }
+        .card-icon.green { background: #ecfdf5; }
+        .card-icon.amber { background: #fffbeb; }
+        .card-icon.purple { background: #eef2ff; }
+        .card-icon.red { background: #fef2f2; }
+        .nav-card .card-title { font-weight: 600; font-size: 15px; }
+        .nav-card .card-subtitle { font-size: 12px; color: var(--text-muted); }
+
+        .table-container {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            overflow-x: auto;
+            box-shadow: var(--shadow-sm);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th {
+            background: var(--bg-tertiary);
+            padding: 13px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        td {
+            padding: 13px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+        tr:last-child td { border-bottom: none; }
         tr:hover td { background: var(--bg-tertiary); }
-        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-        .status-neu { background: #eef2ff; color: #6366f1; } .status-offen { background: #fffbeb; color: #d97706; } .status-aktiv { background: #ecfdf5; color: #059669; } .status-fertig { background: #f3f4f6; color: #6b7280; }
-        .btn { padding: 10px 18px; border-radius: 24px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-family); white-space: nowrap; }
-        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
-        .btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--text-primary); } .btn-outline:hover { background: var(--bg-tertiary); }
-        .btn-danger { background: var(--danger); color: #fff; } .btn-danger:hover { opacity: 0.9; }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-neu { background: #eef2ff; color: #6366f1; }
+        .status-offen { background: #fffbeb; color: #d97706; }
+        .status-aktiv { background: #ecfdf5; color: #059669; }
+        .status-fertig { background: #f3f4f6; color: #6b7280; }
+
+        .btn {
+            padding: 10px 18px;
+            border-radius: 24px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-family: var(--font-family);
+            white-space: nowrap;
+        }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--text-primary); }
+        .btn-outline:hover { background: var(--bg-tertiary); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { opacity: 0.9; }
         .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 16px; }
+        .btn-icon { width: 36px; height: 36px; padding: 0; border-radius: 50%; justify-content: center; }
+
         .form-group { margin-bottom: 18px; }
-        .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary); }
-        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; background: var(--bg-secondary); color: var(--text-primary); font-family: var(--font-family); transition: all var(--transition); }
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
-        .modal { background: var(--bg-secondary); border-radius: var(--radius-lg); width: 90%; max-width: 650px; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: var(--shadow-lg); border: 1px solid var(--border); }
-        .modal h3 { font-size: 20px; margin-bottom: 20px; font-weight: 700; }
-        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 11px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            transition: all var(--transition);
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s ease;
+        }
+        .modal {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            width: 90%;
+            max-width: 650px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 28px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+        }
+        .modal h3 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
-        .toast { padding: 14px 20px; border-radius: var(--radius-md); color: #fff; font-weight: 600; box-shadow: var(--shadow-lg); animation: slideIn 0.3s ease; display: flex; align-items: center; gap: 8px; min-width: 250px; }
-        .toast-success { background: #059669; } .toast-error { background: #dc2626; } .toast-info { background: #6366f1; }
+
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            padding: 14px 20px;
+            border-radius: var(--radius-md);
+            color: #fff;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: var(--shadow-lg);
+            animation: slideIn 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 250px;
+        }
+        .toast-success { background: #059669; }
+        .toast-error { background: #dc2626; }
+        .toast-info { background: #6366f1; }
         @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
-        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
-        .image-card { aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); cursor: pointer; position: relative; }
-        .image-card img { width: 100%; height: 100%; object-fit: cover; }
-        .image-card .img-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; padding: 6px 10px; font-size: 11px; text-align: center; }
-        @media (max-width: 900px) { .sidebar { position: fixed; left: -280px; height: 100vh; } .sidebar.open { left: 0; } }
-        @media (max-width: 600px) { .modal { width: 95%; padding: 16px; } .topbar { padding: 0 12px; } .content-scroll { padding: 16px; } }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 12px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 14px;
+            transition: all var(--transition);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            font-family: var(--font-family);
+        }
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+        }
+        .image-card {
+            aspect-ratio: 1;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            position: relative;
+        }
+        .image-card img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+        .image-card .img-overlay {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 6px 10px;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        @media (max-width: 900px) {
+            .sidebar {
+                position: fixed;
+                left: -280px;
+                height: 100vh;
+                transition: left 0.3s ease;
+            }
+            .sidebar.open { left: 0; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .card-grid { grid-template-columns: 1fr; }
+            .form-row { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 600px) {
+            .stats-row { grid-template-columns: 1fr; }
+            .modal { width: 95%; padding: 16px; margin: 8px; }
+            .topbar { padding: 0 12px; }
+            .content-scroll { padding: 16px; }
+        }
+
+        @media print {
+            .sidebar, .topbar, .toast-container { display: none !important; }
+            .main-area { margin: 0; }
+            .content-scroll { overflow: visible; padding: 0; }
+            .modal-overlay { position: static; }
+        }
+
+        .splash-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .splash-screen .splash-logo {
+            font-size: 48px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body data-theme="light">
 
-<div class="toast-container" id="toastContainer"></div>
-
-<aside class="sidebar" id="sidebar">
-    <div class="sidebar-logo"><div class="logo-icon">❄</div><span>KTM</span></div>
-    <nav>
-        <div class="nav-section"><div class="nav-section-label">Hauptmenü</div>
-            <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Dashboard</div>
-            <div class="nav-item" data-page="customers"><span class="nav-icon">👥</span> Kunden <span class="nav-badge" id="customerCount">0</span></div>
-            <div class="nav-item" data-page="projects"><span class="nav-icon">📋</span> Projekte <span class="nav-badge" id="projectCount">0</span></div>
-        </div>
-        <div class="nav-section"><div class="nav-section-label">Werkzeuge</div>
-            <div class="nav-item" data-page="materials"><span class="nav-icon">📦</span> Material</div>
-            <div class="nav-item" data-page="offers"><span class="nav-icon">📄</span> Angebote</div>
-        </div>
-        <div class="nav-section"><div class="nav-section-label">System</div>
-            <div class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span> Einstellungen</div>
-            <div class="nav-item" data-page="backup"><span class="nav-icon">💾</span> Backup</div>
-            <div class="nav-item" id="syncBtn"><span class="nav-icon">🔄</span> Sync</div>
-        </div>
-    </nav>
-    <div style="margin-top:auto;padding-top:16px;">
-        <div class="nav-item" id="themeToggle"><span class="nav-icon">🌙</span> Dunkelmodus</div>
+    <!-- SPLASH SCREEN -->
+    <div class="splash-screen" id="splash">
+        <div class="splash-logo">❄️</div>
+        <div style="font-weight:700;font-size:20px;">KTM</div>
+        <div style="color:var(--text-muted);font-size:13px;">Kälte Technik Management – Wird geladen…</div>
     </div>
-</aside>
 
-<div class="main-area">
-    <div class="topbar">
-        <button class="icon-btn" id="menuToggle" style="display:none;">☰</button>
-        <div class="search-box"><span>🔍</span><input type="text" id="globalSearch" placeholder="Suche..."></div>
-        <div class="topbar-actions">
-            <span id="syncStatus" style="font-size:12px;color:var(--text-muted);margin-right:8px;"></span>
-            <button class="icon-btn" onclick="app.navigate('backup')">💾</button>
-            <button class="icon-btn" onclick="app.navigate('settings')">⚙️</button>
+    <div class="toast-container" id="toastContainer"></div>
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <div class="logo-icon">❄</div>
+            <span>KTM</span>
+        </div>
+        <nav>
+            <div class="nav-section">
+                <div class="nav-section-label">Hauptmenü</div>
+                <div class="nav-item active" data-page="dashboard">
+                    <span class="nav-icon">📊</span> Dashboard
+                </div>
+                <div class="nav-item" data-page="customers">
+                    <span class="nav-icon">👥</span> Kunden
+                    <span class="nav-badge" id="customerCount">0</span>
+                </div>
+                <div class="nav-item" data-page="projects">
+                    <span class="nav-icon">📋</span> Projekte
+                    <span class="nav-badge" id="projectCount">0</span>
+                </div>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-label">Werkzeuge</div>
+                <div class="nav-item" data-page="materials">
+                    <span class="nav-icon">📦</span> Material
+                </div>
+                <div class="nav-item" data-page="offers">
+                    <span class="nav-icon">📄</span> Angebote
+                </div>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-label">System</div>
+                <div class="nav-item" data-page="settings">
+                    <span class="nav-icon">⚙️</span> Einstellungen
+                </div>
+                <div class="nav-item" data-page="backup">
+                    <span class="nav-icon">💾</span> Backup
+                </div>
+                <div class="nav-item" id="syncBtn">
+                    <span class="nav-icon">🔄</span> Sync
+                </div>
+            </div>
+        </nav>
+        <div style="margin-top:auto;padding-top:16px;">
+            <div class="nav-item" id="themeToggle" style="cursor:pointer;">
+                <span class="nav-icon">🌙</span> Dunkelmodus
+            </div>
+        </div>
+    </aside>
+
+    <div class="main-area">
+        <div class="topbar" id="topbar">
+            <button class="icon-btn" id="menuToggle" style="display:none;" title="Menü">☰</button>
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="globalSearch" placeholder="Suche nach Kunden, Projekten, Material...">
+            </div>
+            <div class="topbar-actions">
+                <span id="syncStatus" style="font-size:12px;color:var(--text-muted);margin-right:8px;"></span>
+                <button class="icon-btn" title="Backup" onclick="app.navigate('backup')">💾</button>
+                <button class="icon-btn" title="Einstellungen" onclick="app.navigate('settings')">⚙️</button>
+            </div>
+        </div>
+        <div class="content-scroll" id="contentArea">
+            <!-- Dynamisch gefüllt -->
         </div>
     </div>
-    <div class="content-scroll" id="contentArea"><h1>Wird geladen...</h1></div>
-</div>
-<div id="modalContainer"></div>
 
-<script>
-    // ==================== SUPABASE ====================
-    const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
-    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    <div id="modalContainer"></div>
 
-    // ==================== SYNC ====================
-    const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
-    const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
-    function toSnake(o) { const r={}; for(const k in o) { if(['id','_synced'].includes(k)) continue; r[FIELD_MAP[k]||k]=o[k]; } return r; }
-    function toCamel(o) { const r={}; for(const k in o) r[REVERSE_MAP[k]||k]=o[k]; return r; }
+    <script>
+        // ============================================================
+        // SUPABASE-KONFIGURATION (aus neuem Code)
+        // ============================================================
+        const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    async function syncPush(table) {
-        const all = await db.getAll(table);
-        for (const rec of all) { if(rec._synced) continue;
-            const p = toSnake(rec);
-            try {
-                const { data, error } = await sb.from(table).insert(p).select();
-                if (!error && data?.length) { await db.delete(table, rec.id); const nr = toCamel(data[0]); nr._synced = true; await db.add(table, nr); }
-                else if (error) console.warn(`Push ${table}:`, error.message);
-            } catch(e) { console.warn(`Push-Ex ${table}:`, e.message); }
+        // ============================================================
+        // SYNCHRONISATION (Snake/Camel-Mapping)
+        // ============================================================
+        const FIELD_MAP = {
+            firstName:'first_name', lastName:'last_name', houseNumber:'house_number',
+            customerId:'customer_id', projectId:'project_id', roomCount:'room_count',
+            purchasePrice:'purchase_price', sellingPrice:'selling_price',
+            totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount',
+            coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details',
+            createdAt:'created_at', updatedAt:'updated_at'
+        };
+        const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
+
+        function toSnake(obj) {
+            const result = {};
+            for (const key in obj) {
+                if (['id','_synced'].includes(key)) continue;
+                result[FIELD_MAP[key] || key] = obj[key];
+            }
+            return result;
         }
-    }
+        function toCamel(obj) {
+            const result = {};
+            for (const key in obj) result[REVERSE_MAP[key] || key] = obj[key];
+            return result;
+        }
 
-    async function syncPull(table) {
-        try {
-            const { data, error } = await sb.from(table).select('*');
-            if (error) { console.warn(`Pull ${table}:`, error.message); return; }
-            const ids = new Set((await db.getAll(table)).map(r=>r.id));
-            for (const row of data) { const rec = toCamel(row); rec._synced = true; if(ids.has(rec.id)) await db.put(table, rec); else await db.add(table, rec); }
-        } catch(e) { console.warn(`Pull-Ex ${table}:`, e.message); }
-    }
+        async function syncPush(table) {
+            const all = await db.getAll(table);
+            for (const rec of all) {
+                if (rec._synced) continue;
+                const payload = toSnake(rec);
+                try {
+                    const { data, error } = await sb.from(table).insert(payload).select();
+                    if (!error && data?.length) {
+                        await db.delete(table, rec.id);
+                        const newRec = toCamel(data[0]);
+                        newRec._synced = true;
+                        await db.add(table, newRec);
+                    } else if (error) {
+                        console.warn(`Push ${table}:`, error.message);
+                    }
+                } catch (e) {
+                    console.warn(`Push-Exception ${table}:`, e.message);
+                }
+            }
+        }
 
-    async function fullSync() {
-        if (!navigator.onLine) { showToast('Offline', 'info'); return; }
-        document.getElementById('syncStatus').textContent = 'Sync...';
-        try {
-            for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { await syncPush(t); await syncPull(t); }
-            showToast('Sync abgeschlossen', 'success');
-        } catch(e) { showToast('Sync-Fehler', 'error'); console.error(e); }
-        document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
-        app.navigate(app.currentPage, app.currentProjectId);
-    }
+        async function syncPull(table) {
+            try {
+                const { data, error } = await sb.from(table).select('*');
+                if (error) { console.warn(`Pull ${table}:`, error.message); return; }
+                const localIds = new Set((await db.getAll(table)).map(r => r.id));
+                for (const row of data) {
+                    const rec = toCamel(row);
+                    rec._synced = true;
+                    if (localIds.has(rec.id)) {
+                        await db.put(table, rec);
+                    } else {
+                        await db.add(table, rec);
+                    }
+                }
+            } catch (e) {
+                console.warn(`Pull-Exception ${table}:`, e.message);
+            }
+        }
 
-    // ==================== DATENBANK ====================
-    const DB_NAME = 'KTM_DB';
-    const DB_VERSION = 2; // v2: Index "projectId" auf rooms/images/offers ergänzt (fehlte in v1 -> löschen/laden schlug fehl)
-    class DatabaseManager {
-        constructor() { this.db = null; }
-        async init() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
-                request.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    const tx = e.target.transaction;
-                    const stores = ['customers','projects','rooms','images','materials','offers','settings'];
-                    const indexedStores = ['rooms','images','offers'];
-                    stores.forEach(s => {
-                        let store;
-                        if (!db.objectStoreNames.contains(s)) {
-                            store = db.createObjectStore(s, { keyPath: 'id', autoIncrement: true });
-                        } else {
-                            store = tx.objectStore(s);
+        async function fullSync() {
+            if (!navigator.onLine) { showToast('Keine Internetverbindung – Offline-Modus', 'info'); return; }
+            document.getElementById('syncStatus').textContent = 'Sync…';
+            try {
+                const tables = ['customers','projects','rooms','images','materials','offers','settings'];
+                for (const t of tables) {
+                    await syncPush(t);
+                    await syncPull(t);
+                }
+                showToast('Synchronisation abgeschlossen', 'success');
+            } catch (e) {
+                showToast('Sync-Fehler: ' + e.message, 'error');
+                console.error(e);
+            }
+            document.getElementById('syncStatus').textContent = navigator.onLine ? '🟢 Online' : '🔴 Offline';
+            app.navigate(app.currentPage, app.currentProjectId);
+        }
+
+        // ============================================================
+        // INDEXEDDB-DATENBANK (erweiterte Struktur aus erstem Code)
+        // ============================================================
+        const DB_NAME = 'KTM_DB';
+        const DB_VERSION = 3;
+
+        class DatabaseManager {
+            constructor() { this.db = null; }
+
+            async init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        // Kunden
+                        if (!db.objectStoreNames.contains('customers')) {
+                            const store = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
+                            store.createIndex('name', 'lastName', { unique: false });
+                            store.createIndex('status', 'status', { unique: false });
+                            store.createIndex('created', 'createdAt', { unique: false });
                         }
-                        if (indexedStores.includes(s) && !store.indexNames.contains('projectId')) {
+                        // Projekte
+                        if (!db.objectStoreNames.contains('projects')) {
+                            const store = db.createObjectStore('projects', { keyPath: 'id', autoIncrement: true });
+                            store.createIndex('customerId', 'customerId', { unique: false });
+                            store.createIndex('status', 'status', { unique: false });
+                        }
+                        // Räume
+                        if (!db.objectStoreNames.contains('rooms')) {
+                            const store = db.createObjectStore('rooms', { keyPath: 'id', autoIncrement: true });
                             store.createIndex('projectId', 'projectId', { unique: false });
                         }
-                    });
-                };
-                request.onsuccess = (e) => { this.db = e.target.result; resolve(); };
-                request.onerror = () => reject(request.error);
-            });
-        }
-        async add(store, data) { if (data._synced === undefined) data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).add(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
-        async put(store, data) { if (data._synced === undefined) data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).put(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
-        async get(store, id) { return new Promise(r => { this.db.transaction(store).objectStore(store).get(id).onsuccess = e => r(e.target.result); }); }
-        async getAll(store) { return new Promise(r => { this.db.transaction(store).objectStore(store).getAll().onsuccess = e => r(e.target.result); }); }
-        async delete(store, id) { return new Promise(r => { this.db.transaction(store,'readwrite').objectStore(store).delete(id).onsuccess = () => r(); }); }
-        async clear(store) { return new Promise(r => { this.db.transaction(store,'readwrite').objectStore(store).clear().onsuccess = () => r(); }); }
-        async getByIndex(store, index, value) { return new Promise(r => { const tx = this.db.transaction(store); const req = tx.objectStore(store).index(index).getAll(value); req.onsuccess = e => r(e.target.result); }); }
-        async getProjectWithDetails(id) { const p = await this.get('projects', id); if(!p) return null; const rooms = await this.getByIndex('rooms','projectId',id); const images = await this.getByIndex('images','projectId',id); const offers = await this.getByIndex('offers','projectId',id); return {...p, rooms, images, offers}; }
-        async exportAllData() { return { customers: await this.getAll('customers'), projects: await this.getAll('projects'), rooms: await this.getAll('rooms'), images: await this.getAll('images'), materials: await this.getAll('materials'), offers: await this.getAll('offers'), settings: await this.getAll('settings'), exportDate: new Date().toISOString(), version: '1.0' }; }
-        async importAllData(data) { for(const s of ['customers','projects','rooms','images','materials','offers','settings']) await this.clear(s); for(const c of data.customers||[]) await this.add('customers', c); for(const p of data.projects||[]) await this.add('projects', p); for(const r of data.rooms||[]) await this.add('rooms', r); for(const i of data.images||[]) await this.add('images', i); for(const m of data.materials||[]) await this.add('materials', m); for(const o of data.offers||[]) await this.add('offers', o); for(const s of data.settings||[]) await this.put('settings', s); }
-    }
-    const db = new DatabaseManager();
-
-    // ==================== HILFSFUNKTIONEN ====================
-    function showToast(msg, type='info') { const c = document.getElementById('toastContainer'); const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg; c.appendChild(t); setTimeout(() => t.remove(), 3000); }
-    function formatCurrency(v) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(v||0); }
-    function formatDate(iso) { return iso ? new Date(iso).toLocaleDateString('de-DE') : '-'; }
-    function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
-    function getStatusClass(s) { const m = { 'Neu':'status-neu', 'Besichtigung offen':'status-offen', 'Angebot gesendet':'status-aktiv', 'Fertig':'status-fertig' }; return m[s] || 'status-neu'; }
-    function calcCooling(rooms) { if(!rooms?.length) return { totalKW:0, recommendation:null }; let total=0; rooms.forEach(r => total += (r.length||0)*(r.width||0)*80); const kw = Math.round(total/100)/10; const sizes = [2.0,2.5,3.5,4.2,5.0,6.0,7.1,8.5,10.0]; return { totalKW:kw, recommendation: sizes.find(s=>s>=kw) || sizes[sizes.length-1], details:[] }; }
-    function showModal(title, html, onSave) { const modal = document.createElement('div'); modal.className = 'modal-overlay'; modal.innerHTML = `<div class="modal"><h3>${title}</h3>${html}<div class="modal-actions"><button class="btn btn-outline cancel-btn">Abbrechen</button><button class="btn btn-primary save-btn">Speichern</button></div></div>`; document.body.appendChild(modal); modal.querySelector('.cancel-btn').onclick = () => modal.remove(); modal.querySelector('.save-btn').onclick = () => { if(onSave) onSave(modal); }; modal.addEventListener('click', (e) => { if(e.target === modal) modal.remove(); }); }
-
-    // ==================== SEITEN ====================
-    const contentArea = document.getElementById('contentArea');
-
-    async function renderDashboard() {
-        const [customers, projects, offers, materials] = await Promise.all([db.getAll('customers'), db.getAll('projects'), db.getAll('offers'), db.getAll('materials')]);
-        document.getElementById('customerCount').textContent = customers.length;
-        document.getElementById('projectCount').textContent = projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length;
-        contentArea.innerHTML = `<h1 class="page-title">Dashboard</h1>
-            <div class="stats-row">
-                <div class="stat-card"><div class="stat-value">${customers.length}</div><div class="stat-label">Kunden</div></div>
-                <div class="stat-card"><div class="stat-value">${projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length}</div><div class="stat-label">Offene Projekte</div></div>
-                <div class="stat-card"><div class="stat-value">${offers.length}</div><div class="stat-label">Angebote</div></div>
-            </div>
-            <div class="card-grid">
-                <div class="nav-card" onclick="app.navigate('customers')"><div class="card-icon blue">👥</div><div><div class="card-title">Kunden</div><div class="card-subtitle">${customers.length} Kunden</div></div></div>
-                <div class="nav-card" onclick="app.navigate('projects')"><div class="card-icon green">📋</div><div><div class="card-title">Projekte</div><div class="card-subtitle">${projects.length} gesamt</div></div></div>
-                <div class="nav-card" onclick="app.navigate('materials')"><div class="card-icon amber">📦</div><div><div class="card-title">Material</div><div class="card-subtitle">${materials.length} Artikel</div></div></div>
-                <div class="nav-card" onclick="app.navigate('offers')"><div class="card-icon purple">📄</div><div><div class="card-title">Angebote</div><div class="card-subtitle">${offers.length} erstellt</div></div></div>
-            </div>`;
-    }
-
-    async function renderCustomers() {
-        const customers = await db.getAll('customers');
-        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Kunden</h1><button class="btn btn-primary" onclick="openCustomerModal()">+ Neuer Kunde</button></div>
-            <div class="table-container"><table><thead><tr><th>Name</th><th>Ort</th><th>Telefon</th><th></th></tr></thead><tbody>
-            ${customers.map(c=>`<tr><td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong></td><td>${escapeHtml(c.city||'')}</td><td>${escapeHtml(c.phone||'')}</td><td>
-                <button class="btn btn-sm btn-outline" onclick="openCustomerModal(${c.id})">✏️</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteCustomer(${c.id})">🗑</button>
-            </td></tr>`).join('')}</tbody></table></div>`;
-    }
-
-    async function openCustomerModal(id) {
-        const cust = id ? await db.get('customers', id) : {};
-        showModal(id?'Kunde bearbeiten':'Neuer Kunde', `
-            <div class="form-row"><div class="form-group"><label>Vorname</label><input id="cfname" value="${escapeHtml(cust.firstName||'')}"></div><div class="form-group"><label>Nachname</label><input id="clname" value="${escapeHtml(cust.lastName||'')}"></div></div>
-            <div class="form-row"><div class="form-group"><label>Straße</label><input id="cstreet" value="${escapeHtml(cust.street||'')}"></div><div class="form-group"><label>Hausnr.</label><input id="chnumber" value="${escapeHtml(cust.houseNumber||'')}"></div></div>
-            <div class="form-row"><div class="form-group"><label>PLZ</label><input id="czip" value="${escapeHtml(cust.zip||'')}"></div><div class="form-group"><label>Ort</label><input id="ccity" value="${escapeHtml(cust.city||'')}"></div></div>
-            <div class="form-group"><label>Telefon</label><input id="cphone" value="${escapeHtml(cust.phone||'')}"></div>
-        `, async (modal) => {
-            const data = { firstName: modal.querySelector('#cfname').value, lastName: modal.querySelector('#clname').value, street: modal.querySelector('#cstreet').value, houseNumber: modal.querySelector('#chnumber').value, zip: modal.querySelector('#czip').value, city: modal.querySelector('#ccity').value, phone: modal.querySelector('#cphone').value };
-            if(id) { data.id = id; await db.put('customers', data); } else await db.add('customers', data);
-            modal.remove(); renderCustomers();
-        });
-    }
-    async function deleteCustomer(id) { if(confirm('Löschen?')) { await db.delete('customers', id); renderCustomers(); } }
-
-    async function renderProjects(projectId) {
-        const projects = await db.getAll('projects'); const customers = await db.getAll('customers');
-        let detail = '';
-        if(projectId) {
-            const p = await db.getProjectWithDetails(projectId);
-            if(p) {
-                const cust = customers.find(c=>c.id===p.customerId);
-                const cooling = calcCooling(p.rooms||[]);
-                detail = `<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;margin-top:20px;">
-                    <h3>📋 ${escapeHtml(p.title)}</h3><p>Kunde: ${cust?`${cust.firstName} ${cust.lastName}`:'-'}</p><p>Status: ${p.status}</p>
-                    <button class="btn btn-sm btn-outline" onclick="openProjectModal(${projectId})">✏️</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteProject(${projectId})">🗑</button>
-                    <h4>Räume</h4><table><tr><th>Name</th><th>Maße</th><th>Fläche</th><th>kW</th><th></th></tr>
-                    ${(p.rooms||[]).map(r=>`<tr><td>${escapeHtml(r.name||'Raum')}</td><td>${r.length}x${r.width}x${r.height}</td><td>${((r.length*r.width).toFixed(1))} m²</td><td>${((r.length*r.width*80)/1000).toFixed(1)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteRoom(${r.id},${projectId})">🗑</button></td></tr>`).join('')}</table>
-                    <button class="btn btn-sm btn-primary" onclick="openRoomModal(${projectId})">+ Raum</button>
-                    ${cooling.recommendation?`<p>❄️ Empf. Kälteleistung: <strong>${cooling.recommendation} kW</strong></p>`:''}
-                    <h4>Bilder</h4><div class="image-grid">${(p.images||[]).map(i=>`<div class="image-card"><img src="${i.data}" onerror="this.style.display='none'"><div class="img-overlay">${escapeHtml(i.category||'')}</div></div>`).join('')}</div>
-                    <button class="btn btn-sm btn-primary" onclick="openImageModal(${projectId})">+ Bild</button>
-                    <button class="btn btn-sm btn-primary" onclick="createOffer(${projectId})">📄 Angebot</button>
-                </div>`;
-            }
-        }
-        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Projekte</h1><button class="btn btn-primary" onclick="openProjectModal()">+ Neues Projekt</button></div>
-            <div class="table-container"><table><thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th></th></tr></thead><tbody>
-            ${projects.map(p=>{ const c=customers.find(x=>x.id===p.customerId); return `<tr style="cursor:pointer" onclick="app.navigate('projects',${p.id})"><td>${escapeHtml(p.title)}</td><td>${c?`${c.firstName} ${c.lastName}`:'-'}</td><td>${p.status}</td><td>
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button>
-                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteProject(${p.id})">🗑</button>
-            </td></tr>`; }).join('')}
-            </tbody></table></div>${detail}`;
-    }
-
-    async function openProjectModal(id) {
-        const p = id ? await db.get('projects', id) : {}; const custs = await db.getAll('customers');
-        showModal(id?'Projekt bearbeiten':'Neues Projekt', `
-            <div class="form-group"><label>Titel</label><input id="ptitle" value="${escapeHtml(p.title||'')}"></div>
-            <div class="form-group"><label>Kunde</label><select id="pcustomer"><option value="">-</option>${custs.map(c=>`<option value="${c.id}" ${p.customerId==c.id?'selected':''}>${c.firstName} ${c.lastName}</option>`).join('')}</select></div>
-        `, async (modal) => {
-            const obj = { title: modal.querySelector('#ptitle').value, customerId: parseInt(modal.querySelector('#pcustomer').value)||null, status: p.status||'Neu' };
-            if(id) { obj.id = id; await db.put('projects', obj); } else await db.add('projects', obj);
-            modal.remove(); app.navigate('projects', obj.id);
-        });
-    }
-
-    async function deleteProject(id) {
-        if(!confirm('Projekt und alle zugehörigen Daten löschen?')) return;
-        try {
-            const rooms = await db.getByIndex('rooms','projectId',id); for(const r of rooms) await db.delete('rooms', r.id);
-            const images = await db.getByIndex('images','projectId',id); for(const i of images) await db.delete('images', i.id);
-            const offers = await db.getByIndex('offers','projectId',id); for(const o of offers) await db.delete('offers', o.id);
-            await db.delete('projects', id);
-            showToast('Projekt gelöscht','info');
-            app.navigate('projects');
-        } catch(e) {
-            console.error('Löschen fehlgeschlagen:', e);
-            showToast('Fehler beim Löschen: ' + e.message, 'error');
-        }
-    }
-
-    function openRoomModal(projectId) {
-        showModal('Raum hinzufügen', `
-            <div class="form-row"><div class="form-group"><label>Länge (m)</label><input type="number" id="rlength" step="0.1" value="0"></div><div class="form-group"><label>Breite (m)</label><input type="number" id="rwidth" step="0.1" value="0"></div><div class="form-group"><label>Höhe (m)</label><input type="number" id="rheight" step="0.1" value="2.5"></div></div>
-        `, async (modal) => {
-            const obj = { projectId, length: parseFloat(modal.querySelector('#rlength').value)||0, width: parseFloat(modal.querySelector('#rwidth').value)||0, height: parseFloat(modal.querySelector('#rheight').value)||2.5, name: 'Raum' };
-            await db.add('rooms', obj); modal.remove(); app.navigate('projects', projectId);
-        });
-    }
-
-    async function deleteRoom(id, projectId) {
-        if(!confirm('Raum löschen?')) return;
-        await db.delete('rooms', id);
-        showToast('Raum gelöscht','info');
-        app.navigate('projects', projectId);
-    }
-
-    function openImageModal(projectId) {
-        showModal('Bild hinzufügen', `<input type="file" id="imgfile" accept="image/*">`, async (modal) => {
-            const file = modal.querySelector('#imgfile').files[0]; if(!file) return;
-            const reader = new FileReader(); reader.onload = async (e) => {
-                await db.add('images', { projectId, data: e.target.result, category: 'Sonstiges', label: '' });
-                modal.remove(); app.navigate('projects', projectId);
-            }; reader.readAsDataURL(file);
-        });
-    }
-
-    async function renderMaterials() {
-        const materials = await db.getAll('materials');
-        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;gap:10px;"><h1 class="page-title" style="margin:0;">Material</h1><div style="display:flex;gap:10px;"><button class="btn btn-outline" onclick="importMaterialsExcel()">📥 Excel importieren</button><button class="btn btn-primary" onclick="openMaterialModal()">+ Neues Material</button></div></div>
-            <div class="table-container"><table><thead><tr><th>Name</th><th>Kategorie</th><th>Einheit</th><th>VK-Preis</th><th></th></tr></thead><tbody>
-            ${materials.map(m=>`<tr><td><strong>${escapeHtml(m.name)}</strong></td><td>${escapeHtml(m.category||'')}</td><td>${m.unit||'Stk'}</td><td>${formatCurrency(m.sellingPrice)}</td><td>
-                <button class="btn btn-sm btn-outline" onclick="openMaterialModal(${m.id})">✏️</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteMaterial(${m.id})">🗑</button>
-            </td></tr>`).join('')}</tbody></table></div>`;
-    }
-
-    async function openMaterialModal(id) {
-        const mat = id ? await db.get('materials', id) : {};
-        showModal(id?'Material bearbeiten':'Neues Material', `
-            <div class="form-group"><label>Name</label><input id="mname" value="${escapeHtml(mat.name||'')}"></div>
-            <div class="form-row"><div class="form-group"><label>Kategorie</label><input id="mcat" value="${escapeHtml(mat.category||'')}"></div><div class="form-group"><label>Einheit</label><input id="munit" value="${escapeHtml(mat.unit||'Stk')}"></div></div>
-            <div class="form-row"><div class="form-group"><label>EK (€)</label><input type="number" id="mpurchase" step="0.01" value="${mat.purchasePrice||0}"></div><div class="form-group"><label>VK (€)</label><input type="number" id="mselling" step="0.01" value="${mat.sellingPrice||0}"></div></div>
-        `, async (modal) => {
-            const obj = { name: modal.querySelector('#mname').value, category: modal.querySelector('#mcat').value, unit: modal.querySelector('#munit').value||'Stk', purchasePrice: parseFloat(modal.querySelector('#mpurchase').value)||0, sellingPrice: parseFloat(modal.querySelector('#mselling').value)||0 };
-            if(id) { obj.id = id; await db.put('materials', obj); } else await db.add('materials', obj);
-            modal.remove(); renderMaterials();
-        });
-    }
-    async function deleteMaterial(id) { if(confirm('Löschen?')) { await db.delete('materials', id); renderMaterials(); } }
-
-    async function importMaterialsExcel() {
-        const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.xls';
-        input.onchange = async (e) => {
-            const file = e.target.files[0]; if(!file) return;
-            try {
-                const buf = await file.arrayBuffer();
-                const wb = XLSX.read(buf, { type: 'array' });
-                const sheetName = wb.SheetNames.find(n => /material/i.test(n)) || wb.SheetNames[0];
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-                const existing = await db.getAll('materials');
-                const existingNames = new Set(existing.map(m => m.name));
-                let imported = 0, skipped = 0;
-                for (const row of rows) {
-                    const artikel = (row['Artikel'] || '').toString().trim();
-                    if (!artikel) continue;
-                    const hersteller = (row['Hersteller'] || '').toString().trim();
-                    const name = hersteller ? `${hersteller} ${artikel}` : artikel;
-                    if (existingNames.has(name)) { skipped++; continue; }
-                    const obj = {
-                        name,
-                        category: (row['Kategorie'] || row['Unterkategorie'] || '').toString().trim(),
-                        unit: (row['Einheit'] || 'Stk').toString().trim() || 'Stk',
-                        purchasePrice: parseFloat(row['EK Netto']) || 0,
-                        sellingPrice: parseFloat(row['VK Netto']) || 0
+                        // Bilder
+                        if (!db.objectStoreNames.contains('images')) {
+                            const store = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
+                            store.createIndex('projectId', 'projectId', { unique: false });
+                        }
+                        // Material
+                        if (!db.objectStoreNames.contains('materials')) {
+                            const store = db.createObjectStore('materials', { keyPath: 'id', autoIncrement: true });
+                            store.createIndex('category', 'category', { unique: false });
+                        }
+                        // Angebote
+                        if (!db.objectStoreNames.contains('offers')) {
+                            const store = db.createObjectStore('offers', { keyPath: 'id', autoIncrement: true });
+                            store.createIndex('projectId', 'projectId', { unique: false });
+                        }
+                        // Einstellungen
+                        if (!db.objectStoreNames.contains('settings')) {
+                            db.createObjectStore('settings', { keyPath: 'key' });
+                        }
                     };
-                    await db.add('materials', obj);
-                    existingNames.add(name);
-                    imported++;
-                }
-                showToast(`${imported} Artikel importiert${skipped ? `, ${skipped} übersprungen (bereits vorhanden)` : ''}`, 'success');
-                renderMaterials();
-            } catch(err) {
-                console.error(err);
-                showToast('Fehler beim Import: ' + err.message, 'error');
+                    request.onsuccess = (e) => {
+                        this.db = e.target.result;
+                        resolve(this.db);
+                    };
+                    request.onerror = (e) => reject(e.target.error);
+                });
             }
-        };
-        input.click();
-    }
 
-    async function renderOffers() {
-        const offers = await db.getAll('offers'); const projects = await db.getAll('projects'); const customers = await db.getAll('customers');
-        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Angebote</h1></div>
-            <div class="table-container"><table><thead><tr><th>ID</th><th>Projekt</th><th>Kunde</th><th>Summe</th><th>Status</th><th></th></tr></thead><tbody>
-            ${offers.map(o=>{ const proj = projects.find(p=>p.id===o.projectId); const cust = proj ? customers.find(c=>c.id===proj.customerId) : null; return `<tr><td>#${o.id}</td><td>${escapeHtml(proj?.title||'')}</td><td>${cust?`${cust.firstName} ${cust.lastName}`:'-'}</td><td>${formatCurrency(o.totalPrice)}</td><td><span class="status-badge ${getStatusClass(o.status)}">${o.status}</span></td><td>
-                <button class="btn btn-sm btn-primary" onclick="exportOfferPDF(${o.id})">📄 PDF</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteOffer(${o.id})">🗑</button>
-            </td></tr>`; }).join('')}</tbody></table></div>`;
-    }
-
-    async function createOffer(projectId) {
-        const project = await db.get('projects', projectId); if(!project) return;
-        const customer = project.customerId ? await db.get('customers', project.customerId) : null;
-        if(!customer) { showToast('Kein Kunde zugewiesen','error'); return; }
-        const materials = await db.getAll('materials'); const cooling = calcCooling(await db.getByIndex('rooms','projectId',projectId));
-        showModal('Angebot erstellen', `
-            <p><strong>Projekt:</strong> ${escapeHtml(project.title)}</p><p><strong>Kunde:</strong> ${customer.firstName} ${customer.lastName}</p>
-            <p><strong>Empf. Kälteleistung:</strong> ${cooling.recommendation||'?'} kW</p>
-            <div class="table-container"><table><thead><tr><th>Wählen</th><th>Artikel</th><th>Preis</th><th>Menge</th></tr></thead><tbody>
-            ${materials.map(m=>`<tr><td><input type="checkbox" class="sel" data-price="${m.sellingPrice||0}" data-name="${escapeHtml(m.name)}" data-unit="${m.unit||'Stk'}"></td><td>${escapeHtml(m.name)}</td><td>${formatCurrency(m.sellingPrice)}</td><td><input type="number" class="qty" value="1" min="1"></td></tr>`).join('')}
-            </tbody></table></div>
-        `, async (modal) => {
-            const items = []; modal.querySelectorAll('tbody tr').forEach(row=>{ const cb=row.querySelector('.sel'); const qty=row.querySelector('.qty'); if(cb.checked) items.push({ name:cb.dataset.name, unit:cb.dataset.unit, price:parseFloat(cb.dataset.price), quantity:parseInt(qty.value)||1 }); });
-            let subtotal = 0; const positions = items.map(i=>{ const t=i.price*i.quantity; subtotal+=t; return {...i,total:t}; });
-            const vat = subtotal*0.19; const offer = { projectId, customerId:project.customerId, positions, subtotal, vatRate:0.19, vatAmount:vat, totalPrice:subtotal+vat, coolingRecommendation:cooling.recommendation, status:'Angebot offen' };
-            await db.add('offers', offer); modal.remove(); renderOffers();
-        });
-    }
-
-    async function exportOfferPDF(offerId) {
-        const offer = await db.get('offers', offerId); if(!offer) return;
-        const project = await db.get('projects', offer.projectId); const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
-        const { jsPDF } = window.jspdf; const doc = new jsPDF(); let y=20;
-        doc.setFontSize(18).text('Angebot',20,y); y+=10;
-        if(customer) { doc.setFontSize(12).text(`${customer.firstName} ${customer.lastName}`,20,y); y+=6; }
-        doc.setFontSize(10).text(`Projekt: ${project?.title||''}`,20,y); y+=6;
-        doc.text(`Datum: ${formatDate(offer.createdAt)}`,20,y); y+=8;
-        let pos=1; (offer.positions||[]).forEach(p=>{ if(y>270){doc.addPage();y=20;} doc.text(`${pos}. ${p.name}`,20,y); doc.text(`${p.quantity} ${p.unit} x ${formatCurrency(p.price)}`,100,y); doc.text(formatCurrency(p.total),150,y); y+=5; pos++; });
-        y+=5; doc.text(`Netto: ${formatCurrency(offer.subtotal)}`,130,y); y+=5; doc.text(`MwSt: ${formatCurrency(offer.vatAmount)}`,130,y); y+=5; doc.text(`Gesamt: ${formatCurrency(offer.totalPrice)}`,130,y);
-        doc.save(`Angebot_${offerId}.pdf`);
-    }
-    async function deleteOffer(id) { if(confirm('Angebot löschen?')) { await db.delete('offers', id); renderOffers(); } }
-
-    async function renderSettings() {
-        contentArea.innerHTML = `<h1 class="page-title">Einstellungen</h1><div class="card-grid">
-            <div class="nav-card" onclick="openCompanySettings()"><div class="card-icon blue">🏢</div><div><div class="card-title">Firmendaten</div></div></div>
-            <div class="nav-card" onclick="openPDFSettings()"><div class="card-icon purple">📄</div><div><div class="card-title">PDF-Footer</div></div></div>
-            <div class="nav-card" onclick="resetAllData()"><div class="card-icon red">⚠️</div><div><div class="card-title">Alle Daten löschen</div></div></div>
-        </div>`;
-    }
-    async function openCompanySettings() {
-        const name = (await db.get('settings','companyName'))?.value||''; const addr = (await db.get('settings','companyAddress'))?.value||'';
-        showModal('Firmendaten', `<div class="form-group"><label>Name</label><input id="cn" value="${escapeHtml(name)}"></div><div class="form-group"><label>Adresse</label><textarea id="ca">${escapeHtml(addr)}</textarea></div>`, async (modal) => {
-            await db.put('settings',{key:'companyName',value:modal.querySelector('#cn').value});
-            await db.put('settings',{key:'companyAddress',value:modal.querySelector('#ca').value});
-            modal.remove();
-        });
-    }
-    async function openPDFSettings() {
-        const footer = (await db.get('settings','pdfFooter'))?.value||'';
-        showModal('PDF-Footer', `<div class="form-group"><label>Text</label><textarea id="pf">${escapeHtml(footer)}</textarea></div>`, async (modal) => {
-            await db.put('settings',{key:'pdfFooter',value:modal.querySelector('#pf').value}); modal.remove();
-        });
-    }
-    async function resetAllData() { if(confirm('ALLE DATEN LÖSCHEN?')) { for(const s of ['customers','projects','rooms','images','materials','offers','settings']) await db.clear(s); showToast('Alle Daten gelöscht','info'); app.navigate('dashboard'); } }
-
-    async function renderBackup() {
-        contentArea.innerHTML = `<h1 class="page-title">Backup</h1><div class="card-grid">
-            <div class="nav-card" onclick="createBackup()"><div class="card-icon blue">💾</div><div><div class="card-title">Backup erstellen</div></div></div>
-            <div class="nav-card" onclick="restoreBackup()"><div class="card-icon green">📥</div><div><div class="card-title">Backup wiederherstellen</div></div></div>
-            <div class="nav-card" onclick="exportAllExcel()"><div class="card-icon purple">📊</div><div><div class="card-title">Excel-Export</div></div></div>
-        </div>`;
-    }
-    async function createBackup() { const data=await db.exportAllData(); const blob=new Blob([JSON.stringify(data)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`KTM_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); }
-    async function restoreBackup() { const input=document.createElement('input'); input.type='file'; input.accept='.json'; input.onchange=async(e)=>{ if(!confirm('Alle Daten überschreiben?'))return; const file=e.target.files[0]; const text=await file.text(); const data=JSON.parse(text); await db.importAllData(data); showToast('Backup wiederhergestellt','success'); app.navigate('dashboard'); }; input.click(); }
-    async function exportAllExcel() { const data={customers:await db.getAll('customers'),projects:await db.getAll('projects'),materials:await db.getAll('materials')}; const wb=XLSX.utils.book_new(); const cd=[['ID','Vorname','Nachname','Ort']]; data.customers.forEach(c=>cd.push([c.id,c.firstName,c.lastName,c.city])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cd),'Kunden'); const pd=[['ID','Titel','Kunde']]; data.projects.forEach(p=>pd.push([p.id,p.title,p.customerId])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pd),'Projekte'); const md=[['ID','Name','VK']]; data.materials.forEach(m=>md.push([m.id,m.name,m.sellingPrice])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(md),'Material'); XLSX.writeFile(wb,'KTM_Export.xlsx'); }
-
-    // ==================== APP‑CONTROLLER ====================
-    const app = {
-        currentPage: 'dashboard',
-        currentProjectId: null,
-
-        async init() {
-            await db.init();
-            document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
-            this.setupNavigation();
-            this.setupTheme();
-            this.setupResponsive();
-            this.navigate('dashboard');
-        },
-
-        setupNavigation() {
-            document.querySelectorAll('.nav-item[data-page]').forEach(item => {
-                item.addEventListener('click', (e) => this.navigate(e.currentTarget.dataset.page));
-            });
-            document.getElementById('syncBtn').addEventListener('click', fullSync);
-        },
-
-        navigate(page, param = null) {
-            this.currentPage = page;
-            this.currentProjectId = param;
-            document.querySelectorAll('.nav-item[data-page]').forEach(el => el.classList.remove('active'));
-            const activeEl = document.querySelector(`.nav-item[data-page="${page}"]`);
-            if (activeEl) activeEl.classList.add('active');
-            document.getElementById('sidebar').classList.remove('open');
-            switch(page) {
-                case 'dashboard': renderDashboard(); break;
-                case 'customers': renderCustomers(); break;
-                case 'projects': renderProjects(param); break;
-                case 'materials': renderMaterials(); break;
-                case 'offers': renderOffers(); break;
-                case 'settings': renderSettings(); break;
-                case 'backup': renderBackup(); break;
-                default: renderDashboard();
+            async add(storeName, data) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    data.createdAt = data.createdAt || new Date().toISOString();
+                    data.updatedAt = new Date().toISOString();
+                    if (data._synced === undefined) data._synced = false;
+                    const request = store.add(data);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
             }
-        },
 
-        setupTheme() {
-            const toggle = document.getElementById('themeToggle');
-            const saved = localStorage.getItem('klima-theme') || 'light';
-            document.body.dataset.theme = saved;
-            toggle.innerHTML = saved === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
-            toggle.addEventListener('click', () => {
-                const cur = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
-                document.body.dataset.theme = cur;
-                localStorage.setItem('klima-theme', cur);
-                toggle.innerHTML = cur === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
-            });
-        },
+            async put(storeName, data) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    data.updatedAt = new Date().toISOString();
+                    if (data._synced === undefined) data._synced = false;
+                    const request = store.put(data);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
 
-        setupResponsive() {
-            const menuToggle = document.getElementById('menuToggle');
-            const sidebar = document.getElementById('sidebar');
-            const check = () => { menuToggle.style.display = window.innerWidth <= 900 ? 'flex' : 'none'; if(window.innerWidth > 900) sidebar.classList.remove('open'); };
-            check(); window.addEventListener('resize', check);
-            menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
-            document.addEventListener('click', (e) => { if(window.innerWidth <= 900 && !sidebar.contains(e.target) && e.target !== menuToggle) sidebar.classList.remove('open'); });
+            async get(storeName, id) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readonly');
+                    const store = tx.objectStore(storeName);
+                    const request = store.get(id);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async getAll(storeName) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readonly');
+                    const store = tx.objectStore(storeName);
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async delete(storeName, id) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const request = store.delete(id);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async getByIndex(storeName, indexName, value) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readonly');
+                    const store = tx.objectStore(storeName);
+                    const index = store.index(indexName);
+                    const request = index.getAll(value);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async clear(storeName) {
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const request = store.clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async getProjectWithDetails(projectId) {
+                const project = await this.get('projects', projectId);
+                if (!project) return null;
+                const rooms = await this.getByIndex('rooms', 'projectId', projectId);
+                const images = await this.getByIndex('images', 'projectId', projectId);
+                const offers = await this.getByIndex('offers', 'projectId', projectId);
+                return { ...project, rooms, images, offers };
+            }
+
+            async getCustomerWithProjects(customerId) {
+                const customer = await this.get('customers', customerId);
+                if (!customer) return null;
+                const projects = await this.getByIndex('projects', 'customerId', customerId);
+                return { ...customer, projects };
+            }
+
+            async exportAllData() {
+                const data = {
+                    customers: await this.getAll('customers'),
+                    projects: await this.getAll('projects'),
+                    rooms: await this.getAll('rooms'),
+                    images: await this.getAll('images'),
+                    materials: await this.getAll('materials'),
+                    offers: await this.getAll('offers'),
+                    settings: await this.getAll('settings'),
+                    exportDate: new Date().toISOString(),
+                    version: '1.0'
+                };
+                return data;
+            }
+
+            async importAllData(data) {
+                const stores = ['customers','projects','rooms','images','materials','offers','settings'];
+                for (const s of stores) await this.clear(s);
+                for (const c of data.customers || []) await this.add('customers', c);
+                for (const p of data.projects || []) await this.add('projects', p);
+                for (const r of data.rooms || []) await this.add('rooms', r);
+                for (const i of data.images || []) await this.add('images', i);
+                for (const m of data.materials || []) await this.add('materials', m);
+                for (const o of data.offers || []) await this.add('offers', o);
+                for (const s of data.settings || []) await this.put('settings', s);
+            }
         }
-    };
 
-    document.addEventListener('DOMContentLoaded', () => app.init());
-</script>
+        const db = new DatabaseManager();
+
+        // ============================================================
+        // KÄLTELEISTUNGS-BERECHNUNG
+        // ============================================================
+        function calculateCoolingCapacity(rooms) {
+            if (!rooms || rooms.length === 0) return { totalKW: 0, recommendation: null, details: [] };
+            let totalWatts = 0;
+            const details = [];
+            for (const room of rooms) {
+                const area = (room.length || 0) * (room.width || 0);
+                const volume = area * (room.height || 2.5);
+                let wattsPerSqm = 80;
+                const name = (room.name || '').toLowerCase();
+                if (name.includes('dach') || name.includes('wintergarten')) wattsPerSqm = 120;
+                if (name.includes('keller')) wattsPerSqm = 60;
+                const roomWatts = area * wattsPerSqm;
+                totalWatts += roomWatts;
+                details.push({
+                    roomName: room.name || 'Unbenannt',
+                    area: Math.round(area * 100) / 100,
+                    volume: Math.round(volume * 100) / 100,
+                    wattsPerSqm,
+                    estimatedKW: Math.round(roomWatts / 100) / 10
+                });
+            }
+            const totalKW = Math.round(totalWatts / 100) / 10;
+            const availableSizes = [2.0, 2.5, 3.5, 4.2, 5.0, 6.0, 7.1, 8.5, 10.0];
+            let recommendation = availableSizes[0];
+            for (const size of availableSizes) {
+                if (size >= totalKW) { recommendation = size; break; }
+            }
+            if (totalKW > availableSizes[availableSizes.length - 1]) recommendation = availableSizes[availableSizes.length - 1];
+            return { totalKW, recommendation, details };
+        }
+
+        // ============================================================
+        // UI-HILFSFUNKTIONEN
+        // ============================================================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+            toast.innerHTML = `${icons[type] || ''} ${message}`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
+        }
+
+        function formatDate(isoString) {
+            if (!isoString) return '-';
+            return new Date(isoString).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+
+        function getStatusClass(status) {
+            const map = {
+                'Neu': 'status-neu',
+                'Besichtigung offen': 'status-offen',
+                'Besichtigt': 'status-offen',
+                'Angebot offen': 'status-offen',
+                'Angebot gesendet': 'status-aktiv',
+                'Auftrag erhalten': 'status-aktiv',
+                'Material bestellt': 'status-aktiv',
+                'Montage geplant': 'status-aktiv',
+                'Montage läuft': 'status-aktiv',
+                'Fertig': 'status-fertig',
+                'Archiv': 'status-fertig'
+            };
+            return map[status] || 'status-neu';
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str || '';
+            return div.innerHTML;
+        }
+
+        function showModal(title, contentHtml, onSave, onCancel) {
+            const container = document.getElementById('modalContainer');
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal">
+                    <h3>${title}</h3>
+                    <div class="modal-body">${contentHtml}</div>
+                    <div class="modal-actions">
+                        <button class="btn btn-outline cancel-btn">Abbrechen</button>
+                        ${onSave ? '<button class="btn btn-primary save-btn">Speichern</button>' : ''}
+                    </div>
+                </div>
+            `;
+            container.appendChild(overlay);
+            overlay.querySelector('.cancel-btn')?.addEventListener('click', () => {
+                overlay.remove();
+                if (onCancel) onCancel();
+            });
+            overlay.querySelector('.save-btn')?.addEventListener('click', () => {
+                if (onSave) onSave(overlay);
+            });
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) { overlay.remove(); if (onCancel) onCancel(); }
+            });
+            return overlay;
+        }
+
+        // ============================================================
+        // SEITEN-RENDERER
+        // ============================================================
+        const contentArea = document.getElementById('contentArea');
+
+        function renderDashboard() {
+            (async () => {
+                const customers = await db.getAll('customers');
+                const projects = await db.getAll('projects');
+                const offers = await db.getAll('offers');
+                const materials = await db.getAll('materials');
+                const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
+                const gesendeteAngebote = offers.filter(o => o.status === 'gesendet' || o.status === 'Angebot gesendet').length;
+                const fertigeProjekte = projects.filter(p => p.status === 'Fertig').length;
+
+                document.getElementById('customerCount').textContent = customers.length;
+                document.getElementById('projectCount').textContent = offeneProjekte;
+
+                contentArea.innerHTML = `
+                    <h1 class="page-title">Dashboard</h1>
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <div class="stat-value">${customers.length}</div>
+                            <div class="stat-label">Kunden</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${offeneProjekte}</div>
+                            <div class="stat-label">Offene Projekte</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${gesendeteAngebote}</div>
+                            <div class="stat-label">Gesendete Angebote</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${fertigeProjekte}</div>
+                            <div class="stat-label">Abgeschlossene Projekte</div>
+                        </div>
+                    </div>
+                    <div style="font-size:14px;color:var(--text-muted);margin-bottom:16px;">Schnellzugriff</div>
+                    <div class="card-grid">
+                        <div class="nav-card" onclick="app.navigate('customers')">
+                            <div class="card-icon blue">👥</div>
+                            <div><div class="card-title">Kundenverwaltung</div><div class="card-subtitle">${customers.length} Kunden</div></div>
+                        </div>
+                        <div class="nav-card" onclick="app.navigate('projects')">
+                            <div class="card-icon green">📋</div>
+                            <div><div class="card-title">Projekte & Besichtigungen</div><div class="card-subtitle">${offeneProjekte} offen</div></div>
+                        </div>
+                        <div class="nav-card" onclick="app.navigate('materials')">
+                            <div class="card-icon amber">📦</div>
+                            <div><div class="card-title">Materialdatenbank</div><div class="card-subtitle">${materials.length} Artikel</div></div>
+                        </div>
+                        <div class="nav-card" onclick="app.navigate('offers')">
+                            <div class="card-icon purple">📄</div>
+                            <div><div class="card-title">Angebote</div><div class="card-subtitle">${offers.length} erstellt</div></div>
+                        </div>
+                        <div class="nav-card" onclick="app.navigate('settings')">
+                            <div class="card-icon red">⚙️</div>
+                            <div><div class="card-title">Einstellungen</div><div class="card-subtitle">System anpassen</div></div>
+                        </div>
+                    </div>
+                    <h3 style="margin-top:16px;margin-bottom:12px;">Letzte Projekte</h3>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Projekt</th><th>Kunde</th><th>Status</th><th>Datum</th></tr></thead>
+                            <tbody>
+                                ${projects.slice(-5).reverse().map(p => {
+                                    const cust = customers.find(c => c.id === p.customerId);
+                                    return `<tr style="cursor:pointer" onclick="app.navigate('projects', ${p.id})">
+                                        <td><strong>${escapeHtml(p.title || 'Unbenannt')}</strong></td>
+                                        <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}</td>
+                                        <td><span class="status-badge ${getStatusClass(p.status)}">${escapeHtml(p.status || 'Neu')}</span></td>
+                                        <td>${formatDate(p.createdAt)}</td>
+                                    </tr>`;
+                                }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">Keine Projekte vorhanden</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            })();
+        }
+
+        function renderCustomers() {
+            (async () => {
+                const customers = await db.getAll('customers');
+                document.getElementById('customerCount').textContent = customers.length;
+                contentArea.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                        <h1 class="page-title" style="margin-bottom:0;">Kunden</h1>
+                        <button class="btn btn-primary" onclick="app.openCustomerModal()">+ Neuer Kunde</button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Name</th><th>Firma</th><th>Ort</th><th>Telefon</th><th>Status</th><th>Aktionen</th></tr></thead>
+                            <tbody>
+                                ${customers.map(c => `
+                                    <tr>
+                                        <td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong></td>
+                                        <td>${escapeHtml(c.company || '-')}</td>
+                                        <td>${escapeHtml(c.city || '-')}</td>
+                                        <td>${escapeHtml(c.phone || '-')}</td>
+                                        <td><span class="status-badge ${getStatusClass(c.status || 'Neu')}">${escapeHtml(c.status || 'Neu')}</span></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline" onclick="app.openCustomerModal(${c.id})">✏️</button>
+                                            <button class="btn btn-sm btn-outline" onclick="app.duplicateCustomer(${c.id})">📋</button>
+                                            <button class="btn btn-sm btn-danger" onclick="app.deleteCustomer(${c.id})">🗑</button>
+                                        </td>
+                                    </tr>
+                                `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Keine Kunden vorhanden</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            })();
+        }
+
+        function renderProjects(selectedProjectId = null) {
+            (async () => {
+                const projects = await db.getAll('projects');
+                const customers = await db.getAll('customers');
+                document.getElementById('projectCount').textContent = projects.filter(p => !['Fertig','Archiv'].includes(p.status)).length;
+
+                const statusOptions = ['Neu','Besichtigung offen','Besichtigt','Angebot offen','Angebot gesendet','Auftrag erhalten','Material bestellt','Montage geplant','Montage läuft','Fertig','Archiv'];
+
+                let detailHtml = '';
+                if (selectedProjectId) {
+                    const project = await db.getProjectWithDetails(selectedProjectId);
+                    if (project) {
+                        const customer = customers.find(c => c.id === project.customerId);
+                        const cooling = calculateCoolingCapacity(project.rooms || []);
+                        detailHtml = `
+                            <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;margin-top:16px;">
+                                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:16px;">
+                                    <h3 style="margin:0;">📋 ${escapeHtml(project.title || 'Unbenannt')}</h3>
+                                    <div style="display:flex;gap:8px;">
+                                        <button class="btn btn-sm btn-outline" onclick="app.openProjectModal(${project.id})">✏️ Bearbeiten</button>
+                                        <button class="btn btn-sm btn-primary" onclick="app.createOffer(${project.id})">📄 Angebot erstellen</button>
+                                        <button class="btn btn-sm btn-danger" onclick="app.deleteProject(${project.id})">🗑 Löschen</button>
+                                    </div>
+                                </div>
+                                <p><strong>Kunde:</strong> ${escapeHtml(customer ? `${customer.firstName} ${customer.lastName}` : 'Kein Kunde zugewiesen')}</p>
+                                <p><strong>Status:</strong> <span class="status-badge ${getStatusClass(project.status)}">${escapeHtml(project.status || 'Neu')}</span></p>
+                                <p><strong>Notizen:</strong> ${escapeHtml(project.notes || '-')}</p>
+
+                                <h4 style="margin-top:20px;">🏠 Räume (${(project.rooms||[]).length})</h4>
+                                <div class="table-container" style="margin-top:8px;">
+                                    <table>
+                                        <thead><tr><th>Raum</th><th>Länge (m)</th><th>Breite (m)</th><th>Höhe (m)</th><th>Fläche (m²)</th><th>Volumen (m³)</th><th>Empf. kW</th><th></th></tr></thead>
+                                        <tbody>
+                                            ${(project.rooms||[]).map(r => {
+                                                const area = ((r.length||0)*(r.width||0)).toFixed(1);
+                                                const volume = (area*(r.height||2.5)).toFixed(1);
+                                                const roomKW = ((area*80)/1000).toFixed(1);
+                                                return `<tr>
+                                                    <td><strong>${escapeHtml(r.name||'Unbenannt')}</strong></td>
+                                                    <td>${r.length||0}</td><td>${r.width||0}</td><td>${r.height||2.5}</td>
+                                                    <td>${area}</td><td>${volume}</td><td>${roomKW} kW</td>
+                                                    <td><button class="btn btn-sm btn-outline" onclick="app.deleteRoom(${r.id},${project.id})">🗑</button></td>
+                                                </tr>`;
+                                            }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Keine Räume</td></tr>'}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="app.openRoomModal(${project.id})">+ Raum hinzufügen</button>
+
+                                ${cooling.details.length > 0 ? `
+                                <div style="background:var(--accent-light);border-radius:var(--radius-md);padding:16px;margin-top:16px;">
+                                    <strong>❄ Kälteleistungs-Empfehlung:</strong> <span style="font-size:22px;font-weight:700;color:var(--accent);">${cooling.recommendation} kW</span>
+                                    <br><small>Gesamtlast: ${cooling.totalKW} kW | Faustformel: 80 W/m²</small>
+                                </div>` : ''}
+
+                                <h4 style="margin-top:20px;">📸 Bilder (${(project.images||[]).length})</h4>
+                                <div class="image-grid" style="margin-top:8px;">
+                                    ${(project.images||[]).map(img => `
+                                        <div class="image-card" onclick="app.viewImage('${img.data}')">
+                                            <img src="${img.data}" alt="${escapeHtml(img.category||'')}">
+                                            <div class="img-overlay">${escapeHtml(img.category||'Sonstiges')} ${img.label ? '- '+escapeHtml(img.label) : ''}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="app.openImageModal(${project.id})">+ Bild hinzufügen</button>
+                            </div>
+                        `;
+                    }
+                }
+
+                contentArea.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                        <h1 class="page-title" style="margin-bottom:0;">Projekte</h1>
+                        <button class="btn btn-primary" onclick="app.openProjectModal()">+ Neues Projekt</button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th>Räume</th><th>Datum</th><th>Aktionen</th></tr></thead>
+                            <tbody>
+                                ${projects.map(p => {
+                                    const cust = customers.find(c => c.id === p.customerId);
+                                    return `<tr style="cursor:pointer" onclick="app.navigate('projects', ${p.id})">
+                                        <td><strong>${escapeHtml(p.title || 'Unbenannt')}</strong></td>
+                                        <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}</td>
+                                        <td><span class="status-badge ${getStatusClass(p.status)}">${escapeHtml(p.status || 'Neu')}</span></td>
+                                        <td>${(p.roomCount || 0)} Räume</td>
+                                        <td>${formatDate(p.createdAt)}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();app.openProjectModal(${p.id})">✏️</button>
+                                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();app.deleteProject(${p.id})">🗑</button>
+                                        </td>
+                                    </tr>`;
+                                }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Keine Projekte</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                    ${detailHtml}
+                `;
+            })();
+        }
+
+        function renderMaterials() {
+            (async () => {
+                const materials = await db.getAll('materials');
+                contentArea.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                        <h1 class="page-title" style="margin-bottom:0;">Materialdatenbank</h1>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-outline" onclick="app.exportMaterialsExcel()">📥 Excel Export</button>
+                            <button class="btn btn-outline" onclick="app.importMaterialsExcel()">📤 Excel Import</button>
+                            <button class="btn btn-primary" onclick="app.openMaterialModal()">+ Neues Material</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Artikelname</th><th>Kategorie</th><th>Einheit</th><th>Einkaufspreis</th><th>Verkaufspreis</th><th>Aktionen</th></tr></thead>
+                            <tbody>
+                                ${materials.map(m => `
+                                    <tr>
+                                        <td><strong>${escapeHtml(m.name)}</strong></td>
+                                        <td>${escapeHtml(m.category || '-')}</td>
+                                        <td>${escapeHtml(m.unit || 'Stk')}</td>
+                                        <td>${formatCurrency(m.purchasePrice || 0)}</td>
+                                        <td>${formatCurrency(m.sellingPrice || 0)}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline" onclick="app.openMaterialModal(${m.id})">✏️</button>
+                                            <button class="btn btn-sm btn-danger" onclick="app.deleteMaterial(${m.id})">🗑</button>
+                                        </td>
+                                    </tr>
+                                `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Keine Materialien</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            })();
+        }
+
+        function renderOffers() {
+            (async () => {
+                const offers = await db.getAll('offers');
+                const projects = await db.getAll('projects');
+                const customers = await db.getAll('customers');
+                contentArea.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                        <h1 class="page-title" style="margin-bottom:0;">Angebote</h1>
+                        <button class="btn btn-outline" onclick="app.exportOffersExcel()">📥 Excel Export</button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Angebot</th><th>Projekt</th><th>Kunde</th><th>Summe</th><th>Status</th><th>Datum</th><th>Aktionen</th></tr></thead>
+                            <tbody>
+                                ${offers.map(o => {
+                                    const proj = projects.find(p => p.id === o.projectId);
+                                    const cust = proj ? customers.find(c => c.id === proj.customerId) : null;
+                                    return `<tr>
+                                        <td><strong>Angebot #${o.id}</strong></td>
+                                        <td>${escapeHtml(proj?.title || '-')}</td>
+                                        <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}</td>
+                                        <td>${formatCurrency(o.totalPrice || 0)}</td>
+                                        <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
+                                        <td>${formatDate(o.createdAt)}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-primary" onclick="app.exportOfferPDF(${o.id})">📄 PDF</button>
+                                            <button class="btn btn-sm btn-danger" onclick="app.deleteOffer(${o.id})">🗑</button>
+                                        </td>
+                                    </tr>`;
+                                }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Keine Angebote</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            })();
+        }
+
+        function renderSettings() {
+            contentArea.innerHTML = `
+                <h1 class="page-title">Einstellungen</h1>
+                <div class="card-grid">
+                    <div class="nav-card" onclick="app.openCompanySettings()">
+                        <div class="card-icon blue">🏢</div>
+                        <div><div class="card-title">Firmendaten</div><div class="card-subtitle">Name, Adresse, Logo</div></div>
+                    </div>
+                    <div class="nav-card" onclick="app.openPDFSettings()">
+                        <div class="card-icon purple">📄</div>
+                        <div><div class="card-title">PDF-Vorlage</div><div class="card-subtitle">Layout & Texte anpassen</div></div>
+                    </div>
+                    <div class="nav-card" onclick="app.openFieldSettings()">
+                        <div class="card-icon green">🔧</div>
+                        <div><div class="card-title">Felder & Kategorien</div><div class="card-subtitle">Anpassbare Felder</div></div>
+                    </div>
+                    <div class="nav-card" onclick="app.resetAllData()">
+                        <div class="card-icon red">⚠️</div>
+                        <div><div class="card-title">Alle Daten löschen</div><div class="card-subtitle">Zurücksetzen</div></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderBackup() {
+            contentArea.innerHTML = `
+                <h1 class="page-title">Backup & Wiederherstellung</h1>
+                <div class="card-grid">
+                    <div class="nav-card" onclick="app.createBackup()">
+                        <div class="card-icon blue">💾</div>
+                        <div><div class="card-title">Backup erstellen</div><div class="card-subtitle">Alle Daten als Datei speichern</div></div>
+                    </div>
+                    <div class="nav-card" onclick="app.restoreBackup()">
+                        <div class="card-icon green">📥</div>
+                        <div><div class="card-title">Backup wiederherstellen</div><div class="card-subtitle">Daten aus Datei laden</div></div>
+                    </div>
+                    <div class="nav-card" onclick="app.exportAllExcel()">
+                        <div class="card-icon purple">📊</div>
+                        <div><div class="card-title">Komplett-Export</div><div class="card-subtitle">Alle Daten als Excel</div></div>
+                    </div>
+                    <div class="nav-card" onclick="app.importAllExcel()">
+                        <div class="card-icon amber">📤</div>
+                        <div><div class="card-title">Komplett-Import</div><div class="card-subtitle">Daten aus Excel importieren</div></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ============================================================
+        // APP-CONTROLLER (mit allen Methoden aus erstem Code + Sync)
+        // ============================================================
+        const app = {
+            currentPage: 'dashboard',
+            currentProjectId: null,
+
+            async init() {
+                await db.init();
+                document.getElementById('syncStatus').textContent = navigator.onLine ? '🟢 Online' : '🔴 Offline';
+                this.setupNavigation();
+                this.setupSearch();
+                this.setupTheme();
+                this.setupResponsive();
+                this.navigate('dashboard');
+                document.getElementById('splash').style.display = 'none';
+            },
+
+            setupNavigation() {
+                document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        const page = item.dataset.page;
+                        this.navigate(page);
+                    });
+                });
+                document.getElementById('syncBtn').addEventListener('click', fullSync);
+            },
+
+            navigate(page, param = null) {
+                this.currentPage = page;
+                this.currentProjectId = param;
+                document.querySelectorAll('.nav-item[data-page]').forEach(item => item.classList.remove('active'));
+                const activeEl = document.querySelector(`.nav-item[data-page="${page}"]`);
+                if (activeEl) activeEl.classList.add('active');
+                document.getElementById('sidebar').classList.remove('open');
+                switch (page) {
+                    case 'dashboard': renderDashboard(); break;
+                    case 'customers': renderCustomers(); break;
+                    case 'projects': renderProjects(param); break;
+                    case 'materials': renderMaterials(); break;
+                    case 'offers': renderOffers(); break;
+                    case 'settings': renderSettings(); break;
+                    case 'backup': renderBackup(); break;
+                    default: renderDashboard();
+                }
+            },
+
+            setupSearch() {
+                const searchInput = document.getElementById('globalSearch');
+                searchInput.addEventListener('input', async (e) => {
+                    const query = e.target.value.toLowerCase().trim();
+                    if (query.length < 2 && query.length > 0) return;
+                    if (query.length === 0) {
+                        this.navigate(this.currentPage, this.currentProjectId);
+                        return;
+                    }
+                    const customers = await db.getAll('customers');
+                    const projects = await db.getAll('projects');
+                    const materials = await db.getAll('materials');
+                    const results = [
+                        ...customers.filter(c =>
+                            (c.firstName + ' ' + c.lastName).toLowerCase().includes(query) ||
+                            (c.phone || '').includes(query) ||
+                            (c.city || '').toLowerCase().includes(query) ||
+                            (c.street || '').toLowerCase().includes(query)
+                        ).map(c => ({ type: 'Kunde', title: `${c.firstName} ${c.lastName}`, id: c.id, link: 'customers' })),
+                        ...projects.filter(p =>
+                            (p.title || '').toLowerCase().includes(query) ||
+                            (p.status || '').toLowerCase().includes(query)
+                        ).map(p => ({ type: 'Projekt', title: p.title, id: p.id, link: 'projects' })),
+                        ...materials.filter(m =>
+                            (m.name || '').toLowerCase().includes(query)
+                        ).map(m => ({ type: 'Material', title: m.name, id: m.id, link: 'materials' })),
+                    ];
+                    contentArea.innerHTML = `
+                        <h1 class="page-title">Suchergebnisse für "${escapeHtml(query)}"</h1>
+                        <div class="table-container">
+                            <table>
+                                <thead><tr><th>Typ</th><th>Name</th><th>Aktion</th></tr></thead>
+                                <tbody>
+                                    ${results.length > 0 ? results.map(r => `
+                                        <tr>
+                                            <td><span class="status-badge ${r.type === 'Kunde' ? 'status-neu' : r.type === 'Projekt' ? 'status-aktiv' : 'status-offen'}">${r.type}</span></td>
+                                            <td><strong>${escapeHtml(r.title)}</strong></td>
+                                            <td><button class="btn btn-sm btn-primary" onclick="app.navigate('${r.link}', ${r.id})">Öffnen</button></td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">Keine Ergebnisse</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                });
+            },
+
+            setupTheme() {
+                const toggle = document.getElementById('themeToggle');
+                const saved = localStorage.getItem('klima-theme') || 'light';
+                document.body.dataset.theme = saved;
+                toggle.querySelector('.nav-icon').textContent = saved === 'dark' ? '☀️' : '🌙';
+                toggle.childNodes[toggle.childNodes.length - 1].textContent = saved === 'dark' ? ' Hellmodus' : ' Dunkelmodus';
+                toggle.addEventListener('click', () => {
+                    const newTheme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+                    document.body.dataset.theme = newTheme;
+                    localStorage.setItem('klima-theme', newTheme);
+                    toggle.querySelector('.nav-icon').textContent = newTheme === 'dark' ? '☀️' : '🌙';
+                    toggle.childNodes[toggle.childNodes.length - 1].textContent = newTheme === 'dark' ? ' Hellmodus' : ' Dunkelmodus';
+                });
+            },
+
+            setupResponsive() {
+                const menuToggle = document.getElementById('menuToggle');
+                const sidebar = document.getElementById('sidebar');
+                const checkWidth = () => {
+                    if (window.innerWidth <= 900) {
+                        menuToggle.style.display = 'flex';
+                    } else {
+                        menuToggle.style.display = 'none';
+                        sidebar.classList.remove('open');
+                    }
+                };
+                checkWidth();
+                window.addEventListener('resize', checkWidth);
+                menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+                document.addEventListener('click', (e) => {
+                    if (window.innerWidth <= 900 && !sidebar.contains(e.target) && e.target !== menuToggle && !menuToggle.contains(e.target)) {
+                        sidebar.classList.remove('open');
+                    }
+                });
+            },
+
+            // ---- Kunden ----
+            async openCustomerModal(id = null) {
+                const customer = id ? await db.get('customers', id) : null;
+                const modal = showModal(
+                    id ? 'Kunde bearbeiten' : 'Neuer Kunde',
+                    `
+                        <div class="form-row">
+                            <div class="form-group"><label>Vorname *</label><input type="text" id="custFirstName" value="${escapeHtml(customer?.firstName || '')}"></div>
+                            <div class="form-group"><label>Nachname *</label><input type="text" id="custLastName" value="${escapeHtml(customer?.lastName || '')}"></div>
+                        </div>
+                        <div class="form-group"><label>Firma (optional)</label><input type="text" id="custCompany" value="${escapeHtml(customer?.company || '')}"></div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Straße</label><input type="text" id="custStreet" value="${escapeHtml(customer?.street || '')}"></div>
+                            <div class="form-group"><label>Hausnummer</label><input type="text" id="custHouseNumber" value="${escapeHtml(customer?.houseNumber || '')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>PLZ</label><input type="text" id="custZip" value="${escapeHtml(customer?.zip || '')}"></div>
+                            <div class="form-group"><label>Ort</label><input type="text" id="custCity" value="${escapeHtml(customer?.city || '')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Telefon</label><input type="text" id="custPhone" value="${escapeHtml(customer?.phone || '')}"></div>
+                            <div class="form-group"><label>E-Mail</label><input type="email" id="custEmail" value="${escapeHtml(customer?.email || '')}"></div>
+                        </div>
+                        <div class="form-group"><label>Notizen</label><textarea id="custNotes" rows="2">${escapeHtml(customer?.notes || '')}</textarea></div>
+                        <div class="form-group"><label>Status</label>
+                            <select id="custStatus">
+                                ${['Neu','Besichtigt','Angebot gesendet','Auftrag erhalten','Fertig'].map(s => `<option value="${s}" ${customer?.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                            </select>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const data = {
+                            firstName: overlay.querySelector('#custFirstName').value.trim(),
+                            lastName: overlay.querySelector('#custLastName').value.trim(),
+                            company: overlay.querySelector('#custCompany').value.trim(),
+                            street: overlay.querySelector('#custStreet').value.trim(),
+                            houseNumber: overlay.querySelector('#custHouseNumber').value.trim(),
+                            zip: overlay.querySelector('#custZip').value.trim(),
+                            city: overlay.querySelector('#custCity').value.trim(),
+                            phone: overlay.querySelector('#custPhone').value.trim(),
+                            email: overlay.querySelector('#custEmail').value.trim(),
+                            notes: overlay.querySelector('#custNotes').value.trim(),
+                            status: overlay.querySelector('#custStatus').value,
+                        };
+                        if (!data.firstName || !data.lastName) {
+                            showToast('Vor- und Nachname sind Pflichtfelder.', 'error');
+                            return;
+                        }
+                        if (id) {
+                            data.id = id;
+                            data.createdAt = customer.createdAt;
+                            await db.put('customers', data);
+                        } else {
+                            await db.add('customers', data);
+                        }
+                        overlay.remove();
+                        showToast(id ? 'Kunde aktualisiert.' : 'Kunde angelegt.', 'success');
+                        this.navigate('customers');
+                    }
+                );
+            },
+
+            async deleteCustomer(id) {
+                if (!confirm('Kunden wirklich löschen? Alle zugehörigen Projekte bleiben erhalten.')) return;
+                await db.delete('customers', id);
+                showToast('Kunde gelöscht.', 'info');
+                this.navigate('customers');
+            },
+
+            async duplicateCustomer(id) {
+                const original = await db.get('customers', id);
+                if (!original) return;
+                const copy = { ...original };
+                delete copy.id;
+                delete copy.createdAt;
+                copy.firstName = copy.firstName + ' (Kopie)';
+                await db.add('customers', copy);
+                showToast('Kunde dupliziert.', 'success');
+                this.navigate('customers');
+            },
+
+            // ---- Projekte ----
+            async openProjectModal(id = null) {
+                const project = id ? await db.get('projects', id) : null;
+                const customers = await db.getAll('customers');
+                const statusOptions = ['Neu','Besichtigung offen','Besichtigt','Angebot offen','Angebot gesendet','Auftrag erhalten','Material bestellt','Montage geplant','Montage läuft','Fertig','Archiv'];
+                const modal = showModal(
+                    id ? 'Projekt bearbeiten' : 'Neues Projekt',
+                    `
+                        <div class="form-group"><label>Projekttitel *</label><input type="text" id="projTitle" value="${escapeHtml(project?.title || '')}"></div>
+                        <div class="form-group"><label>Kunde</label>
+                            <select id="projCustomer">
+                                <option value="">-- Kunde auswählen --</option>
+                                ${customers.map(c => `<option value="${c.id}" ${project?.customerId === c.id ? 'selected' : ''}>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Status</label>
+                            <select id="projStatus">${statusOptions.map(s => `<option value="${s}" ${project?.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+                        </div>
+                        <div class="form-group"><label>Notizen</label><textarea id="projNotes" rows="3">${escapeHtml(project?.notes || '')}</textarea></div>
+                    `,
+                    async (overlay) => {
+                        const data = {
+                            title: overlay.querySelector('#projTitle').value.trim(),
+                            customerId: parseInt(overlay.querySelector('#projCustomer').value) || null,
+                            status: overlay.querySelector('#projStatus').value,
+                            notes: overlay.querySelector('#projNotes').value.trim(),
+                        };
+                        if (!data.title) { showToast('Titel ist erforderlich.', 'error'); return; }
+                        if (id) {
+                            data.id = id;
+                            data.createdAt = project.createdAt;
+                            await db.put('projects', data);
+                        } else {
+                            const newId = await db.add('projects', data);
+                            data.id = newId;
+                        }
+                        overlay.remove();
+                        showToast(id ? 'Projekt aktualisiert.' : 'Projekt erstellt.', 'success');
+                        this.navigate('projects', data.id);
+                    }
+                );
+            },
+
+            async deleteProject(id) {
+                if (!confirm('Projekt und alle zugehörigen Räume, Bilder und Angebote wirklich löschen?')) return;
+                const rooms = await db.getByIndex('rooms', 'projectId', id);
+                const images = await db.getByIndex('images', 'projectId', id);
+                const offers = await db.getByIndex('offers', 'projectId', id);
+                for (const r of rooms) await db.delete('rooms', r.id);
+                for (const i of images) await db.delete('images', i.id);
+                for (const o of offers) await db.delete('offers', o.id);
+                await db.delete('projects', id);
+                showToast('Projekt gelöscht.', 'info');
+                this.navigate('projects');
+            },
+
+            // ---- Räume ----
+            async openRoomModal(projectId) {
+                const modal = showModal(
+                    'Raum hinzufügen',
+                    `
+                        <div class="form-group"><label>Raumname</label><input type="text" id="roomName" placeholder="z.B. Wohnzimmer"></div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Länge (m) *</label><input type="number" id="roomLength" step="0.1" min="0" placeholder="5.0"></div>
+                            <div class="form-group"><label>Breite (m) *</label><input type="number" id="roomWidth" step="0.1" min="0" placeholder="4.0"></div>
+                            <div class="form-group"><label>Höhe (m)</label><input type="number" id="roomHeight" step="0.1" min="0" value="2.5" placeholder="2.5"></div>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const data = {
+                            projectId,
+                            name: overlay.querySelector('#roomName').value.trim() || 'Unbenannt',
+                            length: parseFloat(overlay.querySelector('#roomLength').value) || 0,
+                            width: parseFloat(overlay.querySelector('#roomWidth').value) || 0,
+                            height: parseFloat(overlay.querySelector('#roomHeight').value) || 2.5,
+                        };
+                        if (data.length <= 0 || data.width <= 0) {
+                            showToast('Länge und Breite müssen größer als 0 sein.', 'error');
+                            return;
+                        }
+                        await db.add('rooms', data);
+                        const rooms = await db.getByIndex('rooms', 'projectId', projectId);
+                        const project = await db.get('projects', projectId);
+                        if (project) {
+                            project.roomCount = rooms.length;
+                            await db.put('projects', project);
+                        }
+                        overlay.remove();
+                        showToast('Raum hinzugefügt.', 'success');
+                        this.navigate('projects', projectId);
+                    }
+                );
+            },
+
+            async deleteRoom(roomId, projectId) {
+                if (!confirm('Raum löschen?')) return;
+                await db.delete('rooms', roomId);
+                const rooms = await db.getByIndex('rooms', 'projectId', projectId);
+                const project = await db.get('projects', projectId);
+                if (project) {
+                    project.roomCount = rooms.length;
+                    await db.put('projects', project);
+                }
+                showToast('Raum gelöscht.', 'info');
+                this.navigate('projects', projectId);
+            },
+
+            // ---- Bilder ----
+            async openImageModal(projectId) {
+                const modal = showModal(
+                    'Bild hinzufügen',
+                    `
+                        <div class="form-group"><label>Kategorie</label>
+                            <select id="imgCategory">
+                                <option>Wohnzimmer</option><option>Schlafzimmer</option><option>Außengerät</option>
+                                <option>Leitungsweg</option><option>Elektro</option><option>Sonstiges</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Beschriftung</label><input type="text" id="imgLabel" placeholder="optional"></div>
+                        <div class="form-group"><label>Bild wählen</label><input type="file" id="imgFile" accept="image/*" capture="environment"></div>
+                    `,
+                    async (overlay) => {
+                        const fileInput = overlay.querySelector('#imgFile');
+                        const file = fileInput.files[0];
+                        if (!file) { showToast('Bitte ein Bild auswählen.', 'error'); return; }
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                            const data = {
+                                projectId,
+                                data: e.target.result,
+                                category: overlay.querySelector('#imgCategory').value,
+                                label: overlay.querySelector('#imgLabel').value.trim(),
+                                createdAt: new Date().toISOString(),
+                            };
+                            await db.add('images', data);
+                            overlay.remove();
+                            showToast('Bild gespeichert.', 'success');
+                            this.navigate('projects', projectId);
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                );
+            },
+
+            viewImage(dataUrl) {
+                const win = window.open('', '_blank');
+                win.document.write(`<img src="${dataUrl}" style="max-width:100%;max-height:100vh;display:block;margin:auto;">`);
+                win.document.title = 'Bildvorschau';
+            },
+
+            // ---- Material ----
+            async openMaterialModal(id = null) {
+                const mat = id ? await db.get('materials', id) : null;
+                const modal = showModal(
+                    id ? 'Material bearbeiten' : 'Neues Material',
+                    `
+                        <div class="form-group"><label>Artikelname *</label><input type="text" id="matName" value="${escapeHtml(mat?.name || '')}"></div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Kategorie</label><input type="text" id="matCategory" value="${escapeHtml(mat?.category || '')}" placeholder="z.B. Rohr, Gerät"></div>
+                            <div class="form-group"><label>Einheit</label><input type="text" id="matUnit" value="${escapeHtml(mat?.unit || 'Stk')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Einkaufspreis (€)</label><input type="number" id="matPurchasePrice" step="0.01" value="${mat?.purchasePrice || 0}"></div>
+                            <div class="form-group"><label>Verkaufspreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"></div>
+                        </div>
+                        <div class="form-group"><label>Notizen</label><textarea id="matNotes" rows="2">${escapeHtml(mat?.notes || '')}</textarea></div>
+                    `,
+                    async (overlay) => {
+                        const data = {
+                            name: overlay.querySelector('#matName').value.trim(),
+                            category: overlay.querySelector('#matCategory').value.trim(),
+                            unit: overlay.querySelector('#matUnit').value.trim() || 'Stk',
+                            purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
+                            sellingPrice: parseFloat(overlay.querySelector('#matSellingPrice').value) || 0,
+                            notes: overlay.querySelector('#matNotes').value.trim(),
+                        };
+                        if (!data.name) { showToast('Artikelname ist erforderlich.', 'error'); return; }
+                        if (id) {
+                            data.id = id;
+                            data.createdAt = mat.createdAt;
+                            await db.put('materials', data);
+                        } else {
+                            await db.add('materials', data);
+                        }
+                        overlay.remove();
+                        showToast(id ? 'Material aktualisiert.' : 'Material angelegt.', 'success');
+                        this.navigate('materials');
+                    }
+                );
+            },
+
+            async deleteMaterial(id) {
+                if (!confirm('Material löschen?')) return;
+                await db.delete('materials', id);
+                showToast('Material gelöscht.', 'info');
+                this.navigate('materials');
+            },
+
+            // ---- Angebote ----
+            async createOffer(projectId) {
+                const project = await db.getProjectWithDetails(projectId);
+                if (!project) { showToast('Projekt nicht gefunden.', 'error'); return; }
+                const customer = project.customerId ? await db.get('customers', project.customerId) : null;
+                if (!customer) { showToast('Kein Kunde zugewiesen.', 'error'); return; }
+                const materials = await db.getAll('materials');
+                const cooling = calculateCoolingCapacity(project.rooms || []);
+                const modal = showModal(
+                    'Angebot erstellen - Material auswählen',
+                    `
+                        <p><strong>Projekt:</strong> ${escapeHtml(project.title)}</p>
+                        <p><strong>Kunde:</strong> ${escapeHtml(customer.firstName)} ${escapeHtml(customer.lastName)}</p>
+                        <p><strong>Empf. Kälteleistung:</strong> ${cooling.recommendation} kW</p>
+                        <div class="table-container" style="max-height:300px;overflow-y:auto;margin-top:12px;">
+                            <table>
+                                <thead><tr><th>Auswählen</th><th>Artikel</th><th>Preis</th><th>Menge</th></tr></thead>
+                                <tbody>
+                                    ${materials.map(m => `
+                                        <tr>
+                                            <td><input type="checkbox" class="offer-mat-check" value="${m.id}" data-price="${m.sellingPrice || 0}" data-name="${escapeHtml(m.name)}" data-unit="${escapeHtml(m.unit || 'Stk')}"></td>
+                                            <td>${escapeHtml(m.name)}</td>
+                                            <td>${formatCurrency(m.sellingPrice || 0)}</td>
+                                            <td><input type="number" class="offer-mat-qty" value="1" min="1" style="width:60px;padding:4px;"></td>
+                                        </tr>
+                                    `).join('') || '<tr><td colspan="4">Keine Materialien</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const selectedItems = [];
+                        const rows = overlay.querySelectorAll('tbody tr');
+                        rows.forEach(row => {
+                            const checkbox = row.querySelector('.offer-mat-check');
+                            const qtyInput = row.querySelector('.offer-mat-qty');
+                            if (checkbox && checkbox.checked) {
+                                selectedItems.push({
+                                    materialId: parseInt(checkbox.value),
+                                    name: checkbox.dataset.name,
+                                    unit: checkbox.dataset.unit,
+                                    price: parseFloat(checkbox.dataset.price),
+                                    quantity: parseInt(qtyInput?.value || 1),
+                                });
+                            }
+                        });
+                        let subtotal = 0;
+                        const positions = selectedItems.map(item => {
+                            const total = item.price * item.quantity;
+                            subtotal += total;
+                            return { ...item, total };
+                        });
+                        const vatRate = 0.19;
+                        const vatAmount = subtotal * vatRate;
+                        const totalPrice = subtotal + vatAmount;
+                        const offerData = {
+                            projectId,
+                            customerId: project.customerId,
+                            positions,
+                            subtotal,
+                            vatRate,
+                            vatAmount,
+                            totalPrice,
+                            coolingRecommendation: cooling.recommendation,
+                            coolingDetails: cooling.details,
+                            status: 'Angebot offen',
+                            createdAt: new Date().toISOString(),
+                        };
+                        await db.add('offers', offerData);
+                        project.status = 'Angebot offen';
+                        await db.put('projects', project);
+                        overlay.remove();
+                        showToast('Angebot erstellt.', 'success');
+                        this.navigate('offers');
+                    }
+                );
+            },
+
+            async exportOfferPDF(offerId) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+                const project = await db.get('projects', offer.projectId);
+                const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                let y = 20;
+                const companyName = (await db.get('settings', 'companyName'))?.value || 'Ihr Unternehmen';
+                const companyAddress = (await db.get('settings', 'companyAddress'))?.value || '';
+                doc.setFontSize(18);
+                doc.setFont('helvetica', 'bold');
+                doc.text(companyName, 20, y);
+                y += 7;
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'normal');
+                if (companyAddress) { doc.text(companyAddress, 20, y); y += 5; }
+                y += 5;
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('ANGEBOT', 20, y);
+                y += 10;
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                if (customer) {
+                    doc.text(`Kunde: ${customer.firstName} ${customer.lastName}`, 20, y); y += 5;
+                    if (customer.company) { doc.text(`Firma: ${customer.company}`, 20, y); y += 5; }
+                    doc.text(`Adresse: ${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`, 20, y); y += 5;
+                    if (customer.phone) { doc.text(`Telefon: ${customer.phone}`, 20, y); y += 5; }
+                }
+                y += 5;
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Projekt: ${project?.title || 'Unbenannt'}`, 20, y); y += 5;
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Datum: ${formatDate(offer.createdAt)}`, 20, y); y += 5;
+                doc.text(`Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, 20, y); y += 8;
+                doc.setFont('helvetica', 'bold');
+                doc.setFillColor(240, 240, 240);
+                doc.rect(20, y, 170, 7, 'F');
+                doc.text('Pos.', 22, y + 5); doc.text('Bezeichnung', 35, y + 5); doc.text('Einheit', 100, y + 5); doc.text('Menge', 120, y + 5); doc.text('Einzelpreis', 140, y + 5); doc.text('Gesamt', 165, y + 5);
+                y += 9;
+                doc.setFont('helvetica', 'normal');
+                let posNum = 1;
+                for (const pos of offer.positions || []) {
+                    if (y > 250) { doc.addPage(); y = 20; }
+                    doc.text(`${posNum}.`, 22, y); doc.text(pos.name || '', 35, y); doc.text(pos.unit || 'Stk', 100, y); doc.text(`${pos.quantity}`, 120, y); doc.text(formatCurrency(pos.price), 140, y); doc.text(formatCurrency(pos.total), 165, y);
+                    y += 6; posNum++;
+                }
+                y += 5;
+                doc.line(20, y, 190, y); y += 7;
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Zwischensumme:`, 120, y); doc.text(formatCurrency(offer.subtotal || 0), 165, y); y += 6;
+                doc.text(`MwSt. (19%):`, 120, y); doc.text(formatCurrency(offer.vatAmount || 0), 165, y); y += 6;
+                doc.setFontSize(12);
+                doc.text(`Gesamtsumme:`, 120, y); doc.text(formatCurrency(offer.totalPrice || 0), 165, y);
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'normal');
+                doc.text('Angebot freibleibend - Es gelten unsere AGB.', 20, 280);
+                doc.save(`Angebot_${offer.id}_${customer?.lastName || 'Kunde'}.pdf`);
+                showToast('PDF exportiert.', 'success');
+            },
+
+            async deleteOffer(id) {
+                if (!confirm('Angebot löschen?')) return;
+                await db.delete('offers', id);
+                showToast('Angebot gelöscht.', 'info');
+                this.navigate('offers');
+            },
+
+            // ---- Excel Exports ----
+            async exportMaterialsExcel() {
+                const materials = await db.getAll('materials');
+                const wsData = [['Artikelname', 'Kategorie', 'Einheit', 'Einkaufspreis', 'Verkaufspreis', 'Notizen']];
+                for (const m of materials) wsData.push([m.name, m.category, m.unit, m.purchasePrice, m.sellingPrice, m.notes]);
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Materialien');
+                XLSX.writeFile(wb, 'Materialliste.xlsx');
+                showToast('Material-Excel exportiert.', 'success');
+            },
+
+            async importMaterialsExcel() {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.xlsx,.xls';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    const data = await file.arrayBuffer();
+                    const wb = XLSX.read(data, { type: 'array' });
+                    const sheetName = wb.SheetNames.find(n => /material/i.test(n)) || wb.SheetNames[0];
+                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+                    let imported = 0;
+                    for (const row of rows) {
+                        const artikel = (row['Artikel'] || row['Artikelname'] || '').toString().trim();
+                        if (!artikel) continue;
+                        const hersteller = (row['Hersteller'] || '').toString().trim();
+                        const name = hersteller ? `${hersteller} ${artikel}` : artikel;
+                        const existing = await db.getAll('materials');
+                        if (existing.some(m => m.name === name)) continue;
+                        await db.add('materials', {
+                            name,
+                            category: (row['Kategorie'] || '').toString().trim(),
+                            unit: (row['Einheit'] || 'Stk').toString().trim() || 'Stk',
+                            purchasePrice: parseFloat(row['Einkaufspreis'] || row['EK Netto'] || 0) || 0,
+                            sellingPrice: parseFloat(row['Verkaufspreis'] || row['VK Netto'] || 0) || 0,
+                            notes: (row['Notizen'] || '').toString().trim(),
+                            createdAt: new Date().toISOString(),
+                        });
+                        imported++;
+                    }
+                    showToast(`${imported} Materialien importiert.`, 'success');
+                    this.navigate('materials');
+                };
+                input.click();
+            },
+
+            async exportOffersExcel() {
+                const offers = await db.getAll('offers');
+                const wsData = [['Angebot ID', 'Projekt', 'Summe', 'Status', 'Datum']];
+                for (const o of offers) {
+                    const proj = await db.get('projects', o.projectId);
+                    wsData.push([o.id, proj?.title || '', o.totalPrice, o.status, formatDate(o.createdAt)]);
+                }
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Angebote');
+                XLSX.writeFile(wb, 'Angebote.xlsx');
+                showToast('Angebote exportiert.', 'success');
+            },
+
+            async exportAllExcel() {
+                const data = await db.exportAllData();
+                const wb = XLSX.utils.book_new();
+                const custData = [['ID','Vorname','Nachname','Firma','Straße','PLZ','Ort','Telefon','Status']];
+                for (const c of data.customers) custData.push([c.id,c.firstName,c.lastName,c.company,c.street,c.zip,c.city,c.phone,c.status]);
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(custData), 'Kunden');
+                const projData = [['ID','Titel','Kunden-ID','Status','Notizen','Datum']];
+                for (const p of data.projects) projData.push([p.id,p.title,p.customerId,p.status,p.notes,formatDate(p.createdAt)]);
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(projData), 'Projekte');
+                const matData = [['ID','Name','Kategorie','Einheit','Einkaufspreis','Verkaufspreis']];
+                for (const m of data.materials) matData.push([m.id,m.name,m.category,m.unit,m.purchasePrice,m.sellingPrice]);
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matData), 'Materialien');
+                XLSX.writeFile(wb, 'KTM_KomplettExport.xlsx');
+                showToast('Komplett-Export erstellt.', 'success');
+            },
+
+            async importAllExcel() {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.xlsx,.xls';
+                input.onchange = async (e) => {
+                    if (!confirm('Achtung: Alle vorhandenen Daten werden überschrieben! Fortfahren?')) return;
+                    const file = e.target.files[0];
+                    const data = await file.arrayBuffer();
+                    const wb = XLSX.read(data, { type: 'array' });
+                    const importData = { customers: [], projects: [], materials: [] };
+                    if (wb.SheetNames.includes('Kunden')) {
+                        const rows = XLSX.utils.sheet_to_json(wb.Sheets['Kunden'], { header: 1 });
+                        for (let i = 1; i < rows.length; i++) {
+                            const [id, firstName, lastName, company, street, zip, city, phone, status] = rows[i];
+                            if (firstName) importData.customers.push({ firstName, lastName, company, street, zip, city, phone, status: status || 'Neu', createdAt: new Date().toISOString() });
+                        }
+                    }
+                    if (wb.SheetNames.includes('Materialien')) {
+                        const rows = XLSX.utils.sheet_to_json(wb.Sheets['Materialien'], { header: 1 });
+                        for (let i = 1; i < rows.length; i++) {
+                            const [id, name, category, unit, purchasePrice, sellingPrice] = rows[i];
+                            if (name) importData.materials.push({ name, category, unit, purchasePrice: parseFloat(purchasePrice)||0, sellingPrice: parseFloat(sellingPrice)||0, createdAt: new Date().toISOString() });
+                        }
+                    }
+                    await db.clear('customers');
+                    await db.clear('materials');
+                    for (const c of importData.customers) await db.add('customers', c);
+                    for (const m of importData.materials) await db.add('materials', m);
+                    showToast('Daten importiert.', 'success');
+                    this.navigate('dashboard');
+                };
+                input.click();
+            },
+
+            // ---- Backup ----
+            async createBackup() {
+                const data = await db.exportAllData();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `KTM_Backup_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('Backup erstellt.', 'success');
+            },
+
+            async restoreBackup() {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = async (e) => {
+                    if (!confirm('Achtung: Alle vorhandenen Daten werden überschrieben! Fortfahren?')) return;
+                    const file = e.target.files[0];
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    await db.importAllData(data);
+                    showToast('Backup wiederhergestellt.', 'success');
+                    this.navigate('dashboard');
+                };
+                input.click();
+            },
+
+            // ---- Einstellungen ----
+            async openCompanySettings() {
+                const companyName = (await db.get('settings', 'companyName'))?.value || '';
+                const companyAddress = (await db.get('settings', 'companyAddress'))?.value || '';
+                showModal('Firmendaten', `
+                    <div class="form-group"><label>Firmenname</label><input type="text" id="setCompanyName" value="${escapeHtml(companyName)}"></div>
+                    <div class="form-group"><label>Adresse (für PDF)</label><textarea id="setCompanyAddress" rows="3">${escapeHtml(companyAddress)}</textarea></div>
+                `, async (overlay) => {
+                    await db.put('settings', { key: 'companyName', value: overlay.querySelector('#setCompanyName').value.trim() });
+                    await db.put('settings', { key: 'companyAddress', value: overlay.querySelector('#setCompanyAddress').value.trim() });
+                    overlay.remove();
+                    showToast('Firmendaten gespeichert.', 'success');
+                });
+            },
+
+            async openPDFSettings() {
+                const pdfFooter = (await db.get('settings', 'pdfFooter'))?.value || 'Angebot freibleibend - Es gelten unsere AGB.';
+                showModal('PDF-Einstellungen', `
+                    <div class="form-group"><label>Footer-Text</label><textarea id="setPdfFooter" rows="3">${escapeHtml(pdfFooter)}</textarea></div>
+                `, async (overlay) => {
+                    await db.put('settings', { key: 'pdfFooter', value: overlay.querySelector('#setPdfFooter').value.trim() });
+                    overlay.remove();
+                    showToast('PDF-Einstellungen gespeichert.', 'success');
+                });
+            },
+
+            async openFieldSettings() {
+                showToast('Felder können im Code erweitert werden. Dies ist ein Profi-Feature.', 'info');
+            },
+
+            async resetAllData() {
+                if (!confirm('ALLE DATEN UNWIDERRUFLICH LÖSCHEN? Dies kann nicht rückgängig gemacht werden!')) return;
+                if (!confirm('Wirklich ALLES löschen?')) return;
+                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'];
+                for (const store of stores) await db.clear(store);
+                showToast('Alle Daten gelöscht.', 'info');
+                this.navigate('dashboard');
+            },
+        };
+
+        // ============================================================
+        // INITIALISIERUNG
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            app.init();
+        });
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(() => {});
+        }
+    </script>
 </body>
 </html>
