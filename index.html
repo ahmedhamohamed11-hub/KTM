@@ -472,50 +472,18 @@
         } catch (e) {
             console.warn('Supabase-Initialisierung fehlgeschlagen:', e);
         }
-const FIELD_MAP = {
-  firstName: 'first_name',
-  lastName: 'last_name',
-  houseNumber: 'house_number',
-  customerId: 'customer_id',
-  projectId: 'project_id',
 
-  offerNumber: 'offer_number',
-  offerDate: 'offer_date',
-  validUntil: 'valid_until',
-  validUntilEnabled: 'valid_until_enabled',
-
-  vatEnabled: 'vat_enabled',
-  vatRate: 'vat_rate',
-  vatAmount: 'vat_amount',
-
-  discountEnabled: 'discount_enabled',
-  discountRate: 'discount_rate',
-  discountAmount: 'discount_amount',
-
-  netAfterDiscount: 'net_after_discount',
-
-  totalPrice: 'total_price',
-  coolingRecommendation: 'cooling_recommendation',
-  coolingDetails: 'cooling_details',
-
-  contactPerson: 'contact_person',
-  contactPhone: 'contact_phone',
-  contactEmail: 'contact_email',
-
-  siteAddress: 'site_address',
-
-  createdAt: 'created_at',
-  updatedAt: 'updated_at'
-};
+        const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at', siteAddress:'site_address', articleNumber:'article_number', offerNumber:'offer_number', contactPerson:'contact_person', contactPhone:'contact_phone', contactEmail:'contact_email', validUntil:'valid_until', discountRate:'discount_rate', discountAmount:'discount_amount', netAfterDiscount:'net_after_discount' };
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
-function toSnake(o) {
-    const r = {};
-    for (const k in o) {
-        if (['_synced', '_remote', 'rooms', 'images', 'offers'].includes(k)) continue;
-        r[FIELD_MAP[k] || k] = o[k];
-    }
-    return r;
-}
+
+        function toSnake(o) {
+            const r={};
+            for(const k in o) {
+                if(['_synced','_remote'].includes(k)) continue;
+                r[FIELD_MAP[k]||k]=o[k];
+            }
+            return r;
+        }
 
         function toCamel(o) {
             const r={};
@@ -558,6 +526,9 @@ function toSnake(o) {
                     req.onerror = (e) => {
                         const err = e.target.error;
                         if (err && err.name === 'VersionError') {
+                            // Der Browser hat bereits eine neuere KTM_DB-Version gespeichert (z.B. von
+                            // einer älteren/anderen Version dieser App). Klare Fehlermeldung statt
+                            // des kryptischen Browser-Texts "requested version is less than existing".
                             reject(new Error('Es existiert bereits eine neuere lokale Datenbank in diesem Browser. Bitte lade die aktuellste Version der App, oder leere im Zweifel die Website-Daten für diese Seite (Browser-Einstellungen).'));
                             return;
                         }
@@ -567,6 +538,7 @@ function toSnake(o) {
                 });
             }
 
+            // ---- Lokale Operationen (WICHTIG für Sync) ----
             async addLocalOnly(storeName, data) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
@@ -595,6 +567,7 @@ function toSnake(o) {
                 });
             }
 
+            // ---- Öffentliche Lese-Methoden ----
             async get(storeName, id) {
                 return new Promise((resolve, reject) => {
                     if (id === undefined || id === null) { resolve(undefined); return; }
@@ -635,6 +608,7 @@ function toSnake(o) {
                 });
             }
 
+            // ---- Öffentliche Schreib-Methoden (Triggern Supabase Push) ----
             async add(storeName, data) {
                 data._synced = false;
                 data.createdAt = data.createdAt || new Date().toISOString();
@@ -643,66 +617,40 @@ function toSnake(o) {
                 const result = await this.addLocalOnly(storeName, data);
 
                 if (storeName !== 'settings' && !data.id) {
-                  data.id = result;
-await this.putLocalOnly(storeName, data);
-}
+                    data.id = result;
+                    await this.putLocalOnly(storeName, data);
+                }
 
-if (!isSyncing) {
-    backgroundSyncPush();
-}
+                backgroundSyncPush();
+                return result;
+            }
 
-return result;
-}
+            async put(storeName, data) {
+                data._synced = false;
+                data.updatedAt = new Date().toISOString();
+                const result = await this.putLocalOnly(storeName, data);
+                backgroundSyncPush();
+                return result;
+            }
 
-async put(storeName, data) {
-    data._synced = false;
-    data.updatedAt = new Date().toISOString();
+            async delete(storeName, id) {
+                await this.deleteLocalOnly(storeName, id);
+                if (navigator.onLine && supabaseAvailable) {
+                    sb.from(storeName).delete().eq(storeName === 'settings' ? 'key' : 'id', id).then(() => {
+                        console.log(`Deleted remote ${storeName} ${id}`);
+                    }).catch(console.warn);
+                }
+            }
 
-    const result = await this.putLocalOnly(storeName, data);
-
-    if (!isSyncing) {
-        backgroundSyncPush();
-    }
-
-    return result;
-}
-
-         async delete(storeName, id) {
-
-    await this.deleteLocalOnly(storeName, id);
-
-    if (!navigator.onLine || !supabaseAvailable) return;
-
-    try {
-
-        const { error } = await sb
-            .from(storeName)
-            .delete()
-            .eq(storeName === 'settings' ? 'key' : 'id', id);
-
-        if (error) {
-            console.error(error);
-        }
-
-    } catch (e) {
-        console.error(e);
-    }
-
-}
-
+            // ---- Spezifische Helfer ----
             async getProjectWithDetails(projectId) {
-    const project = await this.get('projects', projectId);
-    if (!project) return null;
-    const rooms = await this.getByIndex('rooms', 'projectId', projectId);
-    const images = await this.getByIndex('images', 'projectId', projectId);
-    const offers = await this.getByIndex('offers', 'projectId', projectId);
-    return {
-        ...project,
-        rooms,
-        images,
-        offers
-    };
-}
+                const project = await this.get('projects', projectId);
+                if (!project) return null;
+                const rooms = await this.getByIndex('rooms', 'projectId', projectId);
+                const images = await this.getByIndex('images', 'projectId', projectId);
+                const offers = await this.getByIndex('offers', 'projectId', projectId);
+                return { ...project, rooms, images, offers };
+            }
 
             async exportAllData() {
                 return {
@@ -735,6 +683,9 @@ async put(storeName, data) {
 
         const db = new DatabaseManager();
 
+        // ============================================================
+        // ============ ECHTZEIT & SYNC LOGIK =========================
+        // ============================================================
         async function handleRemoteChange(payload) {
             const { table, eventType, new: newRec, old: oldRec } = payload;
             console.log("Supabase Live Update:", eventType, table);
@@ -742,24 +693,12 @@ async put(storeName, data) {
             if (eventType === 'DELETE') {
                 await db.deleteLocalOnly(table, oldRec.key || oldRec.id);
             } else {
-               const localData = toCamel(newRec);
-
-const existing = await db.get(table, localData.id);
-
-if (
-    existing &&
-    existing.updatedAt &&
-    localData.updatedAt &&
-    new Date(existing.updatedAt) >= new Date(localData.updatedAt)
-) {
-    return;
-}
-
-localData._synced = true;
-localData._remote = true;
-
-await db.putLocalOnly(table, localData);
+                const localData = toCamel(newRec);
+                localData._synced = true;
+                localData._remote = true;
+                await db.putLocalOnly(table, localData);
             }
+            // Lade aktuelle Seite neu, um die empfangenen Daten anzuzeigen
             app.navigate(app.currentPage, app.currentProjectId);
         }
 
@@ -791,8 +730,10 @@ await db.putLocalOnly(table, localData);
                 return;
             }
             try {
+                // 1. Lokale, ungespeicherte Änderungen hochladen
                 await backgroundSyncPush();
 
+                // 2. Alle Daten aus Supabase herunterladen
                 const failedTables = [];
                 for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
                     const { data, error } = await sb.from(t).select('*');
@@ -809,6 +750,8 @@ await db.putLocalOnly(table, localData);
                     }
                 }
                 if (failedTables.length > 0) {
+                    // Sichtbar machen statt nur in der Konsole zu verstecken: sonst merkt man
+                    // z.B. ein fehlendes Datenbank-Schema erst, wenn Daten "verschwunden" scheinen.
                     updateSyncStatus('offline', '🟡 Sync unvollständig');
                     const details = failedTables.map(f => `${f.table}: ${f.message}`).join(' | ');
                     console.error('Folgende Tabellen konnten nicht synchronisiert werden:', details);
@@ -824,43 +767,17 @@ await db.putLocalOnly(table, localData);
             }
         }
 
-const _pushErrorsWarned = new Set();
+        const _pushErrorsWarned = new Set();
 
-let isSyncing = false;
-
-async function backgroundSyncPush() {
-
-    if (isSyncing) return;
-    if (!navigator.onLine || !supabaseAvailable) return;
-
-    isSyncing = true;
-
-    try {
-
-        for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
-
-            const unsynced = (await db.getAll(t)).filter(r => !r._synced);
-
-            const handled = new Set();
-
-            const filtered = unsynced.filter(r => {
-                const key = r.id ?? r.offerNumber ?? JSON.stringify(r);
-
-                if (handled.has(key)) return false;
-
-                handled.add(key);
-                return true;
-            });
-
-            for (const rec of filtered) {
-
-                const oldPK = getPK(t, rec);
-
-                const p = toSnake(rec);
-
-                if (!rec._remote || !p.id) {
-                    delete p.id;
-                }
+        async function backgroundSyncPush() {
+            if (!navigator.onLine || !supabaseAvailable) return;
+            try {
+                for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
+                    const unsynced = (await db.getAll(t)).filter(r => !r._synced);
+                    for (const rec of unsynced) {
+                        const oldPK = getPK(t, rec);
+                        const p = toSnake(rec);
+                        if (!rec._remote) delete p.id;
 
                         const { data, error } = await sb.from(t)
                             .upsert(p, rec._remote ? { onConflict: t === 'settings' ? 'key' : 'id' } : undefined)
@@ -870,20 +787,26 @@ async function backgroundSyncPush() {
                             const nr = toCamel(data[0]);
                             nr._synced = true;
                             nr._remote = true;
-                            nr.updatedAt = new Date().toISOString();
+
+                            // Falls dem Datensatz gerade erstmalig eine Server-ID zugewiesen wurde
+                            // (lokal neu angelegt, noch keine Server-ID), müssen alle abhängigen
+                            // Datensätze (z.B. Räume/Bilder/Angebote, die auf die alte lokale
+                            // projectId zeigen) auf die neue ID umgestellt werden. Sonst verlieren
+                            // sie nach der Synchronisation ihre Zuordnung.
                             const idChanged = !rec._remote && oldPK !== undefined && oldPK !== nr.id;
 
-                            if (oldPK !== nr.id) {
-    await db.deleteLocalOnly(t, oldPK);
-}
-
-await db.putLocalOnly(t, nr);
+                            await db.deleteLocalOnly(t, oldPK);
+                            await db.addLocalOnly(t, nr);
 
                             if (idChanged) {
                                 await remapForeignKeys(t, oldPK, nr.id);
                             }
                         } else if (error) {
                             console.warn(`Sync-Push-Fehler bei Tabelle "${t}":`, error.message);
+                            // Nur einmal pro Tabelle und Sitzung anzeigen, damit bei einem dauerhaften
+                            // Problem (z.B. fehlende Tabelle/Spalte) nicht bei jedem Speichern erneut
+                            // ein Toast erscheint – der Datensatz bleibt aber lokal als "nicht synced"
+                            // markiert und wird bei jedem weiteren Versuch erneut hochgeladen.
                             if (!_pushErrorsWarned.has(t)) {
                                 _pushErrorsWarned.add(t);
                                 showToast(`"${t}" konnte nicht synchronisiert werden: ${error.message}`, 'error');
@@ -894,6 +817,8 @@ await db.putLocalOnly(t, nr);
             } catch(e) { console.warn('Sync Push Fehler:', e); }
         }
 
+        // Aktualisiert Fremdschlüssel in abhängigen Tabellen, nachdem ein lokaler
+        // Datensatz beim ersten Sync eine neue, vom Server vergebene ID erhalten hat.
         async function remapForeignKeys(table, oldId, newId) {
             const relations = {
                 customers: [{ store: 'projects', field: 'customerId' }],
@@ -914,6 +839,9 @@ await db.putLocalOnly(t, nr);
             }
         }
 
+        // ============================================================
+        // ============ KÄLTELEISTUNGS-BERECHNUNG =====================
+        // ============================================================
         function calculateCoolingCapacity(rooms) {
             if (!rooms || rooms.length === 0) return { totalKW: 0, recommendation: null, details: [] };
 
@@ -958,12 +886,15 @@ await db.putLocalOnly(t, nr);
             return { totalKW, recommendation, details };
         }
 
+        // ============================================================
+        // ============ UI-HILFSFUNKTIONEN ============================
+        // ============================================================
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
             const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-            toast.innerHTML = `${icons[type] || ''} ${(message)}`;
+            toast.innerHTML = `${icons[type] || ''} ${escapeHtml(message)}`;
             container.appendChild(toast);
             setTimeout(() => {
                 toast.style.opacity = '0';
@@ -975,13 +906,6 @@ await db.putLocalOnly(t, nr);
         function formatCurrency(amount) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount || 0); }
         function formatDate(isoString) { return !isoString ? '-' : new Date(isoString).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
 
-        function toLocalDateString(date) {
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
         function getStatusClass(status) {
             const map = {
                 'Neu': 'status-neu', 'Besichtigung offen': 'status-offen', 'Besichtigt': 'status-offen',
@@ -1026,38 +950,20 @@ await db.putLocalOnly(t, nr);
             div.textContent = str ?? '';
             return div.innerHTML;
         }
-function compressImage(file, maxWidth = 800, quality = 0.7) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
 
-                if (width > maxWidth) {
-                    height = (height * maxWidth) / width;
-                    width = maxWidth;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', quality));
-            };
-            img.onerror = reject;
-            img.src = e.target.result;
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-}
+        // ---- ID-Hilfsfunktionen ----
+        // Wichtig, weil IDs zwei unterschiedliche Formen annehmen können:
+        // - Zahlen, solange ein Datensatz nur lokal (IndexedDB autoIncrement) existiert
+        // - Strings/UUIDs, sobald Supabase dem Datensatz beim ersten Sync eine eigene ID vergibt
+        // idJS() bettet eine ID sicher in einen dynamisch erzeugten onclick-Handler ein
+        // (Zahl bleibt unquotiert, String wird korrekt gequotet/escaped).
         function idJS(id) {
             if (typeof id === 'number') return String(id);
             return "'" + String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
         }
+        // parseId() ist das Gegenstück beim Auslesen aus <select>/dataset-Werten:
+        // rein numerische Strings werden zu Zahlen, alles andere (z.B. UUIDs) bleibt String.
+        // So bricht die Zuordnung nicht mehr, sobald ein Datensatz über Supabase eine UUID erhält.
         function parseId(value) {
             if (value === null || value === undefined || value === '') return null;
             return /^\d+$/.test(value) ? Number(value) : value;
@@ -1072,48 +978,15 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         }
 
         const MATERIAL_CATEGORIES = ['Klimageräte','Außengeräte','Multisplit','Wärmepumpen','Kupferrohre','Isolierung','Kabel','Kondensat','Elektromaterial','Befestigung','Arbeitszeit','Anfahrt','Zubehör','Sonstiges'];
-const OFFER_DEFAULTS = {
-    autoNumber: true,
-    lastNumber: 0,
-    defaultVatRate: 0.20,
-    vatEnabled: true,
-    validUntilEnabled: true,
-    defaultValidDays: 14,
-    defaultDiscount: 0,
-};
 
-async function loadOfferDefaults() {
-    const defaults = { ...OFFER_DEFAULTS };
-    for (const key of Object.keys(defaults)) {
-        const val = await getSetting(`offerDefault_${key}`, null);
-        if (val !== null) {
-            if (typeof defaults[key] === 'boolean') defaults[key] = val === 'true';
-            else if (typeof defaults[key] === 'number') defaults[key] = Number(val);
-            else defaults[key] = val;
-        }
-    }
-    return defaults;
-}
-
-async function saveOfferDefault(key, value) {
-    await setSetting(`offerDefault_${key}`, String(value));
-}
-
-async function getNextAutoNumber() {
-    const year = new Date().getFullYear();
-    const counterKey = `offerCounter_${year}`;
-    let counter = parseInt(await getSetting(counterKey, '0')) || 0;
-    counter += 1;
-    await setSetting(counterKey, String(counter));
-    return `A-${year}-${String(counter).padStart(4, '0')}`;
-}
-
-async function isOfferNumberUnique(number, excludeId = null) {
-    const allOffers = await db.getAll('offers');
-    return !allOffers.some(o => o.offerNumber === number && o.id !== excludeId);
-}
+        // ============================================================
+        // ============ SEITEN-RENDERER ===============================
+        // ============================================================
         const contentArea = document.getElementById('contentArea');
 
+        // ============================================================
+        // ============ KALENDER =======================================
+        // ============================================================
         let calendarViewDate = new Date();
 
         function eventTypeClass(type) {
@@ -1142,18 +1015,20 @@ async function isOfferNumberUnique(number, excludeId = null) {
                     (eventsByDate[ev.date] = eventsByDate[ev.date] || []).push(ev);
                 }
 
+                // Montag-basierter Kalender: Tage vor dem 1. und nach dem letzten Tag auffüllen,
+                // damit das Grid immer volle Wochen zeigt.
                 const firstOfMonth = new Date(year, month, 1);
-                const startOffset = (firstOfMonth.getDay() + 6) % 7;
+                const startOffset = (firstOfMonth.getDay() + 6) % 7; // 0 = Montag
                 const gridStart = new Date(year, month, 1 - startOffset);
-                const totalCells = 42;
+                const totalCells = 42; // 6 Wochen, damit das Layout nie springt
 
-                const todayStr = toLocalDateString(new Date());
+                const todayStr = new Date().toISOString().slice(0, 10);
 
                 let cellsHtml = '';
                 for (let i = 0; i < totalCells; i++) {
                     const cellDate = new Date(gridStart);
                     cellDate.setDate(gridStart.getDate() + i);
-                    const cellStr = toLocalDateString(cellDate);
+                    const cellStr = cellDate.toISOString().slice(0, 10);
                     const inMonth = cellDate.getMonth() === month;
                     const dayEvents = (eventsByDate[cellStr] || []).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
                     const visible = dayEvents.slice(0, 2);
@@ -1223,7 +1098,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
                 const gesendeteAngebote = offers.filter(o => o.status === 'Angebot gesendet').length;
                 const fertigeProjekte = projects.filter(p => p.status === 'Fertig').length;
-                const todayStr = toLocalDateString(new Date());
+                const todayStr = new Date().toISOString().slice(0, 10);
                 const anstehendeTermine = events.filter(ev => ev.date >= todayStr).length;
 
                 document.getElementById('customerCount').textContent = customers.length;
@@ -1559,6 +1434,9 @@ async function isOfferNumberUnique(number, excludeId = null) {
             `;
         }
 
+        // ============================================================
+        // ============ APP-CONTROLLER ================================
+        // ============================================================
         const app = {
             currentPage: 'dashboard',
             currentProjectId: null,
@@ -1574,6 +1452,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
 
                 this.hideSplash();
 
+                // Start synchronisation process (läuft im Hintergrund, blockiert die UI nicht)
                 if (navigator.onLine) {
                     initialFullSync().then(initRealtime);
                 } else {
@@ -1738,6 +1617,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 });
             },
 
+            // ---- Kunden-Modul ----
             async openCustomerModal(id = null) {
                 const customer = id ? await db.get('customers', id) : null;
                 const modal = showModal(
@@ -1820,6 +1700,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('customers');
             },
 
+            // ---- Projekt-Modul ----
             async openProjectModal(id = null) {
                 const project = id ? await db.get('projects', id) : null;
                 const customers = await db.getAll('customers');
@@ -1882,6 +1763,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 }
             },
 
+            // ---- Raum-Modul ----
             async openRoomModal(projectId) {
                 const modal = showModal(
                     'Raum hinzufügen',
@@ -1932,38 +1814,40 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('projects', projectId);
             },
 
+            // ---- Bild-Modul ----
             async openImageModal(projectId) {
                 const modal = showModal(
                     'Bild hinzufügen',
                     `
-                        <div class="form-group"><label>Bild auswählen *</label><input type="file" id="imgFile" accept="image/*" capture="environment"></div>
                         <div class="form-group"><label>Kategorie</label>
                             <select id="imgCategory">
-                                ${['Bestandssituation','Außeneinheit','Innengerät','Elektroanschluss','Kondensatablauf','Rohrleitung','Wanddurchbruch','Sonstiges'].map(c => `<option value="${c}">${c}</option>`).join('')}
+                                <option>Wohnzimmer</option><option>Schlafzimmer</option><option>Außengerät</option>
+                                <option>Leitungsweg</option><option>Elektro</option><option>Sonstiges</option>
                             </select>
                         </div>
-                        <div class="form-group"><label>Bezeichnung (optional)</label><input type="text" id="imgLabel" placeholder="z.B. Wohnzimmer Nordwand"></div>
+                        <div class="form-group"><label>Beschriftung</label><input type="text" id="imgLabel" placeholder="optional"></div>
+                        <div class="form-group"><label>Bild wählen</label><input type="file" id="imgFile" accept="image/*" capture="environment"></div>
                     `,
                     async (overlay) => {
                         const fileInput = overlay.querySelector('#imgFile');
                         const file = fileInput.files[0];
                         if (!file) { showToast('Bitte ein Bild auswählen.', 'error'); return; }
 
-                        compressImage(file, 800, 0.7).then(async (compressedData) => {
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
                             const data = {
                                 projectId,
-                                data: compressedData,
+                                data: e.target.result,
                                 category: overlay.querySelector('#imgCategory').value,
                                 label: overlay.querySelector('#imgLabel').value.trim(),
-                                createdAt: new Date().toISOString()
+                                createdAt: new Date().toISOString(),
                             };
                             await db.add('images', data);
                             overlay.remove();
                             showToast('Bild gespeichert.', 'success');
                             this.navigate('projects', projectId);
-                        }).catch(() => {
-                            showToast('Fehler beim Komprimieren des Bildes.', 'error');
-                        });
+                        };
+                        reader.readAsDataURL(file);
                     }
                 );
             },
@@ -1975,6 +1859,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 win.document.title = 'Bildvorschau';
             },
 
+            // ---- Material-Modul ----
             async openMaterialModal(id = null) {
                 const mat = id ? await db.get('materials', id) : null;
                 let imgData = mat?.image || '';
@@ -2031,10 +1916,12 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 modal.querySelector('#matImage').addEventListener('change', (e) => {
                     const file = e.target.files[0];
                     if (!file) return;
-                    compressImage(file, 400, 0.6).then((compressed) => {
-                        imgData = compressed;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        imgData = ev.target.result;
                         modal.querySelector('#matImgPreview').innerHTML = `<img src="${imgData}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
-                    }).catch(() => showToast('Bild konnte nicht komprimiert werden.', 'error'));
+                    };
+                    reader.readAsDataURL(file);
                 });
             },
 
@@ -2045,6 +1932,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('materials');
             },
 
+            // ---- Kalender-Modul ----
             calendarShiftMonth(delta) {
                 calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + delta, 1);
                 renderCalendar();
@@ -2060,13 +1948,12 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 const projects = await db.getAll('projects');
                 const customers = await db.getAll('customers');
                 const types = ['Besichtigung', 'Montage', 'Wartung', 'Sonstiges'];
-                if (prefillDate) calendarViewDate = new Date(prefillDate);
                 const modal = showModal(
                     id ? 'Termin bearbeiten' : 'Neuer Termin',
                     `
                         <div class="form-group"><label>Titel *</label><input type="text" id="evTitle" value="${escapeHtml(ev?.title || '')}" placeholder="z.B. Besichtigung Familie Huber"></div>
                         <div class="form-row">
-                            <div class="form-group"><label>Datum *</label><input type="date" id="evDate" value="${ev?.date || prefillDate || toLocalDateString(new Date())}"></div>
+                            <div class="form-group"><label>Datum *</label><input type="date" id="evDate" value="${ev?.date || prefillDate || new Date().toISOString().slice(0,10)}"></div>
                             <div class="form-group"><label>Uhrzeit</label><input type="time" id="evTime" value="${ev?.time || ''}"></div>
                         </div>
                         <div class="form-group"><label>Typ</label>
@@ -2112,6 +1999,8 @@ async function isOfferNumberUnique(number, excludeId = null) {
                         this.navigate('calendar');
                     }
                 );
+                // Angeklickter Kalendertag setzt den Sichtbereich, falls über den Kalender aufgerufen.
+                if (prefillDate) calendarViewDate = new Date(prefillDate);
             },
 
             async deleteEvent(id) {
@@ -2121,613 +2010,421 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('calendar');
             },
 
-      async createOffer(projectId) {
-    const project = await db.getProjectWithDetails(projectId);
-    if (!project) { showToast('Projekt nicht gefunden.', 'error'); return; }
-    const customer = project.customerId ? await db.get('customers', project.customerId) : null;
-    if (!customer) { showToast('Kein Kunde zugewiesen.', 'error'); return; }
+            // ---- Angebots-Modul ----
+            async createOffer(projectId) {
+                const project = await db.getProjectWithDetails(projectId);
+                if (!project) { showToast('Projekt nicht gefunden.', 'error'); return; }
+                const customer = project.customerId ? await db.get('customers', project.customerId) : null;
+                if (!customer) { showToast('Kein Kunde zugewiesen.', 'error'); return; }
 
-    const materials = await db.getAll('materials');
-    const cooling = calculateCoolingCapacity(project.rooms || []);
-    const manufacturers = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))];
-    const defaults = await loadOfferDefaults();
+                const materials = await db.getAll('materials');
+                const cooling = calculateCoolingCapacity(project.rooms || []);
+                const manufacturers = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))];
 
-    let selected = [];
-    let activeFilter = 'Alle';
+                let selected = [];
+                let activeFilter = 'Alle';
 
-    let offerSettings = {
-        offerNumber: defaults.autoNumber ? await getNextAutoNumber() : '',
-        autoNumber: defaults.autoNumber,
-        offerDate: toLocalDateString(new Date()),
-        validUntilEnabled: defaults.validUntilEnabled,
-        validUntil: toLocalDateString(new Date(Date.now() + defaults.defaultValidDays * 86400000)),
-        vatEnabled: defaults.vatEnabled,
-        vatRate: defaults.defaultVatRate,
-        discountEnabled: defaults.defaultDiscount > 0,
-        discountRate: defaults.defaultDiscount,
-    };
+                const siteAddress = project.siteAddress || `${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`.trim();
 
-    const siteAddress = project.siteAddress || `${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`.trim();
+                const modal = showModal(
+                    'Angebot erstellen',
+                    `
+                        <div class="form-row">
+                            <div class="form-group"><label>Ansprechpartner</label><input type="text" id="offerContact" value="${escapeHtml(customer.firstName + ' ' + customer.lastName)}"></div>
+                            <div class="form-group"><label>Telefon</label><input type="text" id="offerPhone" value="${escapeHtml(customer.phone || '')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>E-Mail</label><input type="email" id="offerEmail" value="${escapeHtml(customer.email || '')}"></div>
+                            <div class="form-group"><label>Gültig (Tage)</label><input type="number" id="offerValidDays" value="14" min="1"></div>
+                        </div>
+                        <div class="form-group"><label>Baustellenadresse</label><input type="text" id="offerSiteAddress" value="${escapeHtml(siteAddress)}"></div>
 
-    const modal = showModal(
-        'Angebot erstellen',
-        `
-        <div style="background:var(--bg-tertiary);border-radius:var(--radius-md);padding:16px;margin-bottom:18px;">
-            <div style="font-weight:700;margin-bottom:12px;color:var(--text-primary);">📋 Kopfdaten</div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Angebotsnummer</label>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <input type="text" id="offerNumberInput" value="${escapeHtml(offerSettings.offerNumber)}" style="flex:1;">
-                        <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;">
-                            <input type="checkbox" id="offerAutoNumber" ${offerSettings.autoNumber ? 'checked' : ''}> Auto
-                        </label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Angebotsdatum</label>
-                    <input type="date" id="offerDateInput" value="${offerSettings.offerDate}">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label style="display:flex;align-items:center;gap:6px;">
-                        <input type="checkbox" id="offerValidUntilToggle" ${offerSettings.validUntilEnabled ? 'checked' : ''}> Gültig bis anzeigen
-                    </label>
-                    <input type="date" id="offerValidUntilInput" value="${offerSettings.validUntil}" ${offerSettings.validUntilEnabled ? '' : 'disabled'}>
-                </div>
-                <div class="form-group">
-                    <label style="display:flex;align-items:center;gap:6px;">
-                        <input type="checkbox" id="offerVatToggle" ${offerSettings.vatEnabled ? 'checked' : ''}> Mehrwertsteuer berechnen
-                    </label>
-                    <select id="offerVatRate" ${offerSettings.vatEnabled ? '' : 'disabled'}>
-                        <option value="0.20" ${offerSettings.vatRate === 0.20 ? 'selected' : ''}>20 % (Standard)</option>
-                        <option value="0.10" ${offerSettings.vatRate === 0.10 ? 'selected' : ''}>10 % (ermäßigt)</option>
-                        <option value="0.13" ${offerSettings.vatRate === 0.13 ? 'selected' : ''}>13 % (ermäßigt)</option>
-                        <option value="0" ${offerSettings.vatRate === 0 ? 'selected' : ''}>0 % (steuerfrei)</option>
-                        <option value="custom" ${![0.20,0.10,0.13,0].includes(offerSettings.vatRate) ? 'selected' : ''}>Benutzerdefiniert...</option>
-                    </select>
-                    <input type="number" id="offerVatCustom" placeholder="z.B. 19" step="0.1" min="0" max="100" style="margin-top:6px;display:${![0.20,0.10,0.13,0].includes(offerSettings.vatRate) ? 'block' : 'none'};" value="${offerSettings.vatRate !== 0.20 && offerSettings.vatRate !== 0.10 && offerSettings.vatRate !== 0.13 && offerSettings.vatRate !== 0 ? (offerSettings.vatRate*100) : ''}">
-                </div>
-            </div>
-            <div class="form-group">
-                <label style="display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="offerDiscountToggle" ${offerSettings.discountEnabled ? 'checked' : ''}> Rabatt
-                </label>
-                <input type="number" id="offerDiscountRate" value="${offerSettings.discountRate}" step="0.5" min="0" max="100" ${offerSettings.discountEnabled ? '' : 'disabled'}>
-            </div>
-        </div>
+                        <div class="offer-builder">
+                            <div>
+                                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Material suchen</label>
+                                <div class="offer-search-wrap">
+                                    <span class="search-ic">🔍</span>
+                                    <input type="text" id="offerMatSearch" placeholder="z.B. Mitsu, Kupferrohr, Klima...">
+                                    <div class="autocomplete-list" id="offerAutocomplete"></div>
+                                </div>
+                                <div class="filter-chips" id="offerFilterChips">
+                                    <div class="chip active" data-filter="Alle">Alle</div>
+                                    ${manufacturers.map(m => `<div class="chip" data-filter="${escapeHtml(m)}">${escapeHtml(m)}</div>`).join('')}
+                                    <div class="chip" data-filter="cat:Zubehör">Zubehör</div>
+                                    <div class="chip" data-filter="cat:Arbeitszeit">Arbeitszeit</div>
+                                </div>
+                                <div id="offerQuickResults" class="table-container" style="max-height:220px;overflow-y:auto;">
+                                    <table><tbody id="offerQuickResultsBody"></tbody></table>
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Ausgewählte Positionen</label>
+                                <div class="offer-pos-list" id="offerPosList"></div>
+                                <div class="form-group" style="margin-top:12px;"><label>Rabatt (%)</label><input type="number" id="offerDiscount" value="0" min="0" max="100" step="0.5"></div>
+                                <div class="offer-summary-box" id="offerSummaryBox"></div>
+                            </div>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        if (selected.length === 0) { showToast('Bitte mindestens eine Position wählen.', 'error'); return; }
+                        const calc = computeOfferTotals();
+                        const validDays = parseInt(overlay.querySelector('#offerValidDays').value) || 14;
+                        const validUntil = new Date(Date.now() + validDays * 86400000).toISOString();
+                        const offerNumber = await generateOfferNumber();
 
-        <div class="form-row">
-            <div class="form-group"><label>Ansprechpartner</label><input type="text" id="offerContact" value="${escapeHtml(customer.firstName + ' ' + customer.lastName)}"></div>
-            <div class="form-group"><label>Telefon</label><input type="text" id="offerPhone" value="${escapeHtml(customer.phone || '')}"></div>
-        </div>
-        <div class="form-row">
-            <div class="form-group"><label>E-Mail</label><input type="email" id="offerEmail" value="${escapeHtml(customer.email || '')}"></div>
-        </div>
-        <div class="form-group"><label>Baustellenadresse</label><input type="text" id="offerSiteAddress" value="${escapeHtml(siteAddress)}"></div>
+                        const offerData = {
+                            projectId,
+                            customerId: project.customerId,
+                            offerNumber,
+                            contactPerson: overlay.querySelector('#offerContact').value.trim(),
+                            contactPhone: overlay.querySelector('#offerPhone').value.trim(),
+                            contactEmail: overlay.querySelector('#offerEmail').value.trim(),
+                            siteAddress: overlay.querySelector('#offerSiteAddress').value.trim(),
+                            validUntil,
+                            positions: selected.map(s => ({ ...s })),
+                            subtotal: calc.subtotal,
+                            discountRate: calc.discountRate,
+                            discountAmount: calc.discountAmount,
+                            netAfterDiscount: calc.netAfterDiscount,
+                            vatRate: 0.19,
+                            vatAmount: calc.vatAmount,
+                            totalPrice: calc.total,
+                            coolingRecommendation: cooling.recommendation,
+                            coolingDetails: cooling.details,
+                            status: 'Angebot offen',
+                            createdAt: new Date().toISOString(),
+                        };
 
-        <div class="offer-builder">
-            <div>
-                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Material suchen</label>
-                <div class="offer-search-wrap">
-                    <span class="search-ic">🔍</span>
-                    <input type="text" id="offerMatSearch" placeholder="z.B. Mitsu, Kupferrohr, Klima...">
-                    <div class="autocomplete-list" id="offerAutocomplete"></div>
-                </div>
-                <div class="filter-chips" id="offerFilterChips">
-                    <div class="chip active" data-filter="Alle">Alle</div>
-                    ${manufacturers.map(m => `<div class="chip" data-filter="${escapeHtml(m)}">${escapeHtml(m)}</div>`).join('')}
-                    <div class="chip" data-filter="cat:Zubehör">Zubehör</div>
-                    <div class="chip" data-filter="cat:Arbeitszeit">Arbeitszeit</div>
-                </div>
-                <div id="offerQuickResults" class="table-container" style="max-height:220px;overflow-y:auto;">
-                    <table><tbody id="offerQuickResultsBody"></tbody></table>
-                </div>
-            </div>
-            <div>
-                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Ausgewählte Positionen</label>
-                <div class="offer-pos-list" id="offerPosList"></div>
-                <div class="offer-summary-box" id="offerSummaryBox"></div>
-            </div>
-        </div>
-        `,
-        async (overlay) => {
-            if (selected.length === 0) { showToast('Bitte mindestens eine Position wählen.', 'error'); return; }
+                        await db.add('offers', offerData);
+                        project.status = 'Angebot offen';
+                        await db.put('projects', project);
 
-            const autoNumber = overlay.querySelector('#offerAutoNumber').checked;
-            const offerNumber = overlay.querySelector('#offerNumberInput').value.trim();
+                        overlay.remove();
+                        showToast('Angebot erstellt.', 'success');
+                        this.navigate('offers');
+                    },
+                    null,
+                    { wide: true }
+                );
 
-            if (!offerNumber) {
-                showToast('Bitte eine Angebotsnummer eingeben.', 'error');
-                return;
-            }
+                function computeOfferTotals() {
+                    const subtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
+                    const discountRate = (parseFloat(modal.querySelector('#offerDiscount')?.value) || 0) / 100;
+                    const discountAmount = subtotal * discountRate;
+                    const netAfterDiscount = subtotal - discountAmount;
+                    const vatAmount = netAfterDiscount * 0.19;
+                    const total = netAfterDiscount + vatAmount;
+                    return { subtotal, discountRate, discountAmount, netAfterDiscount, vatAmount, total };
+                }
 
-            if (!(await isOfferNumberUnique(offerNumber))) {
-                showToast('Diese Angebotsnummer existiert bereits!', 'error');
-                return;
-            }
+                function renderPosList() {
+                    const list = modal.querySelector('#offerPosList');
+                    list.innerHTML = selected.map((s, idx) => `
+                        <div class="offer-pos-item">
+                            <div>
+                                <div class="pos-name">${escapeHtml(s.name)}</div>
+                                <div class="pos-meta">${escapeHtml(s.manufacturer || '')} ${s.articleNumber ? '· ' + escapeHtml(s.articleNumber) : ''}</div>
+                            </div>
+                            <input type="number" min="1" value="${s.quantity}" data-idx="${idx}" class="offer-qty-input">
+                            <div style="text-align:right;font-weight:600;">${formatCurrency(s.price * s.quantity)}</div>
+                            <button class="btn btn-sm btn-danger" data-remove="${idx}" style="padding:4px 8px;">✕</button>
+                        </div>
+                    `).join('') || '<div style="color:var(--text-muted);font-size:13px;padding:12px;text-align:center;">Noch keine Positionen ausgewählt.</div>';
 
-            const offerDate = overlay.querySelector('#offerDateInput').value;
-            const validUntilEnabled = overlay.querySelector('#offerValidUntilToggle').checked;
-            const validUntil = overlay.querySelector('#offerValidUntilInput').value;
-            const vatEnabled = overlay.querySelector('#offerVatToggle').checked;
+                    list.querySelectorAll('.offer-qty-input').forEach(inp => {
+                        inp.addEventListener('input', (e) => {
+                            const idx = parseInt(e.target.dataset.idx);
+                            selected[idx].quantity = parseInt(e.target.value) || 1;
+                            renderPosList();
+                            renderSummary();
+                        });
+                    });
+                    list.querySelectorAll('[data-remove]').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            selected.splice(parseInt(btn.dataset.remove), 1);
+                            renderPosList();
+                            renderSummary();
+                        });
+                    });
+                }
 
-            let vatRate = parseFloat(overlay.querySelector('#offerVatRate').value);
-            if (overlay.querySelector('#offerVatRate').value === 'custom') {
-                vatRate = (parseFloat(overlay.querySelector('#offerVatCustom').value) || 0) / 100;
-            }
+                function renderSummary() {
+                    const calc = computeOfferTotals();
+                    modal.querySelector('#offerSummaryBox').innerHTML = `
+                        <div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>
+                        <div class="offer-summary-row"><span>Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.discountAmount)}</span></div>
+                        <div class="offer-summary-row"><span>MwSt. (19%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>
+                        <div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>
+                    `;
+                }
 
-            const discountEnabled = overlay.querySelector('#offerDiscountToggle').checked;
-            const discountRate = discountEnabled ? (parseFloat(overlay.querySelector('#offerDiscountRate').value) || 0) : 0;
+                function matchesFilter(m) {
+                    if (activeFilter === 'Alle') return true;
+                    if (activeFilter.startsWith('cat:')) return m.category === activeFilter.slice(4);
+                    return m.manufacturer === activeFilter;
+                }
 
-            await saveOfferDefault('autoNumber', autoNumber);
-            await saveOfferDefault('vatEnabled', vatEnabled);
-            await saveOfferDefault('vatRate', vatRate);
-            await saveOfferDefault('validUntilEnabled', validUntilEnabled);
-            await saveOfferDefault('defaultDiscount', discountRate);
+                function renderQuickResults(query = '') {
+                    const q = query.toLowerCase().trim();
+                    const results = materials.filter(m => matchesFilter(m) && (!q || (m.name||'').toLowerCase().includes(q) || (m.manufacturer||'').toLowerCase().includes(q) || (m.category||'').toLowerCase().includes(q))).slice(0, 30);
+                    modal.querySelector('#offerQuickResultsBody').innerHTML = results.map(m => `
+                        <tr style="cursor:pointer;" data-add="${m.id}">
+                            <td>${m.image ? `<img src="${m.image}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;">` : ''}</td>
+                            <td><strong>${escapeHtml(m.name)}</strong><div class="pos-meta" style="color:var(--text-muted);font-size:11px;">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></td>
+                            <td style="text-align:right;color:var(--accent);font-weight:700;">${formatCurrency(m.sellingPrice||0)}</td>
+                            <td><button class="btn btn-sm btn-primary" data-add-btn="${m.id}">+</button></td>
+                        </tr>
+                    `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Treffer</td></tr>';
 
-            const calc = computeOfferTotals();
+                    modal.querySelectorAll('[data-add-btn]').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            addMaterial(parseId(btn.dataset.addBtn));
+                        });
+                    });
+                    // Ganze Zeile klickbar machen (nicht nur der "+"-Button), passend zum cursor:pointer-Styling.
+                    modal.querySelectorAll('[data-add]').forEach(row => {
+                        row.addEventListener('click', () => addMaterial(parseId(row.dataset.add)));
+                    });
+                }
 
-            const offerData = {
-                projectId,
-                customerId: project.customerId,
-                offerNumber,
-                offerDate,
-                validUntilEnabled,
-                validUntil: validUntilEnabled ? validUntil : null,
-                vatEnabled,
-                vatRate,
-                discountEnabled,
-                discountRate,
-                contactPerson: overlay.querySelector('#offerContact').value.trim(),
-                contactPhone: overlay.querySelector('#offerPhone').value.trim(),
-                contactEmail: overlay.querySelector('#offerEmail').value.trim(),
-                siteAddress: overlay.querySelector('#offerSiteAddress').value.trim(),
-                positions: selected.map(s => ({ ...s })),
-                subtotal: calc.subtotal,
-                discountAmount: calc.discountAmount,
-                netAfterDiscount: calc.netAfterDiscount,
-                vatAmount: calc.vatAmount,
-                totalPrice: calc.total,
-                coolingRecommendation: cooling.recommendation,
-                coolingDetails: cooling.details,
-                status: 'Angebot offen',
-                createdAt: new Date().toISOString(),
-            };
+                function addMaterial(materialId) {
+                    const m = materials.find(mm => mm.id === materialId);
+                    if (!m) return;
+                    const existing = selected.find(s => s.materialId === materialId);
+                    if (existing) { existing.quantity += 1; }
+                    else {
+                        selected.push({
+                            materialId: m.id, name: m.name, unit: m.unit || 'Stk', price: m.sellingPrice || 0,
+                            quantity: 1, manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
+                            category: m.category || '', description: m.description || '', image: m.image || ''
+                        });
+                    }
+                    renderPosList();
+                    renderSummary();
+                    modal.querySelector('#offerMatSearch').value = '';
+                    modal.querySelector('#offerAutocomplete').style.display = 'none';
+                }
 
-            await db.add('offers', offerData);
-            project.status = 'Angebot offen';
-            await db.put('projects', project);
+                const searchInput = modal.querySelector('#offerMatSearch');
+                const acList = modal.querySelector('#offerAutocomplete');
+                searchInput.addEventListener('input', (e) => {
+                    const q = e.target.value.toLowerCase().trim();
+                    renderQuickResults(q);
+                    if (!q) { acList.style.display = 'none'; return; }
+                    const matches = materials.filter(m => matchesFilter(m) && (m.name||'').toLowerCase().includes(q)).slice(0, 8);
+                    if (matches.length === 0) { acList.style.display = 'none'; return; }
+                    acList.innerHTML = matches.map(m => `
+                        <div class="autocomplete-item" data-ac="${m.id}">
+                            <div><div class="ac-name">${escapeHtml(m.name)}</div><div class="ac-meta">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></div>
+                            <div class="ac-price">${formatCurrency(m.sellingPrice||0)}</div>
+                        </div>
+                    `).join('');
+                    acList.style.display = 'block';
+                    acList.querySelectorAll('[data-ac]').forEach(el => {
+                        el.addEventListener('click', () => addMaterial(parseId(el.dataset.ac)));
+                    });
+                });
+                // WICHTIG: Listener auf das Modal-Overlay statt auf `document` binden.
+                // Das Overlay wird beim Schließen entfernt, wodurch dieser Listener
+                // automatisch mit entsorgt wird. Bei `document` hätte sich bei jedem
+                // Öffnen des Angebots-Dialogs ein weiterer, nie entfernter Listener
+                // angesammelt (Memory-Leak nach mehrfacher Nutzung).
+                modal.addEventListener('click', (e) => {
+                    if (!searchInput.contains(e.target) && !acList.contains(e.target)) acList.style.display = 'none';
+                });
 
-            overlay.remove();
-            showToast('Angebot erstellt.', 'success');
-            this.navigate('offers');
-        },
-        null,
-        { wide: true }
-    );
+                modal.querySelectorAll('#offerFilterChips .chip').forEach(chip => {
+                    chip.addEventListener('click', () => {
+                        modal.querySelectorAll('#offerFilterChips .chip').forEach(c => c.classList.remove('active'));
+                        chip.classList.add('active');
+                        activeFilter = chip.dataset.filter;
+                        renderQuickResults(searchInput.value);
+                    });
+                });
 
-    function computeOfferTotals() {
-        const subtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
-        const discountRateVal = offerSettings.discountEnabled ? (offerSettings.discountRate / 100) : 0;
-        const discountAmount = subtotal * discountRateVal;
-        const netAfterDiscount = subtotal - discountAmount;
-        const vatAmount = offerSettings.vatEnabled ? netAfterDiscount * offerSettings.vatRate : 0;
-        const total = netAfterDiscount + vatAmount;
-        return { subtotal, discountRate: discountRateVal, discountAmount, netAfterDiscount, vatAmount, total };
-    }
+                modal.querySelector('#offerDiscount').addEventListener('input', renderSummary);
 
-    function updateSettingsFromUI() {
-        const autoNumCheckbox = modal.querySelector('#offerAutoNumber');
-        const numInput = modal.querySelector('#offerNumberInput');
-        const validUntilToggle = modal.querySelector('#offerValidUntilToggle');
-        const validUntilInput = modal.querySelector('#offerValidUntilInput');
-        const vatToggle = modal.querySelector('#offerVatToggle');
-        const vatSelect = modal.querySelector('#offerVatRate');
-        const vatCustom = modal.querySelector('#offerVatCustom');
-        const discountToggle = modal.querySelector('#offerDiscountToggle');
-        const discountInput = modal.querySelector('#offerDiscountRate');
-
-        offerSettings.autoNumber = autoNumCheckbox.checked;
-        offerSettings.offerNumber = numInput.value.trim();
-        offerSettings.offerDate = modal.querySelector('#offerDateInput').value;
-        offerSettings.validUntilEnabled = validUntilToggle.checked;
-        offerSettings.validUntil = validUntilInput.value;
-        offerSettings.vatEnabled = vatToggle.checked;
-
-        if (vatSelect.value === 'custom') {
-            offerSettings.vatRate = (parseFloat(vatCustom.value) || 0) / 100;
-        } else {
-            offerSettings.vatRate = parseFloat(vatSelect.value);
-        }
-
-        offerSettings.discountEnabled = discountToggle.checked;
-        offerSettings.discountRate = discountToggle.checked ? (parseFloat(discountInput.value) || 0) : 0;
-    }
-
-    modal.querySelector('#offerAutoNumber').addEventListener('change', async function() {
-        updateSettingsFromUI();
-        if (this.checked) {
-            const newNum = await getNextAutoNumber();
-            modal.querySelector('#offerNumberInput').value = newNum;
-            offerSettings.offerNumber = newNum;
-        }
-        renderSummary();
-    });
-
-    modal.querySelector('#offerNumberInput').addEventListener('input', function() {
-        updateSettingsFromUI();
-        renderSummary();
-    });
-
-    modal.querySelector('#offerDateInput').addEventListener('change', function() {
-        updateSettingsFromUI();
-        renderSummary();
-    });
-
-    modal.querySelector('#offerValidUntilToggle').addEventListener('change', function() {
-        updateSettingsFromUI();
-        modal.querySelector('#offerValidUntilInput').disabled = !this.checked;
-        renderSummary();
-    });
-
-    modal.querySelector('#offerValidUntilInput').addEventListener('change', function() {
-        updateSettingsFromUI();
-        renderSummary();
-    });
-
-    modal.querySelector('#offerVatToggle').addEventListener('change', function() {
-        updateSettingsFromUI();
-        modal.querySelector('#offerVatRate').disabled = !this.checked;
-        modal.querySelector('#offerVatCustom').disabled = !this.checked;
-        renderSummary();
-    });
-
-    modal.querySelector('#offerVatRate').addEventListener('change', function() {
-        const customInput = modal.querySelector('#offerVatCustom');
-        if (this.value === 'custom') {
-            customInput.style.display = 'block';
-            customInput.disabled = false;
-        } else {
-            customInput.style.display = 'none';
-            customInput.disabled = true;
-        }
-        updateSettingsFromUI();
-        renderSummary();
-    });
-
-    modal.querySelector('#offerVatCustom').addEventListener('input', function() {
-        updateSettingsFromUI();
-        renderSummary();
-    });
-
-    modal.querySelector('#offerDiscountToggle').addEventListener('change', function() {
-        updateSettingsFromUI();
-        modal.querySelector('#offerDiscountRate').disabled = !this.checked;
-        renderSummary();
-    });
-
-    modal.querySelector('#offerDiscountRate').addEventListener('input', function() {
-        updateSettingsFromUI();
-        renderSummary();
-    });
-
-    function renderPosList() {
-        const list = modal.querySelector('#offerPosList');
-        list.innerHTML = selected.map((s, idx) => `
-            <div class="offer-pos-item">
-                <div>
-                    <div class="pos-name">${escapeHtml(s.name)}</div>
-                    <div class="pos-meta">${escapeHtml(s.manufacturer || '')} ${s.articleNumber ? '· ' + escapeHtml(s.articleNumber) : ''}</div>
-                </div>
-                <input type="number" min="1" value="${s.quantity}" data-idx="${idx}" class="offer-qty-input">
-                <div style="text-align:right;font-weight:600;">${formatCurrency(s.price * s.quantity)}</div>
-                <button class="btn btn-sm btn-danger" data-remove="${idx}" style="padding:4px 8px;">✕</button>
-            </div>
-        `).join('') || '<div style="color:var(--text-muted);font-size:13px;padding:12px;text-align:center;">Noch keine Positionen ausgewählt.</div>';
-
-        list.querySelectorAll('.offer-qty-input').forEach(inp => {
-            inp.addEventListener('input', (e) => {
-                const idx = parseInt(e.target.dataset.idx);
-                selected[idx].quantity = parseInt(e.target.value) || 1;
+                renderQuickResults();
                 renderPosList();
-                updateSettingsFromUI();
                 renderSummary();
-            });
-        });
-        list.querySelectorAll('[data-remove]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                selected.splice(parseInt(btn.dataset.remove), 1);
-                renderPosList();
-                updateSettingsFromUI();
-                renderSummary();
-            });
-        });
-    }
+            },
 
-    function renderSummary() {
-        updateSettingsFromUI();
-        const calc = computeOfferTotals();
-        let html = `
-            <div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>
-        `;
-        if (offerSettings.discountEnabled && calc.discountAmount > 0) {
-            html += `<div class="offer-summary-row"><span>Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.discountAmount)}</span></div>`;
-        }
-        if (offerSettings.vatEnabled) {
-            html += `<div class="offer-summary-row"><span>MwSt. (${(offerSettings.vatRate*100).toFixed(0)}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
-        }
-        html += `<div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>`;
-        modal.querySelector('#offerSummaryBox').innerHTML = html;
-    }
+            async generateOfferNumberPublic() { return generateOfferNumber(); },
 
-    function matchesFilter(m) {
-        if (activeFilter === 'Alle') return true;
-        if (activeFilter.startsWith('cat:')) return m.category === activeFilter.slice(4);
-        return m.manufacturer === activeFilter;
-    }
+            async exportOfferPDF(offerId) {
+                if (typeof window.jspdf === 'undefined') {
+                    showToast('PDF-Bibliothek konnte nicht geladen werden (keine Internetverbindung beim ersten Laden?).', 'error');
+                    return;
+                }
+                const offer = await db.get('offers', offerId);
+                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+                const project = await db.get('projects', offer.projectId);
+                const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
 
-    function renderQuickResults(query = '') {
-        const q = query.toLowerCase().trim();
-        const results = materials.filter(m => matchesFilter(m) && (!q || (m.name||'').toLowerCase().includes(q) || (m.manufacturer||'').toLowerCase().includes(q) || (m.category||'').toLowerCase().includes(q))).slice(0, 30);
-        modal.querySelector('#offerQuickResultsBody').innerHTML = results.map(m => `
-            <tr style="cursor:pointer;" data-add="${m.id}">
-                <td>${m.image ? `<img src="${m.image}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;">` : ''}</td>
-                <td><strong>${escapeHtml(m.name)}</strong><div class="pos-meta" style="color:var(--text-muted);font-size:11px;">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></td>
-                <td style="text-align:right;color:var(--accent);font-weight:700;">${formatCurrency(m.sellingPrice||0)}</td>
-                <td><button class="btn btn-sm btn-primary" data-add-btn="${m.id}">+</button></td>
-            </tr>
-        `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Treffer</td></tr>';
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const marginX = 16;
+                const accentColor = [37, 99, 235];
+                const grayColor = [90, 95, 107];
+                const lightGray = [238, 241, 245];
 
-        modal.querySelectorAll('[data-add-btn]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                addMaterial(parseId(btn.dataset.addBtn));
-            });
-        });
-        modal.querySelectorAll('[data-add]').forEach(row => {
-            row.addEventListener('click', () => addMaterial(parseId(row.dataset.add)));
-        });
-    }
+                const companyLogo = await getSetting('companyLogo', '');
+                const companyPhone = await getSetting('companyPhone', '');
+                const companyEmail = await getSetting('companyEmail', '');
+                const companyWebsite = await getSetting('companyWebsite', '');
+                const companyAddress = await getSetting('companyAddress', '');
+                const companyUID = await getSetting('companyUID', '');
+                const companyFirmenbuch = await getSetting('companyFirmenbuch', '');
+                const companyBank = await getSetting('companyBank', '');
+                const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
 
-    function addMaterial(materialId) {
-        const m = materials.find(mm => mm.id === materialId);
-        if (!m) return;
-        const existing = selected.find(s => s.materialId === materialId);
-        if (existing) { existing.quantity += 1; }
-        else {
-            selected.push({
-                materialId: m.id, name: m.name, unit: m.unit || 'Stk', price: m.sellingPrice || 0,
-                quantity: 1, manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
-                category: m.category || '', description: m.description || '', image: m.image || ''
-            });
-        }
-        renderPosList();
-        updateSettingsFromUI();
-        renderSummary();
-        modal.querySelector('#offerMatSearch').value = '';
-        modal.querySelector('#offerAutocomplete').style.display = 'none';
-    }
+                let y = 18;
 
-    const searchInput = modal.querySelector('#offerMatSearch');
-    const acList = modal.querySelector('#offerAutocomplete');
-    searchInput.addEventListener('input', (e) => {
-        const q = e.target.value.toLowerCase().trim();
-        renderQuickResults(q);
-        if (!q) { acList.style.display = 'none'; return; }
-        const matches = materials.filter(m => matchesFilter(m) && (m.name||'').toLowerCase().includes(q)).slice(0, 8);
-        if (matches.length === 0) { acList.style.display = 'none'; return; }
-        acList.innerHTML = matches.map(m => `
-            <div class="autocomplete-item" data-ac="${m.id}">
-                <div><div class="ac-name">${escapeHtml(m.name)}</div><div class="ac-meta">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></div>
-                <div class="ac-price">${formatCurrency(m.sellingPrice||0)}</div>
-            </div>
-        `).join('');
-        acList.style.display = 'block';
-        acList.querySelectorAll('[data-ac]').forEach(el => {
-            el.addEventListener('click', () => addMaterial(parseId(el.dataset.ac)));
-        });
-    });
-    modal.addEventListener('click', (e) => {
-        if (!searchInput.contains(e.target) && !acList.contains(e.target)) acList.style.display = 'none';
-    });
+                if (companyLogo) {
+                    try {
+                        const imgProps = doc.getImageProperties(companyLogo);
+                        const logoH = 16;
+                        const logoW = (imgProps.width / imgProps.height) * logoH;
+                        doc.addImage(companyLogo, imgProps.fileType || 'PNG', marginX, y - 4, logoW, logoH);
+                    } catch(e) { console.warn('Logo-Fehler', e); }
+                }
 
-    modal.querySelectorAll('#offerFilterChips .chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-            modal.querySelectorAll('#offerFilterChips .chip').forEach(c => c.classList.remove('active'));
-            chip.classList.add('active');
-            activeFilter = chip.dataset.filter;
-            renderQuickResults(searchInput.value);
-        });
-    });
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(...grayColor);
+                const contactLines = [companyPhone, companyEmail, companyWebsite, companyAddress].filter(Boolean);
+                let cy = y - 4;
+                contactLines.forEach(line => { doc.text(line, pageWidth - marginX, cy, { align: 'right' }); cy += 4.5; });
 
-    renderQuickResults();
-    renderPosList();
-    renderSummary();
-},
+                y = Math.max(y + 18, cy + 4);
 
-async exportOfferPDF(offerId) {
-    if (typeof window.jspdf === 'undefined') {
-        showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error');
-        return;
-    }
-    const offer = await db.get('offers', offerId);
-    if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
-    const project = await db.get('projects', offer.projectId);
-    const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+                doc.setDrawColor(...lightGray);
+                doc.setLineWidth(0.6);
+                doc.line(marginX, y, pageWidth - marginX, y);
+                y += 10;
 
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const marginX = 16;
-    const accentColor = [37, 99, 235];
-    const grayColor = [90, 95, 107];
-    const lightGray = [238, 241, 245];
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(22);
+                doc.setTextColor(30, 33, 35);
+                doc.text('ANGEBOT', marginX, y);
+                y += 9;
 
-    const companyLogo = await getSetting('companyLogo', '');
-    const companyPhone = await getSetting('companyPhone', '');
-    const companyEmail = await getSetting('companyEmail', '');
-    const companyWebsite = await getSetting('companyWebsite', '');
-    const companyAddress = await getSetting('companyAddress', '');
-    const companyUID = await getSetting('companyUID', '');
-    const companyFirmenbuch = await getSetting('companyFirmenbuch', '');
-    const companyBank = await getSetting('companyBank', '');
-    const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
+                doc.setFontSize(9.5);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(...grayColor);
+                doc.text(`Angebotsnummer: ${offer.offerNumber || offer.id}`, marginX, y); y += 5;
+                doc.text(`Angebotsdatum: ${formatDate(offer.createdAt)}`, marginX, y); y += 5;
+                doc.text(`Gültig bis: ${formatDate(offer.validUntil)}`, marginX, y);
+                y += 10;
 
-    let y = 18;
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10.5);
+                doc.setTextColor(30, 33, 35);
+                doc.text('Kunde', marginX, y);
+                y += 6;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9.5);
+                doc.setTextColor(60, 64, 72);
+                const custLines = [];
+                if (customer) {
+                    custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
+                    if (customer.company) custLines.push(customer.company);
+                }
+                if (project?.title) custLines.push(`Projekt: ${project.title}`);
+                if (offer.siteAddress) custLines.push(`Baustelle: ${offer.siteAddress}`);
+                if (offer.contactPerson) custLines.push(`Ansprechpartner: ${offer.contactPerson}`);
+                if (offer.contactPhone) custLines.push(`Telefon: ${offer.contactPhone}`);
+                if (offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
+                custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
+                y += 6;
 
-    if (companyLogo) {
-        try {
-            const imgProps = doc.getImageProperties(companyLogo);
-            const logoH = 16;
-            const logoW = (imgProps.width / imgProps.height) * logoH;
-            doc.addImage(companyLogo, imgProps.fileType || 'PNG', marginX, y - 4, logoW, logoH);
-        } catch(e) { console.warn('Logo-Fehler', e); }
-    }
+                if (offer.coolingRecommendation) {
+                    doc.setFillColor(...lightGray);
+                    doc.roundedRect(marginX, y, pageWidth - marginX*2, 10, 2, 2, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(...accentColor);
+                    doc.text(`❄ Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, marginX + 4, y + 6.5);
+                    y += 16;
+                }
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(...grayColor);
-    const contactLines = [companyPhone, companyEmail, companyWebsite, companyAddress].filter(Boolean);
-    let cy = y - 4;
-    contactLines.forEach(line => { doc.text(line, pageWidth - marginX, cy, { align: 'right' }); cy += 4.5; });
+                const rows = (offer.positions || []).map((p, i) => [
+                    String(i + 1),
+                    p.name || '',
+                    p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : ''),
+                    String(p.quantity),
+                    p.unit || 'Stk',
+                    formatCurrency(p.price),
+                    formatCurrency(p.price * p.quantity)
+                ]);
 
-    y = Math.max(y + 18, cy + 4);
-    doc.setDrawColor(...lightGray);
-    doc.setLineWidth(0.6);
-    doc.line(marginX, y, pageWidth - marginX, y);
-    y += 10;
+                doc.autoTable({
+                    startY: y,
+                    margin: { left: marginX, right: marginX },
+                    head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis', 'Gesamt']],
+                    body: rows,
+                    styles: { font: 'helvetica', fontSize: 8.8, cellPadding: 3, textColor: [40,44,50], lineColor: lightGray, lineWidth: 0.2 },
+                    headStyles: { fillColor: [26,29,35], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+                    alternateRowStyles: { fillColor: [248, 249, 251] },
+                    columnStyles: {
+                        0: { cellWidth: 10, halign: 'center' },
+                        3: { cellWidth: 16, halign: 'center' },
+                        4: { cellWidth: 16, halign: 'center' },
+                        5: { cellWidth: 26, halign: 'right' },
+                        6: { cellWidth: 26, halign: 'right' },
+                    },
+                    didDrawPage: () => drawFooter(),
+                });
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(22);
-    doc.setTextColor(30, 33, 35);
-    doc.text('ANGEBOT', marginX, y);
-    y += 9;
+                let finalY = doc.lastAutoTable.finalY + 8;
+                if (finalY > 250) { doc.addPage(); finalY = 20; }
 
-    doc.setFontSize(9.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...grayColor);
-    doc.text(`Angebotsnummer: ${offer.offerNumber || offer.id}`, marginX, y); y += 5;
-    doc.text(`Angebotsdatum: ${formatDate(offer.offerDate || offer.createdAt)}`, marginX, y); y += 5;
+                const boxW = 78;
+                const boxX = pageWidth - marginX - boxW;
+                doc.setFontSize(9.5);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(60, 64, 72);
+                const summaryRows = [
+                    ['Nettobetrag', formatCurrency(offer.subtotal || 0)],
+                    [`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`],
+                    ['MwSt. (19%)', formatCurrency(offer.vatAmount || 0)],
+                ];
+                summaryRows.forEach(([label, val]) => {
+                    doc.text(label, boxX, finalY);
+                    doc.text(val, pageWidth - marginX, finalY, { align: 'right' });
+                    finalY += 6;
+                });
+                finalY += 2;
+                doc.setFillColor(...accentColor);
+                doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12);
+                doc.setTextColor(255, 255, 255);
+                doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
+                doc.text(formatCurrency(offer.totalPrice || 0), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
 
-    if (offer.validUntilEnabled && offer.validUntil) {
-        doc.text(`Gültig bis: ${formatDate(offer.validUntil)}`, marginX, y); y += 5;
-    }
-    y += 8;
+                function drawFooter() {
+                    const ph = doc.internal.pageSize.getHeight();
+                    const fy = ph - 20;
+                    doc.setDrawColor(...lightGray);
+                    doc.setLineWidth(0.4);
+                    doc.line(marginX, fy, pageWidth - marginX, fy);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(...grayColor);
+                    const left = [companyAddress, [companyPhone, companyEmail].filter(Boolean).join('  ·  '), companyWebsite].filter(Boolean).join('   |   ');
+                    const right = [companyUID ? `UID: ${companyUID}` : '', companyFirmenbuch ? `FB-Nr.: ${companyFirmenbuch}` : '', companyBank].filter(Boolean).join('   |   ');
+                    doc.text(left, marginX, fy + 5);
+                    doc.text(right, marginX, fy + 9.5);
+                    doc.text(paymentTerms, pageWidth - marginX, fy + 5, { align: 'right' });
+                }
+                drawFooter();
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(30, 33, 35);
-    doc.text('Kunde', marginX, y);
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(60, 64, 72);
-    const custLines = [];
-    if (customer) {
-        custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
-        if (customer.company) custLines.push(customer.company);
-    }
-    if (project?.title) custLines.push(`Projekt: ${project.title}`);
-    if (offer.siteAddress) custLines.push(`Baustelle: ${offer.siteAddress}`);
-    if (offer.contactPerson) custLines.push(`Ansprechpartner: ${offer.contactPerson}`);
-    if (offer.contactPhone) custLines.push(`Telefon: ${offer.contactPhone}`);
-    if (offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
-    custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
-    y += 6;
-
-    if (offer.coolingRecommendation) {
-        doc.setFillColor(...lightGray);
-        doc.roundedRect(marginX, y, pageWidth - marginX*2, 10, 2, 2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9.5);
-        doc.setTextColor(...accentColor);
-        doc.text(`❄ Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, marginX + 4, y + 6.5);
-        y += 16;
-    }
-
-    const rows = (offer.positions || []).map((p, i) => [
-        String(i + 1),
-        p.name || '',
-        p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : ''),
-        String(p.quantity),
-        p.unit || 'Stk',
-        formatCurrency(p.price),
-        formatCurrency(p.price * p.quantity)
-    ]);
-
-    doc.autoTable({
-        startY: y,
-        margin: { left: marginX, right: marginX },
-        head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis', 'Gesamt']],
-        body: rows,
-        styles: { font: 'helvetica', fontSize: 8.8, cellPadding: 3, textColor: [40,44,50], lineColor: lightGray, lineWidth: 0.2 },
-        headStyles: { fillColor: [26,29,35], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-        alternateRowStyles: { fillColor: [248, 249, 251] },
-        columnStyles: {
-            0: { cellWidth: 10, halign: 'center' },
-            3: { cellWidth: 16, halign: 'center' },
-            4: { cellWidth: 16, halign: 'center' },
-            5: { cellWidth: 26, halign: 'right' },
-            6: { cellWidth: 26, halign: 'right' },
-        },
-        didDrawPage: () => drawFooter(),
-    });
-
-    let finalY = doc.lastAutoTable.finalY + 8;
-    if (finalY > 250) { doc.addPage(); finalY = 20; }
-
-    const boxW = 78;
-    const boxX = pageWidth - marginX - boxW;
-    doc.setFontSize(9.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(60, 64, 72);
-
-    const summaryRows = [['Nettobetrag', formatCurrency(offer.subtotal || 0)]];
-
-    if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
-        summaryRows.push([`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
-    }
-    if (offer.vatEnabled) {
-        summaryRows.push([`MwSt. (${((offer.vatRate||0)*100).toFixed(0)}%)`, formatCurrency(offer.vatAmount || 0)]);
-    }
-
-    summaryRows.forEach(([label, val]) => {
-        doc.text(label, boxX, finalY);
-        doc.text(val, pageWidth - marginX, finalY, { align: 'right' });
-        finalY += 6;
-    });
-
-    finalY += 2;
-    doc.setFillColor(...accentColor);
-    doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(255, 255, 255);
-    doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
-    doc.text(formatCurrency(offer.totalPrice || 0), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
-
-    function drawFooter() {
-        const ph = doc.internal.pageSize.getHeight();
-        const fy = ph - 20;
-        doc.setDrawColor(...lightGray);
-        doc.setLineWidth(0.4);
-        doc.line(marginX, fy, pageWidth - marginX, fy);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...grayColor);
-        const left = [companyAddress, [companyPhone, companyEmail].filter(Boolean).join('  ·  '), companyWebsite].filter(Boolean).join('   |   ');
-        const right = [companyUID ? `UID: ${companyUID}` : '', companyFirmenbuch ? `FB-Nr.: ${companyFirmenbuch}` : '', companyBank].filter(Boolean).join('   |   ');
-        doc.text(left, marginX, fy + 5);
-        doc.text(right, marginX, fy + 9.5);
-        doc.text(paymentTerms, pageWidth - marginX, fy + 5, { align: 'right' });
-    }
-    drawFooter();
-
-    doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
-    showToast('PDF exportiert.', 'success');
-},
+                doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
+                showToast('PDF exportiert.', 'success');
+            },
 
             async deleteOffer(id) {
                 if (!confirm('Angebot löschen?')) return;
@@ -2736,6 +2433,7 @@ async exportOfferPDF(offerId) {
                 this.navigate('offers');
             },
 
+            // ---- Excel Exports ----
             async exportMaterialsExcel() {
                 if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
                 const materials = await db.getAll('materials');
@@ -2865,6 +2563,7 @@ async exportOfferPDF(offerId) {
                 input.click();
             },
 
+            // ---- Backup ----
             async createBackup() {
                 const data = await db.exportAllData();
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -2899,6 +2598,7 @@ async exportOfferPDF(offerId) {
                 input.click();
             },
 
+            // ---- Einstellungen ----
             async openCompanySettings() {
                 const companyName = await getSetting('companyName');
                 const companyLogo = await getSetting('companyLogo');
@@ -2997,6 +2697,14 @@ async exportOfferPDF(offerId) {
             return `A-${year}-${String(counter).padStart(4, '0')}`;
         }
 
+        // ============================================================
+        // ============ START =========================================
+        // ============================================================
+        // Sicherheitsnetz: Falls die Initialisierung aus irgendeinem Grund
+        // (defekte IndexedDB, blockierter Tab, unerwarteter Fehler) hängen
+        // bleibt, wird der Splash-Screen spätestens nach 8 Sekunden mit einer
+        // verständlichen Fehlermeldung versehen, statt endlos "Wird geladen..."
+        // anzuzeigen.
         let appStarted = false;
         const startupWatchdog = setTimeout(() => {
             if (!appStarted) {
@@ -3016,6 +2724,9 @@ async exportOfferPDF(offerId) {
             });
         });
 
+        // Service Worker registrieren (optional für PWA-Funktionalität).
+        // Läuft nur auf https/localhost und wird defensiv behandelt, damit ein
+        // fehlendes sw.js (z.B. bei erstmaligem Deployment) die App nicht stört.
         if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js').catch((err) => {
