@@ -19,18 +19,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
-        /*
-          DESIGN-KONZEPT — "Zwei Seiten des Kreislaufs"
-          Jede Kälteanlage hat eine kalte Saugseite und eine warme Hochdruckseite.
-          Das ist die Farb-Dualität dieses Interfaces: kühles Zyan (Saugleitung) als
-          Primärakzent, warmes Kupfer (Druckleitung / Kupferrohr) als Zweitakzent.
-          Die Glasflächen (Glassmorphism) sind wörtlich gemeint: beschlagenes Glas
-          auf einer kalten Fläche — das Kondenswasser an der Tür einer Kühlzelle.
-          Jede erhöhte Fläche trägt eine feine zweifarbige Kante (.glass-edge) als
-          durchgängige Signatur, die genau diesen Temperaturübergang zeigt.
-        */
-
-        /* ============ CSS-VARIABLEN & DESIGN-SYSTEM ============ */
         :root {
             --bg-primary: #eef3f6;
             --bg-secondary: rgba(255,255,255,0.72);
@@ -96,9 +84,7 @@
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
-
         html { -webkit-tap-highlight-color: transparent; }
-
         body {
             font-family: var(--font-family);
             background:
@@ -112,24 +98,12 @@
             transition: background var(--transition), color var(--transition);
             -webkit-font-smoothing: antialiased;
         }
-
         ::selection { background: var(--accent); color: #fff; }
-
-        :focus-visible {
-            outline: 2px solid var(--accent);
-            outline-offset: 2px;
-            border-radius: 4px;
-        }
-
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
         }
-
-        /* Signatur-Element: der Kreislauf-Rand — kalt zu warm, auf jeder Glasfläche */
-        .stat-card::before,
-        .nav-card::before,
-        .table-container::before,
-        .modal::before {
+        .stat-card::before, .nav-card::before, .table-container::before, .modal::before {
             content: '';
             position: absolute;
             top: 0; left: 0; right: 0;
@@ -138,8 +112,6 @@
             border-radius: inherit;
             opacity: 0.85;
         }
-
-        /* ============ SIDEBAR ============ */
         .sidebar {
             width: var(--sidebar-width);
             background: var(--bg-secondary);
@@ -153,18 +125,9 @@
             transition: all var(--transition);
             z-index: 100;
         }
-
         .sidebar-logo {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 6px 10px;
-            margin-bottom: 30px;
-            font-family: var(--font-display);
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--text-primary);
-            letter-spacing: -0.3px;
+            display: flex; align-items: center; gap: 12px; padding: 6px 10px; margin-bottom: 30px;
+            font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px;
         }
         .sidebar-logo .logo-icon {
             width: 40px; height: 40px;
@@ -176,190 +139,58 @@
             flex-shrink: 0;
         }
         .nav-section { margin-bottom: 22px; }
-        .nav-section-label {
-            font-size: 10.5px;
-            text-transform: uppercase;
-            letter-spacing: 1.2px;
-            color: var(--text-muted);
-            padding: 8px 12px;
-            font-weight: 700;
-        }
+        .nav-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); padding: 8px 12px; font-weight: 700; }
         .nav-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 11px 14px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            transition: all var(--transition);
-            font-size: 14px;
-            color: var(--text-secondary);
-            text-decoration: none;
-            font-weight: 500;
+            display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: all var(--transition); font-size: 14px; color: var(--text-secondary);
+            text-decoration: none; font-weight: 500;
         }
-        .nav-item:hover {
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-        }
-        .nav-item.active {
-            background: var(--accent-light);
-            color: var(--accent);
-            font-weight: 600;
-        }
+        .nav-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .nav-item.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
         .nav-item .nav-icon { font-size: 17px; width: 22px; text-align: center; flex-shrink: 0; }
         .nav-badge {
-            margin-left: auto;
-            background: linear-gradient(135deg, var(--accent), var(--discharge));
-            color: #fff;
-            font-size: 11px;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-weight: 700;
-            font-family: var(--font-mono);
+            margin-left: auto; background: linear-gradient(135deg, var(--accent), var(--discharge)); color: #fff;
+            font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-family: var(--font-mono);
         }
-
-        /* ============ MAIN CONTENT ============ */
-        .main-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
+        .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .topbar {
-            height: var(--header-height);
-            background: var(--bg-secondary);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            padding: 0 24px;
-            gap: 16px;
-            flex-shrink: 0;
-            position: sticky;
-            top: 0;
-            z-index: 90;
+            height: var(--header-height); background: var(--bg-secondary);
+            backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px;
+            gap: 16px; flex-shrink: 0; position: sticky; top: 0; z-index: 90;
         }
         .search-box {
-            flex: 1;
-            max-width: 420px;
-            display: flex;
-            align-items: center;
-            background: var(--bg-tertiary);
-            border: 1px solid transparent;
-            border-radius: 24px;
-            padding: 9px 16px;
-            gap: 8px;
-            transition: all var(--transition);
+            flex: 1; max-width: 420px; display: flex; align-items: center; background: var(--bg-tertiary);
+            border: 1px solid transparent; border-radius: 24px; padding: 9px 16px; gap: 8px; transition: all var(--transition);
         }
         .search-box:focus-within { border-color: var(--accent); background: var(--bg-secondary-solid); }
-        .search-box input {
-            border: none;
-            background: transparent;
-            flex: 1;
-            font-size: 14px;
-            color: var(--text-primary);
-            outline: none;
-            font-family: var(--font-family);
-        }
+        .search-box input { border: none; background: transparent; flex: 1; font-size: 14px; color: var(--text-primary); outline: none; font-family: var(--font-family); }
         .search-box .search-icon { color: var(--text-muted); font-size: 16px; }
-        .topbar-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-left: auto;
-        }
+        .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
         .icon-btn {
-            width: 40px; height: 40px;
-            border-radius: 50%;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            font-size: 19px;
-            display: flex; align-items: center; justify-content: center;
-            color: var(--text-secondary);
-            transition: all var(--transition);
+            width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; cursor: pointer;
+            font-size: 19px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); transition: all var(--transition);
         }
         .icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); transform: translateY(-1px); }
-
-        .content-scroll {
-            flex: 1;
-            overflow-y: auto;
-            padding: 26px;
-        }
-
-        /* ============ DASHBOARD KACHELN ============ */
-        .page-title {
-            font-family: var(--font-display);
-            font-size: 27px;
-            font-weight: 700;
-            margin-bottom: 24px;
-            letter-spacing: -0.4px;
-            color: var(--text-primary);
-        }
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 28px;
-        }
+        .content-scroll { flex: 1; overflow-y: auto; padding: 26px; }
+        .page-title { font-family: var(--font-display); font-size: 27px; font-weight: 700; margin-bottom: 24px; letter-spacing: -0.4px; color: var(--text-primary); }
+        .stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
         .stat-card {
-            position: relative;
-            background: var(--bg-secondary);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border-radius: var(--radius-md);
-            padding: 22px 24px;
-            box-shadow: var(--shadow-sm);
-            border: 1px solid var(--border);
-            transition: all var(--transition);
-            overflow: hidden;
+            position: relative; background: var(--bg-secondary); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border-radius: var(--radius-md); padding: 22px 24px; box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+            transition: all var(--transition); overflow: hidden;
         }
         .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-        .stat-card .stat-value {
-            font-family: var(--font-mono);
-            font-size: 32px;
-            font-weight: 600;
-            color: var(--accent);
-            letter-spacing: -0.5px;
-        }
-        .stat-card .stat-label {
-            font-size: 12.5px;
-            color: var(--text-muted);
-            margin-top: 5px;
-            font-weight: 500;
-        }
-
-        .card-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 16px;
-            margin-bottom: 28px;
-        }
+        .stat-card .stat-value { font-family: var(--font-mono); font-size: 32px; font-weight: 600; color: var(--accent); letter-spacing: -0.5px; }
+        .stat-card .stat-label { font-size: 12.5px; color: var(--text-muted); margin-top: 5px; font-weight: 500; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 28px; }
         .nav-card {
-            position: relative;
-            background: var(--bg-secondary);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border-radius: var(--radius-md);
-            padding: 22px 20px;
-            box-shadow: var(--shadow-sm);
-            border: 1px solid var(--border);
-            cursor: pointer;
-            transition: all var(--transition);
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            overflow: hidden;
+            position: relative; background: var(--bg-secondary); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border-radius: var(--radius-md); padding: 22px 20px; box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+            cursor: pointer; transition: all var(--transition); display: flex; align-items: center; gap: 16px; overflow: hidden;
         }
         .nav-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--accent); }
-        .nav-card .card-icon {
-            width: 50px; height: 50px;
-            border-radius: var(--radius-sm);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 23px;
-            flex-shrink: 0;
-        }
+        .nav-card .card-icon { width: 50px; height: 50px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 23px; flex-shrink: 0; }
         .card-icon.blue { background: var(--accent-light); }
         .card-icon.green { background: var(--success-light); }
         .card-icon.amber { background: var(--discharge-light); }
@@ -367,69 +198,26 @@
         .card-icon.red { background: var(--danger-light); }
         .nav-card .card-title { font-weight: 600; font-size: 15px; }
         .nav-card .card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-
-        /* ============ TABELLEN ============ */
         .table-container {
-            position: relative;
-            background: var(--bg-secondary);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border);
-            overflow-x: auto;
-            box-shadow: var(--shadow-sm);
+            position: relative; background: var(--bg-secondary); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border-radius: var(--radius-md); border: 1px solid var(--border); overflow-x: auto; box-shadow: var(--shadow-sm);
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13.5px;
-        }
+        table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
         th {
-            background: var(--bg-tertiary);
-            padding: 13px 16px;
-            text-align: left;
-            font-weight: 700;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            color: var(--text-muted);
-            border-bottom: 1px solid var(--border);
-            white-space: nowrap;
+            background: var(--bg-tertiary); padding: 13px 16px; text-align: left; font-weight: 700; font-size: 11px;
+            text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap;
         }
-        td {
-            padding: 13px 16px;
-            border-bottom: 1px solid var(--border);
-            color: var(--text-primary);
-        }
+        td { padding: 13px 16px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background: var(--bg-tertiary); }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 11px;
-            border-radius: 12px;
-            font-size: 11.5px;
-            font-weight: 700;
-            letter-spacing: 0.2px;
-        }
+        .status-badge { display: inline-block; padding: 4px 11px; border-radius: 12px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.2px; }
         .status-neu { background: var(--info-light); color: var(--info); }
         .status-offen { background: var(--discharge-light); color: var(--discharge); }
         .status-aktiv { background: var(--success-light); color: var(--success); }
         .status-fertig { background: var(--bg-tertiary); color: var(--text-muted); }
-
-        /* ============ BUTTONS ============ */
         .btn {
-            padding: 10px 18px;
-            border-radius: 24px;
-            border: none;
-            cursor: pointer;
-            font-size: 13.5px;
-            font-weight: 600;
-            transition: all var(--transition);
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            font-family: var(--font-family);
-            white-space: nowrap;
+            padding: 10px 18px; border-radius: 24px; border: none; cursor: pointer; font-size: 13.5px; font-weight: 600;
+            transition: all var(--transition); display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-family); white-space: nowrap;
         }
         .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 2px 10px rgba(11,143,163,0.3); }
         .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(11,143,163,0.4); }
@@ -438,163 +226,55 @@
         .btn-danger { background: var(--danger); color: #fff; }
         .btn-danger:hover { opacity: 0.88; }
         .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 16px; }
-
-        /* ============ FORMULARE ============ */
         .form-group { margin-bottom: 18px; }
-        .form-group label {
-            display: block;
-            font-size: 12.5px;
-            font-weight: 600;
-            margin-bottom: 6px;
-            color: var(--text-secondary);
+        .form-group label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary); }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 14px;
+            background: var(--bg-secondary-solid); color: var(--text-primary); font-family: var(--font-family); transition: all var(--transition);
         }
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-            width: 100%;
-            padding: 11px 14px;
-            border: 1.5px solid var(--border);
-            border-radius: var(--radius-sm);
-            font-size: 14px;
-            background: var(--bg-secondary-solid);
-            color: var(--text-primary);
-            font-family: var(--font-family);
-            transition: all var(--transition);
-        }
-        .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-light);
-        }
-        .form-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 14px;
-        }
-
-        /* ============ MODAL ============ */
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
         .modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(6,14,20,0.55);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            animation: fadeIn 0.2s ease;
+            position: fixed; inset: 0; background: rgba(6,14,20,0.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            z-index: 1000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease;
         }
         .modal {
-            position: relative;
-            background: var(--bg-secondary);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border-radius: var(--radius-lg);
-            width: 90%;
-            max-width: 650px;
-            max-height: 85vh;
-            overflow-y: auto;
-            padding: 28px;
-            box-shadow: var(--shadow-lg);
-            border: 1px solid var(--border);
-            animation: modalIn 0.25s cubic-bezier(.2,.9,.3,1);
+            position: relative; background: var(--bg-secondary); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border-radius: var(--radius-lg); width: 90%; max-width: 650px; max-height: 85vh; overflow-y: auto; padding: 28px;
+            box-shadow: var(--shadow-lg); border: 1px solid var(--border); animation: modalIn 0.25s cubic-bezier(.2,.9,.3,1);
         }
         .modal.modal-wide { max-width: 980px; }
-        .modal h3 {
-            font-family: var(--font-display);
-            font-size: 20px;
-            margin-bottom: 20px;
-            font-weight: 700;
-        }
-        .modal-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 20px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border);
-        }
+        .modal h3 { font-family: var(--font-display); font-size: 20px; margin-bottom: 20px; font-weight: 700; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes modalIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-
-        /* ============ TOAST ============ */
-        .toast-container {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+        .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
         .toast {
-            padding: 14px 20px;
-            border-radius: var(--radius-md);
-            color: #fff;
-            font-weight: 600;
-            font-size: 13.5px;
-            box-shadow: var(--shadow-lg);
-            animation: slideIn 0.3s cubic-bezier(.2,.9,.3,1);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-width: 250px;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            padding: 14px 20px; border-radius: var(--radius-md); color: #fff; font-weight: 600; font-size: 13.5px; box-shadow: var(--shadow-lg);
+            animation: slideIn 0.3s cubic-bezier(.2,.9,.3,1); display: flex; align-items: center; gap: 8px; min-width: 250px;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
         }
         .toast-success { background: rgba(22,128,92,0.92); }
         .toast-error { background: rgba(191,64,64,0.92); }
         .toast-info { background: rgba(92,99,209,0.92); }
         @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
-
-        /* ============ IMAGE GRID ============ */
-        .image-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-            gap: 12px;
-        }
-        .image-card {
-            aspect-ratio: 1;
-            border-radius: var(--radius-md);
-            overflow: hidden;
-            border: 1px solid var(--border);
-            cursor: pointer;
-            position: relative;
-            transition: all var(--transition);
-        }
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+        .image-card { aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); cursor: pointer; position: relative; transition: all var(--transition); }
         .image-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-        .image-card img {
-            width: 100%; height: 100%;
-            object-fit: cover;
-        }
-        .image-card .img-overlay {
-            position: absolute;
-            bottom: 0; left: 0; right: 0;
-            background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
-            color: #fff;
-            padding: 14px 10px 8px;
-            font-size: 11px;
-            text-align: center;
-        }
-
-        /* ============ ANGEBOT-BUILDER ============ */
+        .image-card img { width: 100%; height: 100%; object-fit: cover; }
+        .image-card .img-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.75), transparent); color: #fff; padding: 14px 10px 8px; font-size: 11px; text-align: center; }
         .offer-builder { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; }
         @media (max-width: 800px) { .offer-builder { grid-template-columns: 1fr; } }
         .offer-search-wrap { position: relative; }
         .offer-search-wrap input {
-            width: 100%; padding: 12px 14px 12px 40px; border: 1.5px solid var(--border);
-            border-radius: var(--radius-md); font-size: 14px; background: var(--bg-tertiary);
-            color: var(--text-primary); font-family: var(--font-family);
+            width: 100%; padding: 12px 14px 12px 40px; border: 1.5px solid var(--border); border-radius: var(--radius-md); font-size: 14px;
+            background: var(--bg-tertiary); color: var(--text-primary); font-family: var(--font-family);
         }
         .offer-search-wrap input:focus { outline: none; border-color: var(--accent); background: var(--bg-secondary-solid); }
         .offer-search-wrap .search-ic { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
         .autocomplete-list {
-            position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-            background: var(--bg-secondary-solid); border: 1px solid var(--border); border-radius: var(--radius-md);
-            box-shadow: var(--shadow-lg); max-height: 260px; overflow-y: auto; z-index: 50; display: none;
+            position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-secondary-solid); border: 1px solid var(--border);
+            border-radius: var(--radius-md); box-shadow: var(--shadow-lg); max-height: 260px; overflow-y: auto; z-index: 50; display: none;
         }
         .autocomplete-item { padding: 10px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
         .autocomplete-item:hover { background: var(--bg-tertiary); }
@@ -603,9 +283,8 @@
         .autocomplete-item .ac-price { color: var(--accent); font-weight: 700; white-space: nowrap; font-family: var(--font-mono); }
         .filter-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
         .chip {
-            padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
-            background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; border: 1.5px solid transparent;
-            transition: all var(--transition);
+            padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; background: var(--bg-tertiary); color: var(--text-secondary);
+            cursor: pointer; border: 1.5px solid transparent; transition: all var(--transition);
         }
         .chip:hover { background: var(--border); }
         .chip.active { background: var(--accent); color: #fff; }
@@ -620,15 +299,8 @@
         .offer-summary-box { background: var(--bg-tertiary); border-radius: var(--radius-md); padding: 18px; margin-top: 16px; }
         .offer-summary-row { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; color: var(--text-secondary); }
         .offer-summary-row.total { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); margin-top: 8px; padding-top: 12px; }
-
-        /* ============ RESPONSIVE ============ */
         @media (max-width: 900px) {
-            .sidebar {
-                position: fixed;
-                left: -280px;
-                height: 100vh;
-                transition: left 0.3s ease;
-            }
+            .sidebar { position: fixed; left: -280px; height: 100vh; transition: left 0.3s ease; }
             .sidebar.open { left: 0; box-shadow: var(--shadow-lg); }
             .stats-row { grid-template-columns: repeat(2, 1fr); }
             .card-grid { grid-template-columns: 1fr; }
@@ -640,39 +312,28 @@
             .topbar { padding: 0 12px; }
             .content-scroll { padding: 16px; }
         }
-
-        /* ============ PRINT ============ */
         @media print {
             .sidebar, .topbar, .toast-container { display: none !important; }
             .main-area { margin: 0; }
             .content-scroll { overflow: visible; padding: 0; }
             .modal-overlay { position: static; }
         }
-
-        /* ============ SPLASH ============ */
         .splash-screen {
-            position: fixed;
-            inset: 0;
-            background:
-                radial-gradient(circle at 50% 40%, var(--accent-light), transparent 55%),
-                var(--bg-primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            flex-direction: column;
-            gap: 16px;
+            position: fixed; inset: 0;
+            background: radial-gradient(circle at 50% 40%, var(--accent-light), transparent 55%), var(--bg-primary);
+            display: flex; align-items: center; justify-content: center; z-index: 9999; flex-direction: column; gap: 16px;
         }
         .splash-screen .splash-logo {
-            width: 64px; height: 64px;
-            border-radius: 18px;
-            background: linear-gradient(135deg, var(--accent), var(--discharge));
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 8px 30px rgba(11,143,163,0.4);
-            animation: pulse 2s infinite;
+            width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(135deg, var(--accent), var(--discharge));
+            display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 30px rgba(11,143,163,0.4); animation: pulse 2s infinite;
         }
         .splash-screen .splash-logo svg { width: 30px; height: 30px; }
         .splash-screen .splash-title { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.3px; }
+        .splash-screen .splash-error { color: var(--danger); font-size: 12.5px; max-width: 320px; text-align: center; padding: 0 20px; }
+        .splash-screen .splash-retry {
+            margin-top: 6px; padding: 8px 18px; border-radius: 20px; border: none; background: var(--accent); color: #fff;
+            font-weight: 600; font-size: 13px; cursor: pointer;
+        }
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.75; transform: scale(0.96); } }
     </style>
 </head>
@@ -681,7 +342,7 @@
     <div class="splash-screen" id="splash">
         <div class="splash-logo">❄️</div>
         <div style="font-weight:700;font-size:20px;">KTM</div>
-        <div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div>
+        <div style="color:var(--text-muted);font-size:13px;" id="splashStatus">Wird geladen...</div>
     </div>
 
     <div class="toast-container" id="toastContainer"></div>
@@ -748,8 +409,7 @@
                 <button class="icon-btn" title="Einstellungen" onclick="app.navigate('settings')">⚙️</button>
             </div>
         </div>
-        <div class="content-scroll" id="contentArea">
-            </div>
+        <div class="content-scroll" id="contentArea"></div>
     </div>
 
     <div id="modalContainer"></div>
@@ -760,24 +420,38 @@
         // ============================================================
         const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
-        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Supabase wird defensiv initialisiert: Falls das CDN-Script (z.B. wegen
+        // fehlender Internetverbindung) nicht lädt, darf die App trotzdem starten.
+        let sb = null;
+        let supabaseAvailable = false;
+        try {
+            if (window.supabase && typeof window.supabase.createClient === 'function') {
+                sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                supabaseAvailable = true;
+            } else {
+                console.warn('Supabase SDK nicht geladen – App läuft im Offline-/Lokal-Modus.');
+            }
+        } catch (e) {
+            console.warn('Supabase-Initialisierung fehlgeschlagen:', e);
+        }
 
         const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
 
-        function toSnake(o) { 
-            const r={}; 
-            for(const k in o) { 
-                if(['_synced','_remote'].includes(k)) continue; 
-                r[FIELD_MAP[k]||k]=o[k]; 
-            } 
-            return r; 
+        function toSnake(o) {
+            const r={};
+            for(const k in o) {
+                if(['_synced','_remote'].includes(k)) continue;
+                r[FIELD_MAP[k]||k]=o[k];
+            }
+            return r;
         }
 
-        function toCamel(o) { 
-            const r={}; 
-            for(const k in o) r[REVERSE_MAP[k]||k]=o[k]; 
-            return r; 
+        function toCamel(o) {
+            const r={};
+            for(const k in o) r[REVERSE_MAP[k]||k]=o[k];
+            return r;
         }
 
         function getPK(table, record) {
@@ -797,9 +471,13 @@
         // ============================================================
         class DatabaseManager {
             constructor() { this.db = null; }
-            
-            async init() {
-                return new Promise(r => {
+
+            init() {
+                return new Promise((resolve, reject) => {
+                    if (!('indexedDB' in window)) {
+                        reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
+                        return;
+                    }
                     const req = indexedDB.open('KTM_DB', 2);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
@@ -807,7 +485,9 @@
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
                     };
-                    req.onsuccess = (e) => { this.db = e.target.result; r(); };
+                    req.onsuccess = (e) => { this.db = e.target.result; resolve(); };
+                    req.onerror = (e) => reject(e.target.error || new Error('IndexedDB konnte nicht geöffnet werden.'));
+                    req.onblocked = () => reject(new Error('Datenbank-Upgrade blockiert. Bitte alle anderen Tabs dieser App schließen.'));
                 });
             }
 
@@ -863,7 +543,6 @@
             async getByIndex(storeName, indexName, value) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readonly');
-                    // Workaround, falls keine Indexe definiert sind: filtern wir getAll
                     const request = tx.objectStore(storeName).getAll();
                     request.onsuccess = () => {
                         const results = request.result.filter(item => item[indexName] === value);
@@ -909,7 +588,7 @@
 
             async delete(storeName, id) {
                 await this.deleteLocalOnly(storeName, id);
-                if (navigator.onLine) {
+                if (navigator.onLine && supabaseAvailable) {
                     sb.from(storeName).delete().eq(storeName === 'settings' ? 'key' : 'id', id).then(() => {
                         console.log(`Deleted remote ${storeName} ${id}`);
                     }).catch(console.warn);
@@ -949,10 +628,10 @@
                 for (const m of data.materials || []) await this.addLocalOnly('materials', m);
                 for (const o of data.offers || []) await this.addLocalOnly('offers', o);
                 for (const s of data.settings || []) await this.putLocalOnly('settings', s);
-                backgroundSyncPush(); 
+                backgroundSyncPush();
             }
         }
-        
+
         const db = new DatabaseManager();
 
         // ============================================================
@@ -974,17 +653,28 @@
             app.navigate(app.currentPage, app.currentProjectId);
         }
 
-        async function initRealtime() {
-            sb.channel('public-changes')
-                .on('postgres_changes', { event: '*', schema: 'public' }, handleRemoteChange)
-                .subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        updateSyncStatus('online', '🟢 Live');
-                    }
-                });
+        function initRealtime() {
+            if (!supabaseAvailable) return;
+            try {
+                sb.channel('public-changes')
+                    .on('postgres_changes', { event: '*', schema: 'public' }, handleRemoteChange)
+                    .subscribe((status) => {
+                        if (status === 'SUBSCRIBED') {
+                            updateSyncStatus('online', '🟢 Live');
+                        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                            updateSyncStatus('offline', '🟡 Live-Sync gestört');
+                        }
+                    });
+            } catch (e) {
+                console.warn('Realtime konnte nicht gestartet werden:', e);
+            }
         }
 
         async function initialFullSync() {
+            if (!supabaseAvailable) {
+                updateSyncStatus('offline', '⚪ Lokal (kein Supabase)');
+                return;
+            }
             updateSyncStatus('syncing', '🔄 Syncing...');
             if (!navigator.onLine) {
                 updateSyncStatus('offline', '🔴 Offline');
@@ -1004,6 +694,8 @@
                             localData._remote = true;
                             await db.putLocalOnly(t, localData);
                         }
+                    } else if (error) {
+                        console.warn(`Sync-Fehler bei Tabelle "${t}":`, error.message);
                     }
                 }
                 updateSyncStatus('online', '🟢 Online');
@@ -1015,28 +707,63 @@
         }
 
         async function backgroundSyncPush() {
-            if (!navigator.onLine) return;
+            if (!navigator.onLine || !supabaseAvailable) return;
             try {
-                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { 
+                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
                     const unsynced = (await db.getAll(t)).filter(r => !r._synced);
                     for (const rec of unsynced) {
+                        const oldPK = getPK(t, rec);
                         const p = toSnake(rec);
-                        if (!rec._remote) delete p.id; 
-                        
+                        if (!rec._remote) delete p.id;
+
                         const { data, error } = await sb.from(t)
                             .upsert(p, rec._remote ? { onConflict: t === 'settings' ? 'key' : 'id' } : undefined)
                             .select();
 
-                        if (!error && data?.length) { 
-                            await db.deleteLocalOnly(t, getPK(t, rec)); 
-                            const nr = toCamel(data[0]); 
-                            nr._synced = true; 
+                        if (!error && data?.length) {
+                            const nr = toCamel(data[0]);
+                            nr._synced = true;
                             nr._remote = true;
-                            await db.addLocalOnly(t, nr); 
+
+                            // Falls dem Datensatz gerade erstmalig eine Server-ID zugewiesen wurde
+                            // (lokal neu angelegt, noch keine Server-ID), müssen alle abhängigen
+                            // Datensätze (z.B. Räume/Bilder/Angebote, die auf die alte lokale
+                            // projectId zeigen) auf die neue ID umgestellt werden. Sonst verlieren
+                            // sie nach der Synchronisation ihre Zuordnung.
+                            const idChanged = !rec._remote && oldPK !== undefined && oldPK !== nr.id;
+
+                            await db.deleteLocalOnly(t, oldPK);
+                            await db.addLocalOnly(t, nr);
+
+                            if (idChanged) {
+                                await remapForeignKeys(t, oldPK, nr.id);
+                            }
                         }
                     }
                 }
             } catch(e) { console.warn('Sync Push Fehler:', e); }
+        }
+
+        // Aktualisiert Fremdschlüssel in abhängigen Tabellen, nachdem ein lokaler
+        // Datensatz beim ersten Sync eine neue, vom Server vergebene ID erhalten hat.
+        async function remapForeignKeys(table, oldId, newId) {
+            const relations = {
+                customers: [{ store: 'projects', field: 'customerId' }],
+                projects: [
+                    { store: 'rooms', field: 'projectId' },
+                    { store: 'images', field: 'projectId' },
+                    { store: 'offers', field: 'projectId' },
+                ],
+            };
+            const deps = relations[table];
+            if (!deps) return;
+            for (const dep of deps) {
+                const related = await db.getByIndex(dep.store, dep.field, oldId);
+                for (const rec of related) {
+                    rec[dep.field] = newId;
+                    await db.putLocalOnly(dep.store, rec);
+                }
+            }
         }
 
         // ============================================================
@@ -1094,7 +821,7 @@
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
             const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-            toast.innerHTML = `${icons[type] || ''} ${message}`;
+            toast.innerHTML = `${icons[type] || ''} ${escapeHtml(message)}`;
             container.appendChild(toast);
             setTimeout(() => {
                 toast.style.opacity = '0';
@@ -1103,9 +830,9 @@
             }, 3000);
         }
 
-        function formatCurrency(amount) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount); }
+        function formatCurrency(amount) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount || 0); }
         function formatDate(isoString) { return !isoString ? '-' : new Date(isoString).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
-        
+
         function getStatusClass(status) {
             const map = {
                 'Neu': 'status-neu', 'Besichtigung offen': 'status-offen', 'Besichtigt': 'status-offen',
@@ -1147,8 +874,26 @@
 
         function escapeHtml(str) {
             const div = document.createElement('div');
-            div.textContent = str;
+            div.textContent = str ?? '';
             return div.innerHTML;
+        }
+
+        // ---- ID-Hilfsfunktionen ----
+        // Wichtig, weil IDs zwei unterschiedliche Formen annehmen können:
+        // - Zahlen, solange ein Datensatz nur lokal (IndexedDB autoIncrement) existiert
+        // - Strings/UUIDs, sobald Supabase dem Datensatz beim ersten Sync eine eigene ID vergibt
+        // idJS() bettet eine ID sicher in einen dynamisch erzeugten onclick-Handler ein
+        // (Zahl bleibt unquotiert, String wird korrekt gequotet/escaped).
+        function idJS(id) {
+            if (typeof id === 'number') return String(id);
+            return "'" + String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+        }
+        // parseId() ist das Gegenstück beim Auslesen aus <select>/dataset-Werten:
+        // rein numerische Strings werden zu Zahlen, alles andere (z.B. UUIDs) bleibt String.
+        // So bricht die Zuordnung nicht mehr, sobald ein Datensatz über Supabase eine UUID erhält.
+        function parseId(value) {
+            if (value === null || value === undefined || value === '') return null;
+            return /^\d+$/.test(value) ? Number(value) : value;
         }
 
         async function getSetting(key, fallback = '') {
@@ -1168,6 +913,7 @@
 
         function renderDashboard() {
             (async () => {
+                try {
                 const customers = await db.getAll('customers');
                 const projects = await db.getAll('projects');
                 const offers = await db.getAll('offers');
@@ -1231,7 +977,7 @@
                             <tbody>
                                 ${projects.slice(-5).reverse().map(p => {
                                     const cust = customers.find(c => c.id === p.customerId);
-                                    return `<tr style="cursor:pointer" onclick="app.navigate('projects', ${p.id})">
+                                    return `<tr style="cursor:pointer" onclick="app.navigate('projects', ${idJS(p.id)})">
                                         <td><strong>${escapeHtml(p.title || 'Unbenannt')}</strong></td>
                                         <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}</td>
                                         <td><span class="status-badge ${getStatusClass(p.status)}">${escapeHtml(p.status || 'Neu')}</span></td>
@@ -1242,6 +988,10 @@
                         </table>
                     </div>
                 `;
+                } catch (e) {
+                    console.error('Dashboard-Render-Fehler:', e);
+                    contentArea.innerHTML = `<div style="padding:20px;color:var(--danger);">Fehler beim Laden des Dashboards: ${escapeHtml(e.message)}</div>`;
+                }
             })();
         }
 
@@ -1266,9 +1016,9 @@
                                         <td>${escapeHtml(c.phone || '-')}</td>
                                         <td><span class="status-badge ${getStatusClass(c.status || 'Neu')}">${escapeHtml(c.status || 'Neu')}</span></td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline" onclick="app.openCustomerModal(${c.id})">✏️</button>
-                                            <button class="btn btn-sm btn-outline" onclick="app.duplicateCustomer(${c.id})">📋</button>
-                                            <button class="btn btn-sm btn-danger" onclick="app.deleteCustomer(${c.id})">🗑</button>
+                                            <button class="btn btn-sm btn-outline" onclick="app.openCustomerModal(${idJS(c.id)})">✏️</button>
+                                            <button class="btn btn-sm btn-outline" onclick="app.duplicateCustomer(${idJS(c.id)})">📋</button>
+                                            <button class="btn btn-sm btn-danger" onclick="app.deleteCustomer(${idJS(c.id)})">🗑</button>
                                         </td>
                                     </tr>
                                 `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Keine Kunden vorhanden</td></tr>'}
@@ -1296,9 +1046,9 @@
                                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:16px;">
                                     <h3 style="margin:0;">📋 ${escapeHtml(project.title || 'Unbenannt')}</h3>
                                     <div style="display:flex;gap:8px;">
-                                        <button class="btn btn-sm btn-outline" onclick="app.openProjectModal(${project.id})">✏️ Bearbeiten</button>
-                                        <button class="btn btn-sm btn-primary" onclick="app.createOffer(${project.id})">📄 Angebot erstellen</button>
-                                        <button class="btn btn-sm btn-danger" onclick="app.deleteProject(${project.id})">🗑 Löschen</button>
+                                        <button class="btn btn-sm btn-outline" onclick="app.openProjectModal(${idJS(project.id)})">✏️ Bearbeiten</button>
+                                        <button class="btn btn-sm btn-primary" onclick="app.createOffer(${idJS(project.id)})">📄 Angebot erstellen</button>
+                                        <button class="btn btn-sm btn-danger" onclick="app.deleteProject(${idJS(project.id)})">🗑 Löschen</button>
                                     </div>
                                 </div>
                                 <p><strong>Kunde:</strong> ${escapeHtml(customer ? `${customer.firstName} ${customer.lastName}` : 'Kein Kunde zugewiesen')}</p>
@@ -1318,13 +1068,13 @@
                                                     <td><strong>${escapeHtml(r.name||'Unbenannt')}</strong></td>
                                                     <td>${r.length||0}</td><td>${r.width||0}</td><td>${r.height||2.5}</td>
                                                     <td>${area}</td><td>${volume}</td><td>${roomKW} kW</td>
-                                                    <td><button class="btn btn-sm btn-outline" onclick="app.deleteRoom(${r.id},${project.id})">🗑</button></td>
+                                                    <td><button class="btn btn-sm btn-outline" onclick="app.deleteRoom(${idJS(r.id)},${idJS(project.id)})">🗑</button></td>
                                                 </tr>`;
                                             }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Keine Räume</td></tr>'}
                                         </tbody>
                                     </table>
                                 </div>
-                                <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="app.openRoomModal(${project.id})">+ Raum hinzufügen</button>
+                                <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="app.openRoomModal(${idJS(project.id)})">+ Raum hinzufügen</button>
 
                                 ${cooling.details.length > 0 ? `
                                 <div style="background:var(--accent-light);border-radius:var(--radius-md);padding:16px;margin-top:16px;">
@@ -1341,7 +1091,7 @@
                                         </div>
                                     `).join('')}
                                 </div>
-                                <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="app.openImageModal(${project.id})">+ Bild hinzufügen</button>
+                                <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="app.openImageModal(${idJS(project.id)})">+ Bild hinzufügen</button>
                             </div>
                         `;
                     }
@@ -1358,15 +1108,15 @@
                             <tbody>
                                 ${projects.map(p => {
                                     const cust = customers.find(c => c.id === p.customerId);
-                                    return `<tr style="cursor:pointer" onclick="app.navigate('projects', ${p.id})">
+                                    return `<tr style="cursor:pointer" onclick="app.navigate('projects', ${idJS(p.id)})">
                                         <td><strong>${escapeHtml(p.title || 'Unbenannt')}</strong></td>
                                         <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}</td>
                                         <td><span class="status-badge ${getStatusClass(p.status)}">${escapeHtml(p.status || 'Neu')}</span></td>
                                         <td>${(p.roomCount || 0)} Räume</td>
                                         <td>${formatDate(p.createdAt)}</td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();app.openProjectModal(${p.id})">✏️</button>
-                                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();app.deleteProject(${p.id})">🗑</button>
+                                            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();app.openProjectModal(${idJS(p.id)})">✏️</button>
+                                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();app.deleteProject(${idJS(p.id)})">🗑</button>
                                         </td>
                                     </tr>`;
                                 }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Keine Projekte</td></tr>'}
@@ -1405,8 +1155,8 @@
                                         <td>${formatCurrency(m.purchasePrice || 0)}</td>
                                         <td>${formatCurrency(m.sellingPrice || 0)}</td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline" onclick="app.openMaterialModal(${m.id})">✏️</button>
-                                            <button class="btn btn-sm btn-danger" onclick="app.deleteMaterial(${m.id})">🗑</button>
+                                            <button class="btn btn-sm btn-outline" onclick="app.openMaterialModal(${idJS(m.id)})">✏️</button>
+                                            <button class="btn btn-sm btn-danger" onclick="app.deleteMaterial(${idJS(m.id)})">🗑</button>
                                         </td>
                                     </tr>
                                 `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Keine Materialien</td></tr>'}
@@ -1442,8 +1192,8 @@
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
                                         <td>${formatDate(o.createdAt)}</td>
                                         <td>
-                                            <button class="btn btn-sm btn-primary" onclick="app.exportOfferPDF(${o.id})">📄 PDF</button>
-                                            <button class="btn btn-sm btn-danger" onclick="app.deleteOffer(${o.id})">🗑</button>
+                                            <button class="btn btn-sm btn-primary" onclick="app.exportOfferPDF(${idJS(o.id)})">📄 PDF</button>
+                                            <button class="btn btn-sm btn-danger" onclick="app.deleteOffer(${idJS(o.id)})">🗑</button>
                                         </td>
                                     </tr>`;
                                 }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Keine Angebote</td></tr>'}
@@ -1511,20 +1261,44 @@
 
             async init() {
                 await db.init();
-                
+
                 this.setupNavigation();
                 this.setupSearch();
                 this.setupTheme();
                 this.navigate('dashboard');
-                document.getElementById('splash').style.display = 'none';
                 this.setupResponsive();
 
-                // Start synchronisation process
+                this.hideSplash();
+
+                // Start synchronisation process (läuft im Hintergrund, blockiert die UI nicht)
                 if (navigator.onLine) {
-                    await initialFullSync();
-                    initRealtime();
+                    initialFullSync().then(initRealtime);
                 } else {
                     updateSyncStatus('offline', '🔴 Offline');
+                }
+            },
+
+            hideSplash() {
+                const splash = document.getElementById('splash');
+                if (splash) splash.style.display = 'none';
+            },
+
+            showSplashError(message) {
+                const splash = document.getElementById('splash');
+                const status = document.getElementById('splashStatus');
+                if (!splash) return;
+                splash.style.display = 'flex';
+                if (status) status.textContent = 'Fehler beim Start';
+                if (!splash.querySelector('.splash-error')) {
+                    const errEl = document.createElement('div');
+                    errEl.className = 'splash-error';
+                    errEl.textContent = message;
+                    splash.appendChild(errEl);
+                    const retryBtn = document.createElement('button');
+                    retryBtn.className = 'splash-retry';
+                    retryBtn.textContent = 'Erneut versuchen';
+                    retryBtn.onclick = () => window.location.reload();
+                    splash.appendChild(retryBtn);
                 }
             },
 
@@ -1535,10 +1309,14 @@
                         this.navigate(page);
                     });
                 });
-                
+
                 document.getElementById('syncBtn').addEventListener('click', async () => {
                     if (!navigator.onLine) {
                         showToast('Keine Internetverbindung.', 'error');
+                        return;
+                    }
+                    if (!supabaseAvailable) {
+                        showToast('Supabase ist nicht verbunden.', 'error');
                         return;
                     }
                     showToast('Synchronisiere...', 'info');
@@ -1579,7 +1357,7 @@
                         this.navigate(this.currentPage, this.currentProjectId);
                         return;
                     }
-                    
+
                     const customers = await db.getAll('customers');
                     const projects = await db.getAll('projects');
                     const materials = await db.getAll('materials');
@@ -1610,7 +1388,7 @@
                                         <tr>
                                             <td><span class="status-badge ${r.type === 'Kunde' ? 'status-neu' : r.type === 'Projekt' ? 'status-aktiv' : 'status-offen'}">${r.type}</span></td>
                                             <td><strong>${escapeHtml(r.title)}</strong></td>
-                                            <td><button class="btn btn-sm btn-primary" onclick="app.navigate('${r.link}', ${r.id})">Öffnen</button></td>
+                                            <td><button class="btn btn-sm btn-primary" onclick="app.navigate('${r.link}', ${idJS(r.id)})">Öffnen</button></td>
                                         </tr>
                                     `).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">Keine Ergebnisse</td></tr>'}
                                 </tbody>
@@ -1622,14 +1400,15 @@
 
             setupTheme() {
                 const toggle = document.getElementById('themeToggle');
-                const saved = localStorage.getItem('klima-theme') || 'light';
+                let saved = 'light';
+                try { saved = localStorage.getItem('klima-theme') || 'light'; } catch (e) { /* Privater Modus o.ä. */ }
                 document.body.dataset.theme = saved;
                 toggle.innerHTML = saved === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
 
                 toggle.addEventListener('click', () => {
                     const newTheme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
                     document.body.dataset.theme = newTheme;
-                    localStorage.setItem('klima-theme', newTheme);
+                    try { localStorage.setItem('klima-theme', newTheme); } catch (e) { /* ignorieren */ }
                     toggle.innerHTML = newTheme === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
                 });
             },
@@ -1730,7 +1509,8 @@
                 const copy = { ...original };
                 delete copy.id;
                 delete copy.createdAt;
-                delete copy._synced; 
+                delete copy._synced;
+                delete copy._remote;
                 copy.firstName = copy.firstName + ' (Kopie)';
                 await db.add('customers', copy);
                 showToast('Kunde dupliziert.', 'success');
@@ -1761,7 +1541,7 @@
                     async (overlay) => {
                         const data = {
                             title: overlay.querySelector('#projTitle').value.trim(),
-                            customerId: parseInt(overlay.querySelector('#projCustomer').value) || null,
+                            customerId: parseId(overlay.querySelector('#projCustomer').value),
                             siteAddress: overlay.querySelector('#projSiteAddress').value.trim(),
                             status: overlay.querySelector('#projStatus').value,
                             notes: overlay.querySelector('#projNotes').value.trim(),
@@ -1891,6 +1671,7 @@
 
             viewImage(dataUrl) {
                 const win = window.open('', '_blank');
+                if (!win) { showToast('Popup wurde blockiert. Bitte Popups für diese Seite erlauben.', 'error'); return; }
                 win.document.write(`<img src="${dataUrl}" style="max-width:100%;max-height:100vh;display:block;margin:auto;">`);
                 win.document.title = 'Bildvorschau';
             },
@@ -1979,7 +1760,7 @@
                 const cooling = calculateCoolingCapacity(project.rooms || []);
                 const manufacturers = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))];
 
-                let selected = []; 
+                let selected = [];
                 let activeFilter = 'Alle';
 
                 const siteAddress = project.siteAddress || `${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`.trim();
@@ -2135,7 +1916,14 @@
                     `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Treffer</td></tr>';
 
                     modal.querySelectorAll('[data-add-btn]').forEach(btn => {
-                        btn.addEventListener('click', () => addMaterial(parseInt(btn.dataset.addBtn)));
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            addMaterial(parseId(btn.dataset.addBtn));
+                        });
+                    });
+                    // Ganze Zeile klickbar machen (nicht nur der "+"-Button), passend zum cursor:pointer-Styling.
+                    modal.querySelectorAll('[data-add]').forEach(row => {
+                        row.addEventListener('click', () => addMaterial(parseId(row.dataset.add)));
                     });
                 }
 
@@ -2173,10 +1961,15 @@
                     `).join('');
                     acList.style.display = 'block';
                     acList.querySelectorAll('[data-ac]').forEach(el => {
-                        el.addEventListener('click', () => addMaterial(parseInt(el.dataset.ac)));
+                        el.addEventListener('click', () => addMaterial(parseId(el.dataset.ac)));
                     });
                 });
-                document.addEventListener('click', (e) => {
+                // WICHTIG: Listener auf das Modal-Overlay statt auf `document` binden.
+                // Das Overlay wird beim Schließen entfernt, wodurch dieser Listener
+                // automatisch mit entsorgt wird. Bei `document` hätte sich bei jedem
+                // Öffnen des Angebots-Dialogs ein weiterer, nie entfernter Listener
+                // angesammelt (Memory-Leak nach mehrfacher Nutzung).
+                modal.addEventListener('click', (e) => {
                     if (!searchInput.contains(e.target) && !acList.contains(e.target)) acList.style.display = 'none';
                 });
 
@@ -2199,6 +1992,10 @@
             async generateOfferNumberPublic() { return generateOfferNumber(); },
 
             async exportOfferPDF(offerId) {
+                if (typeof window.jspdf === 'undefined') {
+                    showToast('PDF-Bibliothek konnte nicht geladen werden (keine Internetverbindung beim ersten Laden?).', 'error');
+                    return;
+                }
                 const offer = await db.get('offers', offerId);
                 if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
                 const project = await db.get('projects', offer.projectId);
@@ -2377,6 +2174,7 @@
 
             // ---- Excel Exports ----
             async exportMaterialsExcel() {
+                if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
                 const materials = await db.getAll('materials');
                 const wsData = [['Artikelname', 'Hersteller', 'Artikelnummer', 'Kategorie', 'Einheit', 'Einkaufspreis', 'Verkaufspreis', 'Notizen']];
                 for (const m of materials) {
@@ -2395,6 +2193,7 @@
                 input.accept = '.xlsx,.xls';
                 input.onchange = async (e) => {
                     const file = e.target.files[0];
+                    if (!file) return;
                     const data = await file.arrayBuffer();
                     const wb = XLSX.read(data);
                     const sheetName = wb.SheetNames.find(n => /material/i.test(n)) || wb.SheetNames[0];
@@ -2432,6 +2231,7 @@
             },
 
             async exportOffersExcel() {
+                if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
                 const offers = await db.getAll('offers');
                 const wsData = [['Angebotsnummer', 'Projekt', 'Summe', 'Status', 'Datum']];
                 for (const o of offers) {
@@ -2446,6 +2246,7 @@
             },
 
             async exportAllExcel() {
+                if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
                 const data = await db.exportAllData();
                 const wb = XLSX.utils.book_new();
 
@@ -2472,6 +2273,7 @@
                 input.onchange = async (e) => {
                     if (!confirm('Achtung: Alle vorhandenen Daten werden überschrieben! Fortfahren?')) return;
                     const file = e.target.files[0];
+                    if (!file) return;
                     const data = await file.arrayBuffer();
                     const wb = XLSX.read(data);
                     const importData = { customers: [], projects: [], materials: [] };
@@ -2520,11 +2322,17 @@
                 input.onchange = async (e) => {
                     if (!confirm('Achtung: Alle vorhandenen Daten werden überschrieben! Fortfahren?')) return;
                     const file = e.target.files[0];
-                    const text = await file.text();
-                    const data = JSON.parse(text);
-                    await db.importAllData(data);
-                    showToast('Backup wiederhergestellt.', 'success');
-                    this.navigate('dashboard');
+                    if (!file) return;
+                    try {
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        await db.importAllData(data);
+                        showToast('Backup wiederhergestellt.', 'success');
+                        this.navigate('dashboard');
+                    } catch (err) {
+                        console.error('Backup-Wiederherstellung fehlgeschlagen:', err);
+                        showToast('Ungültige Backup-Datei.', 'error');
+                    }
                 };
                 input.click();
             },
@@ -2631,13 +2439,39 @@
         // ============================================================
         // ============ START =========================================
         // ============================================================
+        // Sicherheitsnetz: Falls die Initialisierung aus irgendeinem Grund
+        // (defekte IndexedDB, blockierter Tab, unerwarteter Fehler) hängen
+        // bleibt, wird der Splash-Screen spätestens nach 8 Sekunden mit einer
+        // verständlichen Fehlermeldung versehen, statt endlos "Wird geladen..."
+        // anzuzeigen.
+        let appStarted = false;
+        const startupWatchdog = setTimeout(() => {
+            if (!appStarted) {
+                app.showSplashError('Der Start dauert ungewöhnlich lange. Möglicherweise ist die Datenbank blockiert oder es liegt ein Verbindungsproblem vor.');
+            }
+        }, 8000);
+
         document.addEventListener('DOMContentLoaded', () => {
-            app.init();
+            app.init().then(() => {
+                appStarted = true;
+                clearTimeout(startupWatchdog);
+            }).catch((err) => {
+                appStarted = true;
+                clearTimeout(startupWatchdog);
+                console.error('Initialisierung fehlgeschlagen:', err);
+                app.showSplashError(err && err.message ? err.message : 'Unbekannter Fehler beim Start der Anwendung.');
+            });
         });
 
-        // Service Worker registrieren (Optional für PWA Funktionalität)
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(() => {});
+        // Service Worker registrieren (optional für PWA-Funktionalität).
+        // Läuft nur auf https/localhost und wird defensiv behandelt, damit ein
+        // fehlendes sw.js (z.B. bei erstmaligem Deployment) die App nicht stört.
+        if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch((err) => {
+                    console.warn('Service Worker konnte nicht registriert werden:', err);
+                });
+            });
         }
     </script>
 </body>
