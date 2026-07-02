@@ -478,12 +478,10 @@
 function toSnake(o) {
     const r = {};
     for (const k in o) {
-        if (['_synced','_remote','rooms','images','offers'].includes(k)) continue;
-        const mapped = FIELD_MAP[k] || k;
-        // Nur Felder, die auch als Spalten existieren (oder im FIELD_MAP stehen), weitergeben
-        if (FIELD_MAP[k] || [...KNOWN_COLUMNS].includes(k)) {
-            r[mapped] = o[k];
-        }
+        // Diese Felder niemals an Supabase senden
+        if (['_synced', '_remote', 'rooms', 'images', 'offers'].includes(k)) continue;
+        // CamelCase -> snake_case mappen, falls bekannt, sonst das Original verwenden
+        r[FIELD_MAP[k] || k] = o[k];
     }
     return r;
 }
