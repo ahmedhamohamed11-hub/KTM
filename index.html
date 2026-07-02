@@ -985,7 +985,49 @@
         }
 
         const MATERIAL_CATEGORIES = ['Klimageräte','Außengeräte','Multisplit','Wärmepumpen','Kupferrohre','Isolierung','Kabel','Kondensat','Elektromaterial','Befestigung','Arbeitszeit','Anfahrt','Zubehör','Sonstiges'];
+// ============================================================
+// ANGEBOTSEINSTELLUNGEN (LOKAL SPEICHERN)
+// ============================================================
+const OFFER_DEFAULTS = {
+    autoNumber: true,
+    lastNumber: 0,
+    defaultVatRate: 0.20,      // 20 % (Österreich)
+    vatEnabled: true,
+    validUntilEnabled: true,
+    defaultValidDays: 14,
+    defaultDiscount: 0,
+};
 
+async function loadOfferDefaults() {
+    const defaults = { ...OFFER_DEFAULTS };
+    for (const key of Object.keys(defaults)) {
+        const val = await getSetting(`offerDefault_${key}`, null);
+        if (val !== null) {
+            if (typeof defaults[key] === 'boolean') defaults[key] = val === 'true';
+            else if (typeof defaults[key] === 'number') defaults[key] = Number(val);
+            else defaults[key] = val;
+        }
+    }
+    return defaults;
+}
+
+async function saveOfferDefault(key, value) {
+    await setSetting(`offerDefault_${key}`, String(value));
+}
+
+async function getNextAutoNumber() {
+    const year = new Date().getFullYear();
+    const counterKey = `offerCounter_${year}`;
+    let counter = parseInt(await getSetting(counterKey, '0')) || 0;
+    counter += 1;
+    await setSetting(counterKey, String(counter));
+    return `A-${year}-${String(counter).padStart(4, '0')}`;
+}
+
+async function isOfferNumberUnique(number, excludeId = null) {
+    const allOffers = await db.getAll('offers');
+    return !allOffers.some(o => o.offerNumber === number && o.id !== excludeId);
+}
         // ============================================================
         // ============ SEITEN-RENDERER ===============================
         // ============================================================
@@ -2018,420 +2060,623 @@
             },
 
             // ---- Angebots-Modul ----
-            async createOffer(projectId) {
-                const project = await db.getProjectWithDetails(projectId);
-                if (!project) { showToast('Projekt nicht gefunden.', 'error'); return; }
-                const customer = project.customerId ? await db.get('customers', project.customerId) : null;
-                if (!customer) { showToast('Kein Kunde zugewiesen.', 'error'); return; }
+      async createOffer(projectId) {
+    const project = await db.getProjectWithDetails(projectId);
+    if (!project) { showToast('Projekt nicht gefunden.', 'error'); return; }
+    const customer = project.customerId ? await db.get('customers', project.customerId) : null;
+    if (!customer) { showToast('Kein Kunde zugewiesen.', 'error'); return; }
 
-                const materials = await db.getAll('materials');
-                const cooling = calculateCoolingCapacity(project.rooms || []);
-                const manufacturers = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))];
+    const materials = await db.getAll('materials');
+    const cooling = calculateCoolingCapacity(project.rooms || []);
+    const manufacturers = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))];
+    const defaults = await loadOfferDefaults();
 
-                let selected = [];
-                let activeFilter = 'Alle';
+    let selected = [];
+    let activeFilter = 'Alle';
+    
+    // Angebotseinstellungen (live änderbar)
+    let offerSettings = {
+        offerNumber: defaults.autoNumber ? await getNextAutoNumber() : '',
+        autoNumber: defaults.autoNumber,
+        offerDate: toLocalDateString(new Date()),
+        validUntilEnabled: defaults.validUntilEnabled,
+        validUntil: toLocalDateString(new Date(Date.now() + defaults.defaultValidDays * 86400000)),
+        vatEnabled: defaults.vatEnabled,
+        vatRate: defaults.defaultVatRate,
+        discountEnabled: defaults.defaultDiscount > 0,
+        discountRate: defaults.defaultDiscount,
+    };
 
-                const siteAddress = project.siteAddress || `${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`.trim();
+    const siteAddress = project.siteAddress || `${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`.trim();
 
-                const modal = showModal(
-                    'Angebot erstellen',
-                    `
-                        <div class="form-row">
-                            <div class="form-group"><label>Ansprechpartner</label><input type="text" id="offerContact" value="${escapeHtml(customer.firstName + ' ' + customer.lastName)}"></div>
-                            <div class="form-group"><label>Telefon</label><input type="text" id="offerPhone" value="${escapeHtml(customer.phone || '')}"></div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group"><label>E-Mail</label><input type="email" id="offerEmail" value="${escapeHtml(customer.email || '')}"></div>
-                            <div class="form-group"><label>Gültig (Tage)</label><input type="number" id="offerValidDays" value="14" min="1"></div>
-                        </div>
-                        <div class="form-group"><label>Baustellenadresse</label><input type="text" id="offerSiteAddress" value="${escapeHtml(siteAddress)}"></div>
+    const modal = showModal(
+        'Angebot erstellen',
+        `
+        <div style="background:var(--bg-tertiary);border-radius:var(--radius-md);padding:16px;margin-bottom:18px;">
+            <div style="font-weight:700;margin-bottom:12px;color:var(--text-primary);">📋 Kopfdaten</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Angebotsnummer</label>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="offerNumberInput" value="${escapeHtml(offerSettings.offerNumber)}" style="flex:1;">
+                        <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;">
+                            <input type="checkbox" id="offerAutoNumber" ${offerSettings.autoNumber ? 'checked' : ''}> Auto
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Angebotsdatum</label>
+                    <input type="date" id="offerDateInput" value="${offerSettings.offerDate}">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="offerValidUntilToggle" ${offerSettings.validUntilEnabled ? 'checked' : ''}> Gültig bis anzeigen
+                    </label>
+                    <input type="date" id="offerValidUntilInput" value="${offerSettings.validUntil}" ${offerSettings.validUntilEnabled ? '' : 'disabled'}>
+                </div>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="offerVatToggle" ${offerSettings.vatEnabled ? 'checked' : ''}> Mehrwertsteuer berechnen
+                    </label>
+                    <select id="offerVatRate" ${offerSettings.vatEnabled ? '' : 'disabled'}>
+                        <option value="0.20" ${offerSettings.vatRate === 0.20 ? 'selected' : ''}>20 % (Standard)</option>
+                        <option value="0.10" ${offerSettings.vatRate === 0.10 ? 'selected' : ''}>10 % (ermäßigt)</option>
+                        <option value="0.13" ${offerSettings.vatRate === 0.13 ? 'selected' : ''}>13 % (ermäßigt)</option>
+                        <option value="0" ${offerSettings.vatRate === 0 ? 'selected' : ''}>0 % (steuerfrei)</option>
+                        <option value="custom" ${![0.20,0.10,0.13,0].includes(offerSettings.vatRate) ? 'selected' : ''}>Benutzerdefiniert...</option>
+                    </select>
+                    <input type="number" id="offerVatCustom" placeholder="z.B. 19" step="0.1" min="0" max="100" style="margin-top:6px;display:${![0.20,0.10,0.13,0].includes(offerSettings.vatRate) ? 'block' : 'none'};" value="${offerSettings.vatRate !== 0.20 && offerSettings.vatRate !== 0.10 && offerSettings.vatRate !== 0.13 && offerSettings.vatRate !== 0 ? (offerSettings.vatRate*100) : ''}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="offerDiscountToggle" ${offerSettings.discountEnabled ? 'checked' : ''}> Rabatt
+                </label>
+                <input type="number" id="offerDiscountRate" value="${offerSettings.discountRate}" step="0.5" min="0" max="100" ${offerSettings.discountEnabled ? '' : 'disabled'}>
+            </div>
+        </div>
 
-                        <div class="offer-builder">
-                            <div>
-                                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Material suchen</label>
-                                <div class="offer-search-wrap">
-                                    <span class="search-ic">🔍</span>
-                                    <input type="text" id="offerMatSearch" placeholder="z.B. Mitsu, Kupferrohr, Klima...">
-                                    <div class="autocomplete-list" id="offerAutocomplete"></div>
-                                </div>
-                                <div class="filter-chips" id="offerFilterChips">
-                                    <div class="chip active" data-filter="Alle">Alle</div>
-                                    ${manufacturers.map(m => `<div class="chip" data-filter="${escapeHtml(m)}">${escapeHtml(m)}</div>`).join('')}
-                                    <div class="chip" data-filter="cat:Zubehör">Zubehör</div>
-                                    <div class="chip" data-filter="cat:Arbeitszeit">Arbeitszeit</div>
-                                </div>
-                                <div id="offerQuickResults" class="table-container" style="max-height:220px;overflow-y:auto;">
-                                    <table><tbody id="offerQuickResultsBody"></tbody></table>
-                                </div>
-                            </div>
-                            <div>
-                                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Ausgewählte Positionen</label>
-                                <div class="offer-pos-list" id="offerPosList"></div>
-                                <div class="form-group" style="margin-top:12px;"><label>Rabatt (%)</label><input type="number" id="offerDiscount" value="0" min="0" max="100" step="0.5"></div>
-                                <div class="offer-summary-box" id="offerSummaryBox"></div>
-                            </div>
-                        </div>
-                    `,
-                    async (overlay) => {
-                        if (selected.length === 0) { showToast('Bitte mindestens eine Position wählen.', 'error'); return; }
-                        const calc = computeOfferTotals();
-                        const validDays = parseInt(overlay.querySelector('#offerValidDays').value) || 14;
-                        const validUntil = toLocalDateString(new Date(Date.now() + validDays * 86400000));
-                        const offerNumber = await generateOfferNumber();
+        <div class="form-row">
+            <div class="form-group"><label>Ansprechpartner</label><input type="text" id="offerContact" value="${escapeHtml(customer.firstName + ' ' + customer.lastName)}"></div>
+            <div class="form-group"><label>Telefon</label><input type="text" id="offerPhone" value="${escapeHtml(customer.phone || '')}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>E-Mail</label><input type="email" id="offerEmail" value="${escapeHtml(customer.email || '')}"></div>
+        </div>
+        <div class="form-group"><label>Baustellenadresse</label><input type="text" id="offerSiteAddress" value="${escapeHtml(siteAddress)}"></div>
 
-                        const offerData = {
-                            projectId,
-                            customerId: project.customerId,
-                            offerNumber,
-                            contactPerson: overlay.querySelector('#offerContact').value.trim(),
-                            contactPhone: overlay.querySelector('#offerPhone').value.trim(),
-                            contactEmail: overlay.querySelector('#offerEmail').value.trim(),
-                            siteAddress: overlay.querySelector('#offerSiteAddress').value.trim(),
-                            validUntil,
-                            positions: selected.map(s => ({ ...s })),
-                            subtotal: calc.subtotal,
-                            discountRate: calc.discountRate,
-                            discountAmount: calc.discountAmount,
-                            netAfterDiscount: calc.netAfterDiscount,
-                            vatRate: 0.19,
-                            vatAmount: calc.vatAmount,
-                            totalPrice: calc.total,
-                            coolingRecommendation: cooling.recommendation,
-                            coolingDetails: cooling.details,
-                            status: 'Angebot offen',
-                            createdAt: new Date().toISOString(),
-                        };
+        <div class="offer-builder">
+            <div>
+                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Material suchen</label>
+                <div class="offer-search-wrap">
+                    <span class="search-ic">🔍</span>
+                    <input type="text" id="offerMatSearch" placeholder="z.B. Mitsu, Kupferrohr, Klima...">
+                    <div class="autocomplete-list" id="offerAutocomplete"></div>
+                </div>
+                <div class="filter-chips" id="offerFilterChips">
+                    <div class="chip active" data-filter="Alle">Alle</div>
+                    ${manufacturers.map(m => `<div class="chip" data-filter="${escapeHtml(m)}">${escapeHtml(m)}</div>`).join('')}
+                    <div class="chip" data-filter="cat:Zubehör">Zubehör</div>
+                    <div class="chip" data-filter="cat:Arbeitszeit">Arbeitszeit</div>
+                </div>
+                <div id="offerQuickResults" class="table-container" style="max-height:220px;overflow-y:auto;">
+                    <table><tbody id="offerQuickResultsBody"></tbody></table>
+                </div>
+            </div>
+            <div>
+                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Ausgewählte Positionen</label>
+                <div class="offer-pos-list" id="offerPosList"></div>
+                <div class="offer-summary-box" id="offerSummaryBox"></div>
+            </div>
+        </div>
+        `,
+        async (overlay) => {
+            if (selected.length === 0) { showToast('Bitte mindestens eine Position wählen.', 'error'); return; }
 
-                        await db.add('offers', offerData);
-                        project.status = 'Angebot offen';
-                        await db.put('projects', project);
+            // Aktuelle Einstellungen auslesen
+            const autoNumber = overlay.querySelector('#offerAutoNumber').checked;
+            const offerNumber = overlay.querySelector('#offerNumberInput').value.trim();
+            
+            if (!offerNumber) {
+                showToast('Bitte eine Angebotsnummer eingeben.', 'error');
+                return;
+            }
+            
+            if (!(await isOfferNumberUnique(offerNumber))) {
+                showToast('Diese Angebotsnummer existiert bereits!', 'error');
+                return;
+            }
 
-                        overlay.remove();
-                        showToast('Angebot erstellt.', 'success');
-                        this.navigate('offers');
-                    },
-                    null,
-                    { wide: true }
-                );
+            const offerDate = overlay.querySelector('#offerDateInput').value;
+            const validUntilEnabled = overlay.querySelector('#offerValidUntilToggle').checked;
+            const validUntil = overlay.querySelector('#offerValidUntilInput').value;
+            const vatEnabled = overlay.querySelector('#offerVatToggle').checked;
+            
+            let vatRate = parseFloat(overlay.querySelector('#offerVatRate').value);
+            if (overlay.querySelector('#offerVatRate').value === 'custom') {
+                vatRate = (parseFloat(overlay.querySelector('#offerVatCustom').value) || 0) / 100;
+            }
+            
+            const discountEnabled = overlay.querySelector('#offerDiscountToggle').checked;
+            const discountRate = discountEnabled ? (parseFloat(overlay.querySelector('#offerDiscountRate').value) || 0) : 0;
 
-                function computeOfferTotals() {
-                    const subtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
-                    const discountRate = (parseFloat(modal.querySelector('#offerDiscount')?.value) || 0) / 100;
-                    const discountAmount = subtotal * discountRate;
-                    const netAfterDiscount = subtotal - discountAmount;
-                    const vatAmount = netAfterDiscount * 0.19;
-                    const total = netAfterDiscount + vatAmount;
-                    return { subtotal, discountRate, discountAmount, netAfterDiscount, vatAmount, total };
-                }
+            // Standardwerte speichern
+            await saveOfferDefault('autoNumber', autoNumber);
+            await saveOfferDefault('vatEnabled', vatEnabled);
+            await saveOfferDefault('vatRate', vatRate);
+            await saveOfferDefault('validUntilEnabled', validUntilEnabled);
+            await saveOfferDefault('defaultDiscount', discountRate);
 
-                function renderPosList() {
-                    const list = modal.querySelector('#offerPosList');
-                    list.innerHTML = selected.map((s, idx) => `
-                        <div class="offer-pos-item">
-                            <div>
-                                <div class="pos-name">${escapeHtml(s.name)}</div>
-                                <div class="pos-meta">${escapeHtml(s.manufacturer || '')} ${s.articleNumber ? '· ' + escapeHtml(s.articleNumber) : ''}</div>
-                            </div>
-                            <input type="number" min="1" value="${s.quantity}" data-idx="${idx}" class="offer-qty-input">
-                            <div style="text-align:right;font-weight:600;">${formatCurrency(s.price * s.quantity)}</div>
-                            <button class="btn btn-sm btn-danger" data-remove="${idx}" style="padding:4px 8px;">✕</button>
-                        </div>
-                    `).join('') || '<div style="color:var(--text-muted);font-size:13px;padding:12px;text-align:center;">Noch keine Positionen ausgewählt.</div>';
+            const calc = computeOfferTotals();
 
-                    list.querySelectorAll('.offer-qty-input').forEach(inp => {
-                        inp.addEventListener('input', (e) => {
-                            const idx = parseInt(e.target.dataset.idx);
-                            selected[idx].quantity = parseInt(e.target.value) || 1;
-                            renderPosList();
-                            renderSummary();
-                        });
-                    });
-                    list.querySelectorAll('[data-remove]').forEach(btn => {
-                        btn.addEventListener('click', () => {
-                            selected.splice(parseInt(btn.dataset.remove), 1);
-                            renderPosList();
-                            renderSummary();
-                        });
-                    });
-                }
+            const offerData = {
+                projectId,
+                customerId: project.customerId,
+                offerNumber,
+                offerDate,
+                validUntilEnabled,
+                validUntil: validUntilEnabled ? validUntil : null,
+                vatEnabled,
+                vatRate,
+                discountEnabled,
+                discountRate,
+                contactPerson: overlay.querySelector('#offerContact').value.trim(),
+                contactPhone: overlay.querySelector('#offerPhone').value.trim(),
+                contactEmail: overlay.querySelector('#offerEmail').value.trim(),
+                siteAddress: overlay.querySelector('#offerSiteAddress').value.trim(),
+                positions: selected.map(s => ({ ...s })),
+                subtotal: calc.subtotal,
+                discountAmount: calc.discountAmount,
+                netAfterDiscount: calc.netAfterDiscount,
+                vatAmount: calc.vatAmount,
+                totalPrice: calc.total,
+                coolingRecommendation: cooling.recommendation,
+                coolingDetails: cooling.details,
+                status: 'Angebot offen',
+                createdAt: new Date().toISOString(),
+            };
 
-                function renderSummary() {
-                    const calc = computeOfferTotals();
-                    modal.querySelector('#offerSummaryBox').innerHTML = `
-                        <div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>
-                        <div class="offer-summary-row"><span>Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.discountAmount)}</span></div>
-                        <div class="offer-summary-row"><span>MwSt. (19%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>
-                        <div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>
-                    `;
-                }
+            await db.add('offers', offerData);
+            project.status = 'Angebot offen';
+            await db.put('projects', project);
 
-                function matchesFilter(m) {
-                    if (activeFilter === 'Alle') return true;
-                    if (activeFilter.startsWith('cat:')) return m.category === activeFilter.slice(4);
-                    return m.manufacturer === activeFilter;
-                }
+            overlay.remove();
+            showToast('Angebot erstellt.', 'success');
+            this.navigate('offers');
+        },
+        null,
+        { wide: true }
+    );
 
-                function renderQuickResults(query = '') {
-                    const q = query.toLowerCase().trim();
-                    const results = materials.filter(m => matchesFilter(m) && (!q || (m.name||'').toLowerCase().includes(q) || (m.manufacturer||'').toLowerCase().includes(q) || (m.category||'').toLowerCase().includes(q))).slice(0, 30);
-                    modal.querySelector('#offerQuickResultsBody').innerHTML = results.map(m => `
-                        <tr style="cursor:pointer;" data-add="${m.id}">
-                            <td>${m.image ? `<img src="${m.image}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;">` : ''}</td>
-                            <td><strong>${escapeHtml(m.name)}</strong><div class="pos-meta" style="color:var(--text-muted);font-size:11px;">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></td>
-                            <td style="text-align:right;color:var(--accent);font-weight:700;">${formatCurrency(m.sellingPrice||0)}</td>
-                            <td><button class="btn btn-sm btn-primary" data-add-btn="${m.id}">+</button></td>
-                        </tr>
-                    `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Treffer</td></tr>';
+    // --- Hilfsfunktionen für die Berechnung (innerhalb des Modals) ---
+    function computeOfferTotals() {
+        const subtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
+        const discountRateVal = offerSettings.discountEnabled ? (offerSettings.discountRate / 100) : 0;
+        const discountAmount = subtotal * discountRateVal;
+        const netAfterDiscount = subtotal - discountAmount;
+        const vatAmount = offerSettings.vatEnabled ? netAfterDiscount * offerSettings.vatRate : 0;
+        const total = netAfterDiscount + vatAmount;
+        return { subtotal, discountRate: discountRateVal, discountAmount, netAfterDiscount, vatAmount, total };
+    }
 
-                    modal.querySelectorAll('[data-add-btn]').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            addMaterial(parseId(btn.dataset.addBtn));
-                        });
-                    });
-                    // Ganze Zeile klickbar machen (nicht nur der "+"-Button), passend zum cursor:pointer-Styling.
-                    modal.querySelectorAll('[data-add]').forEach(row => {
-                        row.addEventListener('click', () => addMaterial(parseId(row.dataset.add)));
-                    });
-                }
+    // Live-Update der Einstellungen aus den UI-Elementen
+    function updateSettingsFromUI() {
+        const autoNumCheckbox = modal.querySelector('#offerAutoNumber');
+        const numInput = modal.querySelector('#offerNumberInput');
+        const validUntilToggle = modal.querySelector('#offerValidUntilToggle');
+        const validUntilInput = modal.querySelector('#offerValidUntilInput');
+        const vatToggle = modal.querySelector('#offerVatToggle');
+        const vatSelect = modal.querySelector('#offerVatRate');
+        const vatCustom = modal.querySelector('#offerVatCustom');
+        const discountToggle = modal.querySelector('#offerDiscountToggle');
+        const discountInput = modal.querySelector('#offerDiscountRate');
 
-                function addMaterial(materialId) {
-                    const m = materials.find(mm => mm.id === materialId);
-                    if (!m) return;
-                    const existing = selected.find(s => s.materialId === materialId);
-                    if (existing) { existing.quantity += 1; }
-                    else {
-                        selected.push({
-                            materialId: m.id, name: m.name, unit: m.unit || 'Stk', price: m.sellingPrice || 0,
-                            quantity: 1, manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
-                            category: m.category || '', description: m.description || '', image: m.image || ''
-                        });
-                    }
-                    renderPosList();
-                    renderSummary();
-                    modal.querySelector('#offerMatSearch').value = '';
-                    modal.querySelector('#offerAutocomplete').style.display = 'none';
-                }
+        offerSettings.autoNumber = autoNumCheckbox.checked;
+        offerSettings.offerNumber = numInput.value.trim();
+        offerSettings.offerDate = modal.querySelector('#offerDateInput').value;
+        offerSettings.validUntilEnabled = validUntilToggle.checked;
+        offerSettings.validUntil = validUntilInput.value;
+        offerSettings.vatEnabled = vatToggle.checked;
 
-                const searchInput = modal.querySelector('#offerMatSearch');
-                const acList = modal.querySelector('#offerAutocomplete');
-                searchInput.addEventListener('input', (e) => {
-                    const q = e.target.value.toLowerCase().trim();
-                    renderQuickResults(q);
-                    if (!q) { acList.style.display = 'none'; return; }
-                    const matches = materials.filter(m => matchesFilter(m) && (m.name||'').toLowerCase().includes(q)).slice(0, 8);
-                    if (matches.length === 0) { acList.style.display = 'none'; return; }
-                    acList.innerHTML = matches.map(m => `
-                        <div class="autocomplete-item" data-ac="${m.id}">
-                            <div><div class="ac-name">${escapeHtml(m.name)}</div><div class="ac-meta">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></div>
-                            <div class="ac-price">${formatCurrency(m.sellingPrice||0)}</div>
-                        </div>
-                    `).join('');
-                    acList.style.display = 'block';
-                    acList.querySelectorAll('[data-ac]').forEach(el => {
-                        el.addEventListener('click', () => addMaterial(parseId(el.dataset.ac)));
-                    });
-                });
-                // WICHTIG: Listener auf das Modal-Overlay statt auf `document` binden.
-                // Das Overlay wird beim Schließen entfernt, wodurch dieser Listener
-                // automatisch mit entsorgt wird. Bei `document` hätte sich bei jedem
-                // Öffnen des Angebots-Dialogs ein weiterer, nie entfernter Listener
-                // angesammelt (Memory-Leak nach mehrfacher Nutzung).
-                modal.addEventListener('click', (e) => {
-                    if (!searchInput.contains(e.target) && !acList.contains(e.target)) acList.style.display = 'none';
-                });
+        if (vatSelect.value === 'custom') {
+            offerSettings.vatRate = (parseFloat(vatCustom.value) || 0) / 100;
+        } else {
+            offerSettings.vatRate = parseFloat(vatSelect.value);
+        }
 
-                modal.querySelectorAll('#offerFilterChips .chip').forEach(chip => {
-                    chip.addEventListener('click', () => {
-                        modal.querySelectorAll('#offerFilterChips .chip').forEach(c => c.classList.remove('active'));
-                        chip.classList.add('active');
-                        activeFilter = chip.dataset.filter;
-                        renderQuickResults(searchInput.value);
-                    });
-                });
+        offerSettings.discountEnabled = discountToggle.checked;
+        offerSettings.discountRate = discountToggle.checked ? (parseFloat(discountInput.value) || 0) : 0;
+    }
 
-                modal.querySelector('#offerDiscount').addEventListener('input', renderSummary);
+    // Event Listener für alle Steuerelemente
+    modal.querySelector('#offerAutoNumber').addEventListener('change', async function() {
+        updateSettingsFromUI();
+        if (this.checked) {
+            const newNum = await getNextAutoNumber();
+            modal.querySelector('#offerNumberInput').value = newNum;
+            offerSettings.offerNumber = newNum;
+        }
+        renderSummary();
+    });
 
-                renderQuickResults();
+    modal.querySelector('#offerNumberInput').addEventListener('input', function() {
+        updateSettingsFromUI();
+        renderSummary();
+    });
+
+    modal.querySelector('#offerDateInput').addEventListener('change', function() {
+        updateSettingsFromUI();
+        renderSummary();
+    });
+
+    modal.querySelector('#offerValidUntilToggle').addEventListener('change', function() {
+        updateSettingsFromUI();
+        modal.querySelector('#offerValidUntilInput').disabled = !this.checked;
+        renderSummary();
+    });
+
+    modal.querySelector('#offerValidUntilInput').addEventListener('change', function() {
+        updateSettingsFromUI();
+        renderSummary();
+    });
+
+    modal.querySelector('#offerVatToggle').addEventListener('change', function() {
+        updateSettingsFromUI();
+        modal.querySelector('#offerVatRate').disabled = !this.checked;
+        modal.querySelector('#offerVatCustom').disabled = !this.checked;
+        renderSummary();
+    });
+
+    modal.querySelector('#offerVatRate').addEventListener('change', function() {
+        const customInput = modal.querySelector('#offerVatCustom');
+        if (this.value === 'custom') {
+            customInput.style.display = 'block';
+            customInput.disabled = false;
+        } else {
+            customInput.style.display = 'none';
+            customInput.disabled = true;
+        }
+        updateSettingsFromUI();
+        renderSummary();
+    });
+
+    modal.querySelector('#offerVatCustom').addEventListener('input', function() {
+        updateSettingsFromUI();
+        renderSummary();
+    });
+
+    modal.querySelector('#offerDiscountToggle').addEventListener('change', function() {
+        updateSettingsFromUI();
+        modal.querySelector('#offerDiscountRate').disabled = !this.checked;
+        renderSummary();
+    });
+
+    modal.querySelector('#offerDiscountRate').addEventListener('input', function() {
+        updateSettingsFromUI();
+        renderSummary();
+    });
+
+    // --- Positions- und Materiallogik (wie bisher, aber mit Live-Update) ---
+    function renderPosList() {
+        const list = modal.querySelector('#offerPosList');
+        list.innerHTML = selected.map((s, idx) => `
+            <div class="offer-pos-item">
+                <div>
+                    <div class="pos-name">${escapeHtml(s.name)}</div>
+                    <div class="pos-meta">${escapeHtml(s.manufacturer || '')} ${s.articleNumber ? '· ' + escapeHtml(s.articleNumber) : ''}</div>
+                </div>
+                <input type="number" min="1" value="${s.quantity}" data-idx="${idx}" class="offer-qty-input">
+                <div style="text-align:right;font-weight:600;">${formatCurrency(s.price * s.quantity)}</div>
+                <button class="btn btn-sm btn-danger" data-remove="${idx}" style="padding:4px 8px;">✕</button>
+            </div>
+        `).join('') || '<div style="color:var(--text-muted);font-size:13px;padding:12px;text-align:center;">Noch keine Positionen ausgewählt.</div>';
+
+        list.querySelectorAll('.offer-qty-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                selected[idx].quantity = parseInt(e.target.value) || 1;
                 renderPosList();
+                updateSettingsFromUI();
                 renderSummary();
-            },
+            });
+        });
+        list.querySelectorAll('[data-remove]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                selected.splice(parseInt(btn.dataset.remove), 1);
+                renderPosList();
+                updateSettingsFromUI();
+                renderSummary();
+            });
+        });
+    }
 
+    function renderSummary() {
+        updateSettingsFromUI();
+        const calc = computeOfferTotals();
+        let html = `
+            <div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>
+        `;
+        if (offerSettings.discountEnabled && calc.discountAmount > 0) {
+            html += `<div class="offer-summary-row"><span>Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.discountAmount)}</span></div>`;
+        }
+        if (offerSettings.vatEnabled) {
+            html += `<div class="offer-summary-row"><span>MwSt. (${(offerSettings.vatRate*100).toFixed(0)}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
+        }
+        html += `<div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>`;
+        modal.querySelector('#offerSummaryBox').innerHTML = html;
+    }
+
+    // Material-Filter und Suche (wie bisher)
+    function matchesFilter(m) {
+        if (activeFilter === 'Alle') return true;
+        if (activeFilter.startsWith('cat:')) return m.category === activeFilter.slice(4);
+        return m.manufacturer === activeFilter;
+    }
+
+    function renderQuickResults(query = '') {
+        const q = query.toLowerCase().trim();
+        const results = materials.filter(m => matchesFilter(m) && (!q || (m.name||'').toLowerCase().includes(q) || (m.manufacturer||'').toLowerCase().includes(q) || (m.category||'').toLowerCase().includes(q))).slice(0, 30);
+        modal.querySelector('#offerQuickResultsBody').innerHTML = results.map(m => `
+            <tr style="cursor:pointer;" data-add="${m.id}">
+                <td>${m.image ? `<img src="${m.image}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;">` : ''}</td>
+                <td><strong>${escapeHtml(m.name)}</strong><div class="pos-meta" style="color:var(--text-muted);font-size:11px;">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></td>
+                <td style="text-align:right;color:var(--accent);font-weight:700;">${formatCurrency(m.sellingPrice||0)}</td>
+                <td><button class="btn btn-sm btn-primary" data-add-btn="${m.id}">+</button></td>
+            </tr>
+        `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Treffer</td></tr>';
+
+        modal.querySelectorAll('[data-add-btn]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                addMaterial(parseId(btn.dataset.addBtn));
+            });
+        });
+        modal.querySelectorAll('[data-add]').forEach(row => {
+            row.addEventListener('click', () => addMaterial(parseId(row.dataset.add)));
+        });
+    }
+
+    function addMaterial(materialId) {
+        const m = materials.find(mm => mm.id === materialId);
+        if (!m) return;
+        const existing = selected.find(s => s.materialId === materialId);
+        if (existing) { existing.quantity += 1; }
+        else {
+            selected.push({
+                materialId: m.id, name: m.name, unit: m.unit || 'Stk', price: m.sellingPrice || 0,
+                quantity: 1, manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
+                category: m.category || '', description: m.description || '', image: m.image || ''
+            });
+        }
+        renderPosList();
+        updateSettingsFromUI();
+        renderSummary();
+        modal.querySelector('#offerMatSearch').value = '';
+        modal.querySelector('#offerAutocomplete').style.display = 'none';
+    }
+
+    const searchInput = modal.querySelector('#offerMatSearch');
+    const acList = modal.querySelector('#offerAutocomplete');
+    searchInput.addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase().trim();
+        renderQuickResults(q);
+        if (!q) { acList.style.display = 'none'; return; }
+        const matches = materials.filter(m => matchesFilter(m) && (m.name||'').toLowerCase().includes(q)).slice(0, 8);
+        if (matches.length === 0) { acList.style.display = 'none'; return; }
+        acList.innerHTML = matches.map(m => `
+            <div class="autocomplete-item" data-ac="${m.id}">
+                <div><div class="ac-name">${escapeHtml(m.name)}</div><div class="ac-meta">${escapeHtml(m.manufacturer||'')} ${escapeHtml(m.category||'')}</div></div>
+                <div class="ac-price">${formatCurrency(m.sellingPrice||0)}</div>
+            </div>
+        `).join('');
+        acList.style.display = 'block';
+        acList.querySelectorAll('[data-ac]').forEach(el => {
+            el.addEventListener('click', () => addMaterial(parseId(el.dataset.ac)));
+        });
+    });
+    modal.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !acList.contains(e.target)) acList.style.display = 'none';
+    });
+
+    modal.querySelectorAll('#offerFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            modal.querySelectorAll('#offerFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            activeFilter = chip.dataset.filter;
+            renderQuickResults(searchInput.value);
+        });
+    });
+
+    // Initialisierung
+    renderQuickResults();
+    renderPosList();
+    renderSummary();
+},
             async generateOfferNumberPublic() { return generateOfferNumber(); },
 
-            async exportOfferPDF(offerId) {
-                if (typeof window.jspdf === 'undefined') {
-                    showToast('PDF-Bibliothek konnte nicht geladen werden (keine Internetverbindung beim ersten Laden?).', 'error');
-                    return;
-                }
-                const offer = await db.get('offers', offerId);
-                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
-                const project = await db.get('projects', offer.projectId);
-                const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+async exportOfferPDF(offerId) {
+    if (typeof window.jspdf === 'undefined') {
+        showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error');
+        return;
+    }
+    const offer = await db.get('offers', offerId);
+    if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+    const project = await db.get('projects', offer.projectId);
+    const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
 
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-                const pageWidth = doc.internal.pageSize.getWidth();
-                const marginX = 16;
-                const accentColor = [37, 99, 235];
-                const grayColor = [90, 95, 107];
-                const lightGray = [238, 241, 245];
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const marginX = 16;
+    const accentColor = [37, 99, 235];
+    const grayColor = [90, 95, 107];
+    const lightGray = [238, 241, 245];
 
-                const companyLogo = await getSetting('companyLogo', '');
-                const companyPhone = await getSetting('companyPhone', '');
-                const companyEmail = await getSetting('companyEmail', '');
-                const companyWebsite = await getSetting('companyWebsite', '');
-                const companyAddress = await getSetting('companyAddress', '');
-                const companyUID = await getSetting('companyUID', '');
-                const companyFirmenbuch = await getSetting('companyFirmenbuch', '');
-                const companyBank = await getSetting('companyBank', '');
-                const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
+    const companyLogo = await getSetting('companyLogo', '');
+    const companyPhone = await getSetting('companyPhone', '');
+    const companyEmail = await getSetting('companyEmail', '');
+    const companyWebsite = await getSetting('companyWebsite', '');
+    const companyAddress = await getSetting('companyAddress', '');
+    const companyUID = await getSetting('companyUID', '');
+    const companyFirmenbuch = await getSetting('companyFirmenbuch', '');
+    const companyBank = await getSetting('companyBank', '');
+    const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
 
-                let y = 18;
+    let y = 18;
 
-                if (companyLogo) {
-                    try {
-                        const imgProps = doc.getImageProperties(companyLogo);
-                        const logoH = 16;
-                        const logoW = (imgProps.width / imgProps.height) * logoH;
-                        doc.addImage(companyLogo, imgProps.fileType || 'PNG', marginX, y - 4, logoW, logoH);
-                    } catch(e) { console.warn('Logo-Fehler', e); }
-                }
+    if (companyLogo) {
+        try {
+            const imgProps = doc.getImageProperties(companyLogo);
+            const logoH = 16;
+            const logoW = (imgProps.width / imgProps.height) * logoH;
+            doc.addImage(companyLogo, imgProps.fileType || 'PNG', marginX, y - 4, logoW, logoH);
+        } catch(e) { console.warn('Logo-Fehler', e); }
+    }
 
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(9);
-                doc.setTextColor(...grayColor);
-                const contactLines = [companyPhone, companyEmail, companyWebsite, companyAddress].filter(Boolean);
-                let cy = y - 4;
-                contactLines.forEach(line => { doc.text(line, pageWidth - marginX, cy, { align: 'right' }); cy += 4.5; });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayColor);
+    const contactLines = [companyPhone, companyEmail, companyWebsite, companyAddress].filter(Boolean);
+    let cy = y - 4;
+    contactLines.forEach(line => { doc.text(line, pageWidth - marginX, cy, { align: 'right' }); cy += 4.5; });
 
-                y = Math.max(y + 18, cy + 4);
+    y = Math.max(y + 18, cy + 4);
+    doc.setDrawColor(...lightGray);
+    doc.setLineWidth(0.6);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 10;
 
-                doc.setDrawColor(...lightGray);
-                doc.setLineWidth(0.6);
-                doc.line(marginX, y, pageWidth - marginX, y);
-                y += 10;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.setTextColor(30, 33, 35);
+    doc.text('ANGEBOT', marginX, y);
+    y += 9;
 
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(22);
-                doc.setTextColor(30, 33, 35);
-                doc.text('ANGEBOT', marginX, y);
-                y += 9;
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...grayColor);
+    doc.text(`Angebotsnummer: ${offer.offerNumber || offer.id}`, marginX, y); y += 5;
+    doc.text(`Angebotsdatum: ${formatDate(offer.offerDate || offer.createdAt)}`, marginX, y); y += 5;
+    
+    if (offer.validUntilEnabled && offer.validUntil) {
+        doc.text(`Gültig bis: ${formatDate(offer.validUntil)}`, marginX, y); y += 5;
+    }
+    y += 8;
 
-                doc.setFontSize(9.5);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(...grayColor);
-                doc.text(`Angebotsnummer: ${offer.offerNumber || offer.id}`, marginX, y); y += 5;
-                doc.text(`Angebotsdatum: ${formatDate(offer.createdAt)}`, marginX, y); y += 5;
-                doc.text(`Gültig bis: ${formatDate(offer.validUntil)}`, marginX, y);
-                y += 10;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(30, 33, 35);
+    doc.text('Kunde', marginX, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(60, 64, 72);
+    const custLines = [];
+    if (customer) {
+        custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
+        if (customer.company) custLines.push(customer.company);
+    }
+    if (project?.title) custLines.push(`Projekt: ${project.title}`);
+    if (offer.siteAddress) custLines.push(`Baustelle: ${offer.siteAddress}`);
+    if (offer.contactPerson) custLines.push(`Ansprechpartner: ${offer.contactPerson}`);
+    if (offer.contactPhone) custLines.push(`Telefon: ${offer.contactPhone}`);
+    if (offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
+    custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
+    y += 6;
 
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(10.5);
-                doc.setTextColor(30, 33, 35);
-                doc.text('Kunde', marginX, y);
-                y += 6;
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(9.5);
-                doc.setTextColor(60, 64, 72);
-                const custLines = [];
-                if (customer) {
-                    custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
-                    if (customer.company) custLines.push(customer.company);
-                }
-                if (project?.title) custLines.push(`Projekt: ${project.title}`);
-                if (offer.siteAddress) custLines.push(`Baustelle: ${offer.siteAddress}`);
-                if (offer.contactPerson) custLines.push(`Ansprechpartner: ${offer.contactPerson}`);
-                if (offer.contactPhone) custLines.push(`Telefon: ${offer.contactPhone}`);
-                if (offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
-                custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
-                y += 6;
+    if (offer.coolingRecommendation) {
+        doc.setFillColor(...lightGray);
+        doc.roundedRect(marginX, y, pageWidth - marginX*2, 10, 2, 2, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(...accentColor);
+        doc.text(`❄ Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, marginX + 4, y + 6.5);
+        y += 16;
+    }
 
-                if (offer.coolingRecommendation) {
-                    doc.setFillColor(...lightGray);
-                    doc.roundedRect(marginX, y, pageWidth - marginX*2, 10, 2, 2, 'F');
-                    doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(9.5);
-                    doc.setTextColor(...accentColor);
-                    doc.text(`❄ Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, marginX + 4, y + 6.5);
-                    y += 16;
-                }
+    const rows = (offer.positions || []).map((p, i) => [
+        String(i + 1),
+        p.name || '',
+        p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : ''),
+        String(p.quantity),
+        p.unit || 'Stk',
+        formatCurrency(p.price),
+        formatCurrency(p.price * p.quantity)
+    ]);
 
-                const rows = (offer.positions || []).map((p, i) => [
-                    String(i + 1),
-                    p.name || '',
-                    p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : ''),
-                    String(p.quantity),
-                    p.unit || 'Stk',
-                    formatCurrency(p.price),
-                    formatCurrency(p.price * p.quantity)
-                ]);
+    doc.autoTable({
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis', 'Gesamt']],
+        body: rows,
+        styles: { font: 'helvetica', fontSize: 8.8, cellPadding: 3, textColor: [40,44,50], lineColor: lightGray, lineWidth: 0.2 },
+        headStyles: { fillColor: [26,29,35], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+        alternateRowStyles: { fillColor: [248, 249, 251] },
+        columnStyles: {
+            0: { cellWidth: 10, halign: 'center' },
+            3: { cellWidth: 16, halign: 'center' },
+            4: { cellWidth: 16, halign: 'center' },
+            5: { cellWidth: 26, halign: 'right' },
+            6: { cellWidth: 26, halign: 'right' },
+        },
+        didDrawPage: () => drawFooter(),
+    });
 
-                doc.autoTable({
-                    startY: y,
-                    margin: { left: marginX, right: marginX },
-                    head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis', 'Gesamt']],
-                    body: rows,
-                    styles: { font: 'helvetica', fontSize: 8.8, cellPadding: 3, textColor: [40,44,50], lineColor: lightGray, lineWidth: 0.2 },
-                    headStyles: { fillColor: [26,29,35], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-                    alternateRowStyles: { fillColor: [248, 249, 251] },
-                    columnStyles: {
-                        0: { cellWidth: 10, halign: 'center' },
-                        3: { cellWidth: 16, halign: 'center' },
-                        4: { cellWidth: 16, halign: 'center' },
-                        5: { cellWidth: 26, halign: 'right' },
-                        6: { cellWidth: 26, halign: 'right' },
-                    },
-                    didDrawPage: () => drawFooter(),
-                });
+    let finalY = doc.lastAutoTable.finalY + 8;
+    if (finalY > 250) { doc.addPage(); finalY = 20; }
 
-                let finalY = doc.lastAutoTable.finalY + 8;
-                if (finalY > 250) { doc.addPage(); finalY = 20; }
+    const boxW = 78;
+    const boxX = pageWidth - marginX - boxW;
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(60, 64, 72);
 
-                const boxW = 78;
-                const boxX = pageWidth - marginX - boxW;
-                doc.setFontSize(9.5);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(60, 64, 72);
-                const summaryRows = [
-                    ['Nettobetrag', formatCurrency(offer.subtotal || 0)],
-                    [`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`],
-                    ['MwSt. (19%)', formatCurrency(offer.vatAmount || 0)],
-                ];
-                summaryRows.forEach(([label, val]) => {
-                    doc.text(label, boxX, finalY);
-                    doc.text(val, pageWidth - marginX, finalY, { align: 'right' });
-                    finalY += 6;
-                });
-                finalY += 2;
-                doc.setFillColor(...accentColor);
-                doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(12);
-                doc.setTextColor(255, 255, 255);
-                doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
-                doc.text(formatCurrency(offer.totalPrice || 0), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
+    const summaryRows = [['Nettobetrag', formatCurrency(offer.subtotal || 0)]];
+    
+    if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
+        summaryRows.push([`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
+    }
+    if (offer.vatEnabled) {
+        summaryRows.push([`MwSt. (${((offer.vatRate||0)*100).toFixed(0)}%)`, formatCurrency(offer.vatAmount || 0)]);
+    }
 
-                function drawFooter() {
-                    const ph = doc.internal.pageSize.getHeight();
-                    const fy = ph - 20;
-                    doc.setDrawColor(...lightGray);
-                    doc.setLineWidth(0.4);
-                    doc.line(marginX, fy, pageWidth - marginX, fy);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(7.5);
-                    doc.setTextColor(...grayColor);
-                    const left = [companyAddress, [companyPhone, companyEmail].filter(Boolean).join('  ·  '), companyWebsite].filter(Boolean).join('   |   ');
-                    const right = [companyUID ? `UID: ${companyUID}` : '', companyFirmenbuch ? `FB-Nr.: ${companyFirmenbuch}` : '', companyBank].filter(Boolean).join('   |   ');
-                    doc.text(left, marginX, fy + 5);
-                    doc.text(right, marginX, fy + 9.5);
-                    doc.text(paymentTerms, pageWidth - marginX, fy + 5, { align: 'right' });
-                }
-                drawFooter();
+    summaryRows.forEach(([label, val]) => {
+        doc.text(label, boxX, finalY);
+        doc.text(val, pageWidth - marginX, finalY, { align: 'right' });
+        finalY += 6;
+    });
 
-                doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
-                showToast('PDF exportiert.', 'success');
-            },
+    finalY += 2;
+    doc.setFillColor(...accentColor);
+    doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
+    doc.text(formatCurrency(offer.totalPrice || 0), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
+
+    function drawFooter() {
+        const ph = doc.internal.pageSize.getHeight();
+        const fy = ph - 20;
+        doc.setDrawColor(...lightGray);
+        doc.setLineWidth(0.4);
+        doc.line(marginX, fy, pageWidth - marginX, fy);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...grayColor);
+        const left = [companyAddress, [companyPhone, companyEmail].filter(Boolean).join('  ·  '), companyWebsite].filter(Boolean).join('   |   ');
+        const right = [companyUID ? `UID: ${companyUID}` : '', companyFirmenbuch ? `FB-Nr.: ${companyFirmenbuch}` : '', companyBank].filter(Boolean).join('   |   ');
+        doc.text(left, marginX, fy + 5);
+        doc.text(right, marginX, fy + 9.5);
+        doc.text(paymentTerms, pageWidth - marginX, fy + 5, { align: 'right' });
+    }
+    drawFooter();
+
+    doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
+    showToast('PDF exportiert.', 'success');
+},
 
             async deleteOffer(id) {
                 if (!confirm('Angebot löschen?')) return;
