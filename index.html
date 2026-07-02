@@ -8,12 +8,12 @@
     <title>KTM – Kälte Technik Management</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%232563eb'/><text x='32' y='44' text-anchor='middle' font-size='36' fill='white'>❄</text></svg>">
-    
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
+
     <style>
         /* ============ CSS-VARIABLEN & DESIGN-SYSTEM ============ */
         :root {
@@ -650,19 +650,30 @@
 
         const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
-        
-        function toSnake(o) { 
-            const r={}; 
-            for(const k in o) { 
-                if(['id','_synced'].includes(k)) continue; 
-                r[FIELD_MAP[k]||k]=o[k]; 
-            } 
-            return r; 
+
+        function toSnake(o) {
+            const r={};
+            for(const k in o) {
+                if(['id','_synced'].includes(k)) continue;
+                r[FIELD_MAP[k]||k]=o[k];
+            }
+            return r;
         }
-        function toCamel(o) { 
-            const r={}; 
-            for(const k in o) r[REVERSE_MAP[k]||k]=o[k]; 
-            return r; 
+        function toCamel(o) {
+            const r={};
+            for(const k in o) r[REVERSE_MAP[k]||k]=o[k];
+            return r;
+        }
+
+        // ---- FIX: Primärschlüssel-Helper ----
+        // Alle Tabellen nutzen keyPath 'id', NUR 'settings' nutzt keyPath 'key'.
+        // Vorher wurde in backgroundSyncPush() und handleRemoteChange() überall
+        // hart .id verwendet, wodurch Settings-Datensätze (Firmenlogo, Zahlungs-
+        // bedingungen, Angebots-Counter etc.) beim Sync einen DataError auslösten
+        // und dadurch den GESAMTEN Push-Durchlauf für alle Tabellen abbrachen.
+        function getPK(table, rec) {
+            if (!rec) return undefined;
+            return table === 'settings' ? rec.key : rec.id;
         }
 
         // ---- Echtzeit-Status UI ----
@@ -698,20 +709,23 @@
         async function handleRemoteChange(payload) {
             const table = payload.table;
             const eventType = payload.eventType; // INSERT, UPDATE, DELETE
-            
+
             if (eventType === 'DELETE') {
-                await db.deleteLocalOnly(table, payload.old.id);
+                // FIX: getPK() statt payload.old.id (settings hat keine .id, nur .key)
+                await db.deleteLocalOnly(table, getPK(table, payload.old));
             } else {
                 const remoteData = payload.new;
                 const localData = toCamel(remoteData);
                 localData._synced = true;
 
+                // FIX: getPK() statt localData.id
+                const existing = await db.get(table, getPK(table, localData));
+
                 // Konfliktlösung: Existiert der Datensatz lokal und ist neuer?
-                const existing = await db.get(table, localData.id);
                 if (existing) {
                     const localTime = new Date(existing.updatedAt || 0).getTime();
                     const remoteTime = new Date(localData.updatedAt || 0).getTime();
-                    
+
                     if (localTime > remoteTime && !existing._synced) {
                         // Lokaler Datensatz ist neuer und ungesynct -> Remote überschreiben (Push)
                         backgroundSyncPush();
@@ -720,7 +734,7 @@
                 }
                 await db.putLocalOnly(table, localData);
             }
-            
+
             // UI aktualisieren, ohne die Seite neu zu laden
             app.navigate(app.currentPage, app.currentProjectId);
         }
@@ -733,25 +747,28 @@
             updateSyncStatus('syncing', '☁️ Uploading...');
 
             try {
-                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { 
+                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
                     const all = await db.getAll(t);
                     const unsynced = all.filter(r => !r._synced);
-                    
+
                     for (const rec of unsynced) {
                         const p = toSnake(rec);
                         // Wenn der Datensatz keine ID in der DB hat, mach ein Insert, ansonsten ein Upsert
                         const { data, error } = await sb.from(t).upsert(p).select();
-                        if (!error && data?.length) { 
-                            // Alte lokale ID löschen, neue von Supabase übernehmen
-                            await db.deleteLocalOnly(t, rec.id); 
-                            const nr = toCamel(data[0]); 
-                            nr._synced = true; 
-                            await db.addLocalOnly(t, nr); 
+                        if (!error && data?.length) {
+                            // FIX: getPK(t, rec) statt rec.id, damit settings (keyPath 'key')
+                            // korrekt lokal gelöscht wird, bevor der neue Datensatz von
+                            // Supabase eingefügt wird. Vorher: DataError -> ganze Sync-
+                            // Schleife brach für ALLE Tabellen ab.
+                            await db.deleteLocalOnly(t, getPK(t, rec));
+                            const nr = toCamel(data[0]);
+                            nr._synced = true;
+                            await db.addLocalOnly(t, nr);
                         }
                     }
                 }
                 updateSyncStatus('online', '🟢 Online & Live');
-            } catch(e) { 
+            } catch(e) {
                 console.warn('Background Sync Fehler:', e);
                 updateSyncStatus('offline', '🔴 Sync-Fehler');
             } finally {
@@ -763,7 +780,7 @@
         async function initialFullSync() {
             if (!navigator.onLine) return;
             updateSyncStatus('syncing', '☁️ Lade Daten...');
-            
+
             // Zuerst Push lokaler Änderungen
             await backgroundSyncPush();
 
@@ -775,8 +792,8 @@
                         for (const row of data) {
                             const rec = toCamel(row);
                             rec._synced = true;
-                            
-                            const existing = await db.get(t, rec.id);
+
+                            const existing = await db.get(t, getPK(t, rec));
                             if (!existing || new Date(rec.updatedAt) > new Date(existing.updatedAt)) {
                                 await db.putLocalOnly(t, rec);
                             }
@@ -784,7 +801,7 @@
                     }
                 }
             } catch(e) { console.warn('Initial Pull Error', e); }
-            
+
             app.navigate(app.currentPage, app.currentProjectId);
             updateSyncStatus('online', '🟢 Online & Live');
         }
@@ -814,10 +831,10 @@
                     request.onupgradeneeded = (e) => {
                         const db = e.target.result;
                         const tx = e.target.transaction;
-                        
+
                         const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'];
                         const indexedStores = ['rooms', 'images', 'offers'];
-                        
+
                         stores.forEach(s => {
                             let store;
                             if (!db.objectStoreNames.contains(s)) {
@@ -825,7 +842,7 @@
                             } else {
                                 store = tx.objectStore(s);
                             }
-                            
+
                             if (s === 'customers' && !store.indexNames.contains('name')) {
                                 store.createIndex('name', 'lastName', { unique: false });
                                 store.createIndex('status', 'status', { unique: false });
@@ -871,6 +888,7 @@
 
             async deleteLocalOnly(storeName, id) {
                 return new Promise((resolve, reject) => {
+                    if (id === undefined || id === null) { resolve(); return; }
                     const tx = this.db.transaction(storeName, 'readwrite');
                     const store = tx.objectStore(storeName);
                     const request = store.delete(id);
@@ -884,10 +902,10 @@
                 data._synced = false;
                 data.createdAt = data.createdAt || new Date().toISOString();
                 data.updatedAt = new Date().toISOString();
-                
+
                 // Lokale ID generieren falls nötig, IndexedDB macht das via autoIncrement
                 const result = await this.addLocalOnly(storeName, data);
-                
+
                 // Wenn auto-increment, holen wir das Objekt nochmal um die ID zu haben
                 if (storeName !== 'settings' && !data.id) {
                     data.id = result;
@@ -908,7 +926,7 @@
 
             async delete(storeName, id) {
                 await this.deleteLocalOnly(storeName, id);
-                
+
                 // Supabase Löschung triggern
                 if (navigator.onLine) {
                     sb.from(storeName).delete().eq(storeName === 'settings' ? 'key' : 'id', id).then(() => {
@@ -921,6 +939,7 @@
             // ---- Lese-Methoden bleiben unverändert ----
             async get(storeName, id) {
                 return new Promise((resolve, reject) => {
+                    if (id === undefined || id === null) { resolve(undefined); return; }
                     const tx = this.db.transaction(storeName, 'readonly');
                     const request = tx.objectStore(storeName).get(id);
                     request.onsuccess = () => resolve(request.result);
@@ -1491,7 +1510,7 @@
             async init() {
                 await db.init();
                 updateSyncStatus('offline', 'Initialisiere...');
-                
+
                 this.setupNavigation();
                 this.setupSearch();
                 this.setupTheme();
@@ -1509,14 +1528,23 @@
             },
 
             setupNavigation() {
-                // ...
                 document.querySelectorAll('.nav-item[data-page]').forEach(item => {
                     item.addEventListener('click', (e) => {
                         const page = item.dataset.page;
                         this.navigate(page);
                     });
                 });
-                document.getElementById('syncBtn').addEventListener('click', initialFullSync);
+                // FIX: fullSync existierte nirgends -> ReferenceError beim Klick.
+                // Ruft jetzt initialFullSync() auf (Push + Pull) und zeigt einen Toast.
+                document.getElementById('syncBtn').addEventListener('click', async () => {
+                    if (!navigator.onLine) {
+                        showToast('Keine Internetverbindung.', 'error');
+                        return;
+                    }
+                    showToast('Synchronisiere...', 'info');
+                    await initialFullSync();
+                    showToast('Synchronisierung abgeschlossen.', 'success');
+                });
             },
 
             navigate(page, param = null) {
@@ -2380,7 +2408,7 @@
                     const wb = XLSX.read(data);
                     const sheetName = wb.SheetNames.find(n => /material/i.test(n)) || wb.SheetNames[0];
                     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
-                    
+
                     const existing = await db.getAll('materials');
                     const existingNames = new Set(existing.map(m => m.name));
                     let imported = 0, skipped = 0;
