@@ -478,9 +478,7 @@
 function toSnake(o) {
     const r = {};
     for (const k in o) {
-        // Diese Felder niemals an Supabase senden
         if (['_synced', '_remote', 'rooms', 'images', 'offers'].includes(k)) continue;
-        // CamelCase -> snake_case mappen, falls bekannt, sonst das Original verwenden
         r[FIELD_MAP[k] || k] = o[k];
     }
     return r;
