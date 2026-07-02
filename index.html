@@ -19,6 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
+        /* Ihr bestehendes CSS – unverändert */
         :root {
             --bg-primary: #eef3f6;
             --bg-secondary: rgba(255,255,255,0.72);
@@ -453,13 +454,22 @@
 
     <script>
         // ============================================================
+        // ============ HILFSFUNKTIONEN FÜR LOKALES DATUM ============
+        // ============================================================
+        function getLocalDateString(date) {
+            const d = date || new Date();
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // ============================================================
         // ============ SUPABASE CONFIG & HELPER ======================
         // ============================================================
         const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
 
-        // Supabase wird defensiv initialisiert: Falls das CDN-Script (z.B. wegen
-        // fehlender Internetverbindung) nicht lädt, darf die App trotzdem starten.
         let sb = null;
         let supabaseAvailable = false;
         try {
@@ -504,7 +514,7 @@
         }
 
         // ============================================================
-        // ============ DATENBANK-MANAGER (KOMPLETT KORRIGIERT) =======
+        // ============ DATENBANK-MANAGER ============================
         // ============================================================
         class DatabaseManager {
             constructor() { this.db = null; }
@@ -526,9 +536,6 @@
                     req.onerror = (e) => {
                         const err = e.target.error;
                         if (err && err.name === 'VersionError') {
-                            // Der Browser hat bereits eine neuere KTM_DB-Version gespeichert (z.B. von
-                            // einer älteren/anderen Version dieser App). Klare Fehlermeldung statt
-                            // des kryptischen Browser-Texts "requested version is less than existing".
                             reject(new Error('Es existiert bereits eine neuere lokale Datenbank in diesem Browser. Bitte lade die aktuellste Version der App, oder leere im Zweifel die Website-Daten für diese Seite (Browser-Einstellungen).'));
                             return;
                         }
@@ -538,7 +545,7 @@
                 });
             }
 
-            // ---- Lokale Operationen (WICHTIG für Sync) ----
+            // ---- Lokale Operationen ----
             async addLocalOnly(storeName, data) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
@@ -608,7 +615,7 @@
                 });
             }
 
-            // ---- Öffentliche Schreib-Methoden (Triggern Supabase Push) ----
+            // ---- Öffentliche Schreib-Methoden ----
             async add(storeName, data) {
                 data._synced = false;
                 data.createdAt = data.createdAt || new Date().toISOString();
@@ -698,7 +705,6 @@
                 localData._remote = true;
                 await db.putLocalOnly(table, localData);
             }
-            // Lade aktuelle Seite neu, um die empfangenen Daten anzuzeigen
             app.navigate(app.currentPage, app.currentProjectId);
         }
 
@@ -730,10 +736,8 @@
                 return;
             }
             try {
-                // 1. Lokale, ungespeicherte Änderungen hochladen
                 await backgroundSyncPush();
 
-                // 2. Alle Daten aus Supabase herunterladen
                 const failedTables = [];
                 for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
                     const { data, error } = await sb.from(t).select('*');
@@ -750,8 +754,6 @@
                     }
                 }
                 if (failedTables.length > 0) {
-                    // Sichtbar machen statt nur in der Konsole zu verstecken: sonst merkt man
-                    // z.B. ein fehlendes Datenbank-Schema erst, wenn Daten "verschwunden" scheinen.
                     updateSyncStatus('offline', '🟡 Sync unvollständig');
                     const details = failedTables.map(f => `${f.table}: ${f.message}`).join(' | ');
                     console.error('Folgende Tabellen konnten nicht synchronisiert werden:', details);
@@ -788,11 +790,6 @@
                             nr._synced = true;
                             nr._remote = true;
 
-                            // Falls dem Datensatz gerade erstmalig eine Server-ID zugewiesen wurde
-                            // (lokal neu angelegt, noch keine Server-ID), müssen alle abhängigen
-                            // Datensätze (z.B. Räume/Bilder/Angebote, die auf die alte lokale
-                            // projectId zeigen) auf die neue ID umgestellt werden. Sonst verlieren
-                            // sie nach der Synchronisation ihre Zuordnung.
                             const idChanged = !rec._remote && oldPK !== undefined && oldPK !== nr.id;
 
                             await db.deleteLocalOnly(t, oldPK);
@@ -803,10 +800,6 @@
                             }
                         } else if (error) {
                             console.warn(`Sync-Push-Fehler bei Tabelle "${t}":`, error.message);
-                            // Nur einmal pro Tabelle und Sitzung anzeigen, damit bei einem dauerhaften
-                            // Problem (z.B. fehlende Tabelle/Spalte) nicht bei jedem Speichern erneut
-                            // ein Toast erscheint – der Datensatz bleibt aber lokal als "nicht synced"
-                            // markiert und wird bei jedem weiteren Versuch erneut hochgeladen.
                             if (!_pushErrorsWarned.has(t)) {
                                 _pushErrorsWarned.add(t);
                                 showToast(`"${t}" konnte nicht synchronisiert werden: ${error.message}`, 'error');
@@ -817,8 +810,6 @@
             } catch(e) { console.warn('Sync Push Fehler:', e); }
         }
 
-        // Aktualisiert Fremdschlüssel in abhängigen Tabellen, nachdem ein lokaler
-        // Datensatz beim ersten Sync eine neue, vom Server vergebene ID erhalten hat.
         async function remapForeignKeys(table, oldId, newId) {
             const relations = {
                 customers: [{ store: 'projects', field: 'customerId' }],
@@ -951,19 +942,11 @@
             return div.innerHTML;
         }
 
-        // ---- ID-Hilfsfunktionen ----
-        // Wichtig, weil IDs zwei unterschiedliche Formen annehmen können:
-        // - Zahlen, solange ein Datensatz nur lokal (IndexedDB autoIncrement) existiert
-        // - Strings/UUIDs, sobald Supabase dem Datensatz beim ersten Sync eine eigene ID vergibt
-        // idJS() bettet eine ID sicher in einen dynamisch erzeugten onclick-Handler ein
-        // (Zahl bleibt unquotiert, String wird korrekt gequotet/escaped).
         function idJS(id) {
             if (typeof id === 'number') return String(id);
             return "'" + String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
         }
-        // parseId() ist das Gegenstück beim Auslesen aus <select>/dataset-Werten:
-        // rein numerische Strings werden zu Zahlen, alles andere (z.B. UUIDs) bleibt String.
-        // So bricht die Zuordnung nicht mehr, sobald ein Datensatz über Supabase eine UUID erhält.
+
         function parseId(value) {
             if (value === null || value === undefined || value === '') return null;
             return /^\d+$/.test(value) ? Number(value) : value;
@@ -1015,20 +998,18 @@
                     (eventsByDate[ev.date] = eventsByDate[ev.date] || []).push(ev);
                 }
 
-                // Montag-basierter Kalender: Tage vor dem 1. und nach dem letzten Tag auffüllen,
-                // damit das Grid immer volle Wochen zeigt.
                 const firstOfMonth = new Date(year, month, 1);
-                const startOffset = (firstOfMonth.getDay() + 6) % 7; // 0 = Montag
+                const startOffset = (firstOfMonth.getDay() + 6) % 7;
                 const gridStart = new Date(year, month, 1 - startOffset);
-                const totalCells = 42; // 6 Wochen, damit das Layout nie springt
+                const totalCells = 42;
 
-                const todayStr = new Date().toISOString().slice(0, 10);
+                const todayStr = getLocalDateString(new Date());
 
                 let cellsHtml = '';
                 for (let i = 0; i < totalCells; i++) {
                     const cellDate = new Date(gridStart);
                     cellDate.setDate(gridStart.getDate() + i);
-                    const cellStr = cellDate.toISOString().slice(0, 10);
+                    const cellStr = getLocalDateString(cellDate);
                     const inMonth = cellDate.getMonth() === month;
                     const dayEvents = (eventsByDate[cellStr] || []).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
                     const visible = dayEvents.slice(0, 2);
@@ -1086,6 +1067,7 @@
                 `;
             })();
         }
+
         function renderDashboard() {
             (async () => {
                 try {
@@ -1098,7 +1080,7 @@
                 const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
                 const gesendeteAngebote = offers.filter(o => o.status === 'Angebot gesendet').length;
                 const fertigeProjekte = projects.filter(p => p.status === 'Fertig').length;
-                const todayStr = new Date().toISOString().slice(0, 10);
+                const todayStr = getLocalDateString(new Date());
                 const anstehendeTermine = events.filter(ev => ev.date >= todayStr).length;
 
                 document.getElementById('customerCount').textContent = customers.length;
@@ -1452,7 +1434,6 @@
 
                 this.hideSplash();
 
-                // Start synchronisation process (läuft im Hintergrund, blockiert die UI nicht)
                 if (navigator.onLine) {
                     initialFullSync().then(initRealtime);
                 } else {
@@ -1953,7 +1934,7 @@
                     `
                         <div class="form-group"><label>Titel *</label><input type="text" id="evTitle" value="${escapeHtml(ev?.title || '')}" placeholder="z.B. Besichtigung Familie Huber"></div>
                         <div class="form-row">
-                            <div class="form-group"><label>Datum *</label><input type="date" id="evDate" value="${ev?.date || prefillDate || new Date().toISOString().slice(0,10)}"></div>
+                            <div class="form-group"><label>Datum *</label><input type="date" id="evDate" value="${ev?.date || prefillDate || getLocalDateString(new Date())}"></div>
                             <div class="form-group"><label>Uhrzeit</label><input type="time" id="evTime" value="${ev?.time || ''}"></div>
                         </div>
                         <div class="form-group"><label>Typ</label>
@@ -1999,7 +1980,6 @@
                         this.navigate('calendar');
                     }
                 );
-                // Angeklickter Kalendertag setzt den Sichtbereich, falls über den Kalender aufgerufen.
                 if (prefillDate) calendarViewDate = new Date(prefillDate);
             },
 
@@ -2069,7 +2049,7 @@
                         if (selected.length === 0) { showToast('Bitte mindestens eine Position wählen.', 'error'); return; }
                         const calc = computeOfferTotals();
                         const validDays = parseInt(overlay.querySelector('#offerValidDays').value) || 14;
-                        const validUntil = new Date(Date.now() + validDays * 86400000).toISOString();
+                        const validUntil = getLocalDateString(new Date(Date.now() + validDays * 86400000));
                         const offerNumber = await generateOfferNumber();
 
                         const offerData = {
@@ -2182,7 +2162,6 @@
                             addMaterial(parseId(btn.dataset.addBtn));
                         });
                     });
-                    // Ganze Zeile klickbar machen (nicht nur der "+"-Button), passend zum cursor:pointer-Styling.
                     modal.querySelectorAll('[data-add]').forEach(row => {
                         row.addEventListener('click', () => addMaterial(parseId(row.dataset.add)));
                     });
@@ -2225,11 +2204,6 @@
                         el.addEventListener('click', () => addMaterial(parseId(el.dataset.ac)));
                     });
                 });
-                // WICHTIG: Listener auf das Modal-Overlay statt auf `document` binden.
-                // Das Overlay wird beim Schließen entfernt, wodurch dieser Listener
-                // automatisch mit entsorgt wird. Bei `document` hätte sich bei jedem
-                // Öffnen des Angebots-Dialogs ein weiterer, nie entfernter Listener
-                // angesammelt (Memory-Leak nach mehrfacher Nutzung).
                 modal.addEventListener('click', (e) => {
                     if (!searchInput.contains(e.target) && !acList.contains(e.target)) acList.style.display = 'none';
                 });
@@ -2379,361 +2353,4 @@
                 });
 
                 let finalY = doc.lastAutoTable.finalY + 8;
-                if (finalY > 250) { doc.addPage(); finalY = 20; }
-
-                const boxW = 78;
-                const boxX = pageWidth - marginX - boxW;
-                doc.setFontSize(9.5);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(60, 64, 72);
-                const summaryRows = [
-                    ['Nettobetrag', formatCurrency(offer.subtotal || 0)],
-                    [`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`],
-                    ['MwSt. (19%)', formatCurrency(offer.vatAmount || 0)],
-                ];
-                summaryRows.forEach(([label, val]) => {
-                    doc.text(label, boxX, finalY);
-                    doc.text(val, pageWidth - marginX, finalY, { align: 'right' });
-                    finalY += 6;
-                });
-                finalY += 2;
-                doc.setFillColor(...accentColor);
-                doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(12);
-                doc.setTextColor(255, 255, 255);
-                doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
-                doc.text(formatCurrency(offer.totalPrice || 0), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
-
-                function drawFooter() {
-                    const ph = doc.internal.pageSize.getHeight();
-                    const fy = ph - 20;
-                    doc.setDrawColor(...lightGray);
-                    doc.setLineWidth(0.4);
-                    doc.line(marginX, fy, pageWidth - marginX, fy);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(7.5);
-                    doc.setTextColor(...grayColor);
-                    const left = [companyAddress, [companyPhone, companyEmail].filter(Boolean).join('  ·  '), companyWebsite].filter(Boolean).join('   |   ');
-                    const right = [companyUID ? `UID: ${companyUID}` : '', companyFirmenbuch ? `FB-Nr.: ${companyFirmenbuch}` : '', companyBank].filter(Boolean).join('   |   ');
-                    doc.text(left, marginX, fy + 5);
-                    doc.text(right, marginX, fy + 9.5);
-                    doc.text(paymentTerms, pageWidth - marginX, fy + 5, { align: 'right' });
-                }
-                drawFooter();
-
-                doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
-                showToast('PDF exportiert.', 'success');
-            },
-
-            async deleteOffer(id) {
-                if (!confirm('Angebot löschen?')) return;
-                await db.delete('offers', id);
-                showToast('Angebot gelöscht.', 'info');
-                this.navigate('offers');
-            },
-
-            // ---- Excel Exports ----
-            async exportMaterialsExcel() {
-                if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
-                const materials = await db.getAll('materials');
-                const wsData = [['Artikelname', 'Hersteller', 'Artikelnummer', 'Kategorie', 'Einheit', 'Einkaufspreis', 'Verkaufspreis', 'Notizen']];
-                for (const m of materials) {
-                    wsData.push([m.name, m.manufacturer, m.articleNumber, m.category, m.unit, m.purchasePrice, m.sellingPrice, m.notes]);
-                }
-                const ws = XLSX.utils.aoa_to_sheet(wsData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, 'Materialien');
-                XLSX.writeFile(wb, 'KTM_Materialliste.xlsx');
-                showToast('Material-Excel exportiert.', 'success');
-            },
-
-            async importMaterialsExcel() {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.xlsx,.xls';
-                input.onchange = async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const data = await file.arrayBuffer();
-                    const wb = XLSX.read(data);
-                    const sheetName = wb.SheetNames.find(n => /material/i.test(n)) || wb.SheetNames[0];
-                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
-
-                    const existing = await db.getAll('materials');
-                    const existingNames = new Set(existing.map(m => m.name));
-                    let imported = 0, skipped = 0;
-
-                    for (let i = 1; i < rows.length; i++) {
-                        let name, manufacturer, articleNumber, category, unit, purchasePrice, sellingPrice, notes;
-                        name = rows[i][0]; manufacturer = rows[i][1]; articleNumber = rows[i][2]; category = rows[i][3]; unit = rows[i][4]; purchasePrice = rows[i][5]; sellingPrice = rows[i][6]; notes = rows[i][7];
-
-                        if (name) {
-                            if (existingNames.has(name.toString())) { skipped++; continue; }
-                            await db.add('materials', {
-                                name: String(name),
-                                manufacturer: String(manufacturer || ''),
-                                articleNumber: String(articleNumber || ''),
-                                category: String(category || ''),
-                                unit: String(unit || 'Stk'),
-                                purchasePrice: parseFloat(purchasePrice) || 0,
-                                sellingPrice: parseFloat(sellingPrice) || 0,
-                                notes: String(notes || ''),
-                                createdAt: new Date().toISOString(),
-                            });
-                            existingNames.add(String(name));
-                            imported++;
-                        }
-                    }
-                    showToast(`${imported} Artikel importiert${skipped ? `, ${skipped} übersprungen` : ''}`, 'success');
-                    this.navigate('materials');
-                };
-                input.click();
-            },
-
-            async exportOffersExcel() {
-                if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
-                const offers = await db.getAll('offers');
-                const wsData = [['Angebotsnummer', 'Projekt', 'Summe', 'Status', 'Datum']];
-                for (const o of offers) {
-                    const proj = await db.get('projects', o.projectId);
-                    wsData.push([o.offerNumber || o.id, proj?.title || '', o.totalPrice, o.status, formatDate(o.createdAt)]);
-                }
-                const ws = XLSX.utils.aoa_to_sheet(wsData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, 'Angebote');
-                XLSX.writeFile(wb, 'KTM_Angebote.xlsx');
-                showToast('Angebote exportiert.', 'success');
-            },
-
-            async exportAllExcel() {
-                if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
-                const data = await db.exportAllData();
-                const wb = XLSX.utils.book_new();
-
-                const custData = [['ID','Vorname','Nachname','Firma','Straße','PLZ','Ort','Telefon','Status']];
-                for (const c of data.customers) custData.push([c.id,c.firstName,c.lastName,c.company,c.street,c.zip,c.city,c.phone,c.status]);
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(custData), 'Kunden');
-
-                const projData = [['ID','Titel','Kunden-ID','Status','Notizen','Datum']];
-                for (const p of data.projects) projData.push([p.id,p.title,p.customerId,p.status,p.notes,formatDate(p.createdAt)]);
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(projData), 'Projekte');
-
-                const matData = [['ID','Name','Hersteller','Artikelnummer','Kategorie','Einheit','Einkaufspreis','Verkaufspreis']];
-                for (const m of data.materials) matData.push([m.id,m.name,m.manufacturer,m.articleNumber,m.category,m.unit,m.purchasePrice,m.sellingPrice]);
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matData), 'Materialien');
-
-                XLSX.writeFile(wb, 'KTM_KomplettExport.xlsx');
-                showToast('Komplett-Export erstellt.', 'success');
-            },
-
-            async importAllExcel() {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.xlsx,.xls';
-                input.onchange = async (e) => {
-                    if (!confirm('Achtung: Alle vorhandenen Daten werden überschrieben! Fortfahren?')) return;
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const data = await file.arrayBuffer();
-                    const wb = XLSX.read(data);
-                    const importData = { customers: [], projects: [], materials: [] };
-
-                    if (wb.SheetNames.includes('Kunden')) {
-                        const rows = XLSX.utils.sheet_to_json(wb.Sheets['Kunden'], { header: 1 });
-                        for (let i = 1; i < rows.length; i++) {
-                            const [id, firstName, lastName, company, street, zip, city, phone, status] = rows[i];
-                            importData.customers.push({ id, firstName, lastName, company, street, zip, city, phone, status, createdAt: new Date().toISOString() });
-                        }
-                    }
-                    if (wb.SheetNames.includes('Materialien')) {
-                        const rows = XLSX.utils.sheet_to_json(wb.Sheets['Materialien'], { header: 1 });
-                        for (let i = 1; i < rows.length; i++) {
-                            const [id, name, manufacturer, articleNumber, category, unit, purchasePrice, sellingPrice] = rows[i];
-                            importData.materials.push({ name, manufacturer, articleNumber, category, unit, purchasePrice: parseFloat(purchasePrice)||0, sellingPrice: parseFloat(sellingPrice)||0, createdAt: new Date().toISOString() });
-                        }
-                    }
-                    await db.clear('customers');
-                    await db.clear('materials');
-                    for (const c of importData.customers) await db.add('customers', c);
-                    for (const m of importData.materials) await db.add('materials', m);
-                    showToast('Daten importiert.', 'success');
-                    this.navigate('dashboard');
-                };
-                input.click();
-            },
-
-            // ---- Backup ----
-            async createBackup() {
-                const data = await db.exportAllData();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `KTM_Backup_${new Date().toISOString().slice(0,10)}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-                showToast('Backup erstellt.', 'success');
-            },
-
-            async restoreBackup() {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.json';
-                input.onchange = async (e) => {
-                    if (!confirm('Achtung: Alle vorhandenen Daten werden überschrieben! Fortfahren?')) return;
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    try {
-                        const text = await file.text();
-                        const data = JSON.parse(text);
-                        await db.importAllData(data);
-                        showToast('Backup wiederhergestellt.', 'success');
-                        this.navigate('dashboard');
-                    } catch (err) {
-                        console.error('Backup-Wiederherstellung fehlgeschlagen:', err);
-                        showToast('Ungültige Backup-Datei.', 'error');
-                    }
-                };
-                input.click();
-            },
-
-            // ---- Einstellungen ----
-            async openCompanySettings() {
-                const companyName = await getSetting('companyName');
-                const companyLogo = await getSetting('companyLogo');
-                const companyPhone = await getSetting('companyPhone');
-                const companyEmail = await getSetting('companyEmail');
-                const companyWebsite = await getSetting('companyWebsite');
-                const companyAddress = await getSetting('companyAddress');
-                const companyUID = await getSetting('companyUID');
-                const companyFirmenbuch = await getSetting('companyFirmenbuch');
-                const companyBank = await getSetting('companyBank');
-                let logoData = companyLogo;
-
-                const modal = showModal(
-                    'Firmendaten',
-                    `
-                        <div class="form-group"><label>Firmenlogo (für PDF-Kopfbereich)</label>
-                            <input type="file" id="setLogo" accept="image/*">
-                            <div id="setLogoPreview" style="margin-top:8px;">${logoData ? `<img src="${logoData}" style="max-height:50px;">` : ''}</div>
-                        </div>
-                        <div class="form-group"><label>Firmenname (intern, erscheint nicht groß im PDF)</label><input type="text" id="setCompanyName" value="${escapeHtml(companyName)}"></div>
-                        <div class="form-row">
-                            <div class="form-group"><label>Telefon</label><input type="text" id="setPhone" value="${escapeHtml(companyPhone)}"></div>
-                            <div class="form-group"><label>E-Mail</label><input type="email" id="setEmail" value="${escapeHtml(companyEmail)}"></div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group"><label>Website</label><input type="text" id="setWebsite" value="${escapeHtml(companyWebsite)}"></div>
-                            <div class="form-group"><label>UID-Nummer</label><input type="text" id="setUID" value="${escapeHtml(companyUID)}"></div>
-                        </div>
-                        <div class="form-group"><label>Adresse (für PDF)</label><textarea id="setCompanyAddress" rows="2">${escapeHtml(companyAddress)}</textarea></div>
-                        <div class="form-row">
-                            <div class="form-group"><label>Firmenbuchnummer</label><input type="text" id="setFirmenbuch" value="${escapeHtml(companyFirmenbuch)}"></div>
-                            <div class="form-group"><label>Bankverbindung (IBAN/BIC)</label><input type="text" id="setBank" value="${escapeHtml(companyBank)}"></div>
-                        </div>
-                    `,
-                    async (overlay) => {
-                        await setSetting('companyLogo', logoData || '');
-                        await setSetting('companyName', overlay.querySelector('#setCompanyName').value.trim());
-                        await setSetting('companyPhone', overlay.querySelector('#setPhone').value.trim());
-                        await setSetting('companyEmail', overlay.querySelector('#setEmail').value.trim());
-                        await setSetting('companyWebsite', overlay.querySelector('#setWebsite').value.trim());
-                        await setSetting('companyUID', overlay.querySelector('#setUID').value.trim());
-                        await setSetting('companyAddress', overlay.querySelector('#setCompanyAddress').value.trim());
-                        await setSetting('companyFirmenbuch', overlay.querySelector('#setFirmenbuch').value.trim());
-                        await setSetting('companyBank', overlay.querySelector('#setBank').value.trim());
-                        overlay.remove();
-                        showToast('Firmendaten gespeichert.', 'success');
-                    }
-                );
-                modal.querySelector('#setLogo').addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                        logoData = ev.target.result;
-                        modal.querySelector('#setLogoPreview').innerHTML = `<img src="${logoData}" style="max-height:50px;">`;
-                    };
-                    reader.readAsDataURL(file);
-                });
-            },
-
-            async openPDFSettings() {
-                const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
-                const modal = showModal(
-                    'PDF-Einstellungen',
-                    `
-                        <div class="form-group"><label>Zahlungsbedingungen (Footer)</label><textarea id="setPaymentTerms" rows="3">${escapeHtml(paymentTerms)}</textarea></div>
-                    `,
-                    async (overlay) => {
-                        await setSetting('paymentTerms', overlay.querySelector('#setPaymentTerms').value.trim());
-                        overlay.remove();
-                        showToast('PDF-Einstellungen gespeichert.', 'success');
-                    }
-                );
-            },
-
-            async openFieldSettings() {
-                showToast('Felder können im Code erweitert werden. Dies ist ein Profi-Feature.', 'info');
-            },
-
-            async resetAllData() {
-                if (!confirm('ALLE DATEN UNWIDERRUFLICH LÖSCHEN? Dies kann nicht rückgängig gemacht werden!')) return;
-                if (!confirm('Wirklich ALLES löschen?')) return;
-                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'events', 'settings'];
-                for (const store of stores) await db.clear(store);
-                showToast('Alle Daten gelöscht.', 'info');
-                this.navigate('dashboard');
-            }
-        };
-
-        async function generateOfferNumber() {
-            const year = new Date().getFullYear();
-            const counterKey = `offerCounter_${year}`;
-            let counter = parseInt(await getSetting(counterKey, '0')) || 0;
-            counter += 1;
-            await setSetting(counterKey, String(counter));
-            return `A-${year}-${String(counter).padStart(4, '0')}`;
-        }
-
-        // ============================================================
-        // ============ START =========================================
-        // ============================================================
-        // Sicherheitsnetz: Falls die Initialisierung aus irgendeinem Grund
-        // (defekte IndexedDB, blockierter Tab, unerwarteter Fehler) hängen
-        // bleibt, wird der Splash-Screen spätestens nach 8 Sekunden mit einer
-        // verständlichen Fehlermeldung versehen, statt endlos "Wird geladen..."
-        // anzuzeigen.
-        let appStarted = false;
-        const startupWatchdog = setTimeout(() => {
-            if (!appStarted) {
-                app.showSplashError('Der Start dauert ungewöhnlich lange. Möglicherweise ist die Datenbank blockiert oder es liegt ein Verbindungsproblem vor.');
-            }
-        }, 8000);
-
-        document.addEventListener('DOMContentLoaded', () => {
-            app.init().then(() => {
-                appStarted = true;
-                clearTimeout(startupWatchdog);
-            }).catch((err) => {
-                appStarted = true;
-                clearTimeout(startupWatchdog);
-                console.error('Initialisierung fehlgeschlagen:', err);
-                app.showSplashError(err && err.message ? err.message : 'Unbekannter Fehler beim Start der Anwendung.');
-            });
-        });
-
-        // Service Worker registrieren (optional für PWA-Funktionalität).
-        // Läuft nur auf https/localhost und wird defensiv behandelt, damit ein
-        // fehlendes sw.js (z.B. bei erstmaligem Deployment) die App nicht stört.
-        if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').catch((err) => {
-                    console.warn('Service Worker konnte nicht registriert werden:', err);
-                });
-            });
-        }
-    </script>
-</body>
-</html>
+                if (finalY > 250) { doc
