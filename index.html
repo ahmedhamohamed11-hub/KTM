@@ -643,21 +643,29 @@ function toSnake(o) {
                 const result = await this.addLocalOnly(storeName, data);
 
                 if (storeName !== 'settings' && !data.id) {
-                    data.id = result;
-                    await this.putLocalOnly(storeName, data);
-                }
+                  data.id = result;
+await this.putLocalOnly(storeName, data);
+}
 
-                backgroundSyncPush();
-                return result;
-            }
+if (!isSyncing) {
+    backgroundSyncPush();
+}
 
-            async put(storeName, data) {
-                data._synced = false;
-                data.updatedAt = new Date().toISOString();
-                const result = await this.putLocalOnly(storeName, data);
-                backgroundSyncPush();
-                return result;
-            }
+return result;
+}
+
+async put(storeName, data) {
+    data._synced = false;
+    data.updatedAt = new Date().toISOString();
+
+    const result = await this.putLocalOnly(storeName, data);
+
+    if (!isSyncing) {
+        backgroundSyncPush();
+    }
+
+    return result;
+}
 
             async delete(storeName, id) {
                 await this.deleteLocalOnly(storeName, id);
@@ -789,19 +797,43 @@ function toSnake(o) {
             }
         }
 
-        const _pushErrorsWarned = new Set();
+const _pushErrorsWarned = new Set();
 
-        async function backgroundSyncPush() {
-            if (!navigator.onLine || !supabaseAvailable) return;
-            try {
-                for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
-                    const unsynced = (await db.getAll(t)).filter(r => !r._synced);
-                    for (const rec of unsynced) {
-                        const oldPK = getPK(t, rec);
-                        const p = toSnake(rec);
-                        if (!rec._remote || !p.id) {
-    delete p.id;
-}
+let isSyncing = false;
+
+async function backgroundSyncPush() {
+
+    if (isSyncing) return;
+    if (!navigator.onLine || !supabaseAvailable) return;
+
+    isSyncing = true;
+
+    try {
+
+        for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
+
+            const unsynced = (await db.getAll(t)).filter(r => !r._synced);
+
+            const handled = new Set();
+
+            const filtered = unsynced.filter(r => {
+                const key = r.id ?? r.offerNumber ?? JSON.stringify(r);
+
+                if (handled.has(key)) return false;
+
+                handled.add(key);
+                return true;
+            });
+
+            for (const rec of filtered) {
+
+                const oldPK = getPK(t, rec);
+
+                const p = toSnake(rec);
+
+                if (!rec._remote || !p.id) {
+                    delete p.id;
+                }
 
                         const { data, error } = await sb.from(t)
                             .upsert(p, rec._remote ? { onConflict: t === 'settings' ? 'key' : 'id' } : undefined)
