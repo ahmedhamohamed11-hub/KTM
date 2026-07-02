@@ -816,7 +816,9 @@ function toSnake(o) {
                     for (const rec of unsynced) {
                         const oldPK = getPK(t, rec);
                         const p = toSnake(rec);
-                        if (!rec._remote) delete p.id;
+                        if (!rec._remote || !p.id) {
+    delete p.id;
+}
 
                         const { data, error } = await sb.from(t)
                             .upsert(p, rec._remote ? { onConflict: t === 'settings' ? 'key' : 'id' } : undefined)
