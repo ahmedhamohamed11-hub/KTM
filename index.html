@@ -1022,13 +1022,13 @@
                 const gridStart = new Date(year, month, 1 - startOffset);
                 const totalCells = 42; // 6 Wochen, damit das Layout nie springt
 
-                const todayStr = new Date().toISOString().slice(0, 10);
+                const todayStr = toLocalDateString(new Date());
 
                 let cellsHtml = '';
                 for (let i = 0; i < totalCells; i++) {
                     const cellDate = new Date(gridStart);
                     cellDate.setDate(gridStart.getDate() + i);
-                    const cellStr = cellDate.toISOString().slice(0, 10);
+                    const cellStr = toLocalDateString(cellDate);
                     const inMonth = cellDate.getMonth() === month;
                     const dayEvents = (eventsByDate[cellStr] || []).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
                     const visible = dayEvents.slice(0, 2);
@@ -1098,7 +1098,7 @@
                 const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
                 const gesendeteAngebote = offers.filter(o => o.status === 'Angebot gesendet').length;
                 const fertigeProjekte = projects.filter(p => p.status === 'Fertig').length;
-                const todayStr = new Date().toISOString().slice(0, 10);
+                const todayStr = toLocalDateString(new Date());
                 const anstehendeTermine = events.filter(ev => ev.date >= todayStr).length;
 
                 document.getElementById('customerCount').textContent = customers.length;
@@ -1953,7 +1953,7 @@
                     `
                         <div class="form-group"><label>Titel *</label><input type="text" id="evTitle" value="${escapeHtml(ev?.title || '')}" placeholder="z.B. Besichtigung Familie Huber"></div>
                         <div class="form-row">
-                            <div class="form-group"><label>Datum *</label><input type="date" id="evDate" value="${ev?.date || prefillDate || new Date().toISOString().slice(0,10)}"></div>
+                            <div class="form-group"><label>Datum *</label><input type="date" id="evDate" value="${ev?.date || prefillDate || toLocalDateString(new Date())}"></div>
                             <div class="form-group"><label>Uhrzeit</label><input type="time" id="evTime" value="${ev?.time || ''}"></div>
                         </div>
                         <div class="form-group"><label>Typ</label>
