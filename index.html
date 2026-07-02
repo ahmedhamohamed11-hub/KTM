@@ -558,9 +558,6 @@ function toSnake(o) {
                     req.onerror = (e) => {
                         const err = e.target.error;
                         if (err && err.name === 'VersionError') {
-                            // Der Browser hat bereits eine neuere KTM_DB-Version gespeichert (z.B. von
-                            // einer älteren/anderen Version dieser App). Klare Fehlermeldung statt
-                            // des kryptischen Browser-Texts "requested version is less than existing".
                             reject(new Error('Es existiert bereits eine neuere lokale Datenbank in diesem Browser. Bitte lade die aktuellste Version der App, oder leere im Zweifel die Website-Daten für diese Seite (Browser-Einstellungen).'));
                             return;
                         }
@@ -570,7 +567,6 @@ function toSnake(o) {
                 });
             }
 
-            // ---- Lokale Operationen (WICHTIG für Sync) ----
             async addLocalOnly(storeName, data) {
                 return new Promise((resolve, reject) => {
                     const tx = this.db.transaction(storeName, 'readwrite');
@@ -599,7 +595,6 @@ function toSnake(o) {
                 });
             }
 
-            // ---- Öffentliche Lese-Methoden ----
             async get(storeName, id) {
                 return new Promise((resolve, reject) => {
                     if (id === undefined || id === null) { resolve(undefined); return; }
@@ -640,7 +635,6 @@ function toSnake(o) {
                 });
             }
 
-            // ---- Öffentliche Schreib-Methoden (Triggern Supabase Push) ----
             async add(storeName, data) {
                 data._synced = false;
                 data.createdAt = data.createdAt || new Date().toISOString();
@@ -674,15 +668,12 @@ function toSnake(o) {
                 }
             }
 
-            // ---- Spezifische Helfer ----
             async getProjectWithDetails(projectId) {
     const project = await this.get('projects', projectId);
     if (!project) return null;
     const rooms = await this.getByIndex('rooms', 'projectId', projectId);
     const images = await this.getByIndex('images', 'projectId', projectId);
     const offers = await this.getByIndex('offers', 'projectId', projectId);
-    // Wichtig: Kopie des Projekts ohne die Zusatzfelder zurückgeben,
-    // damit beim Sync keine nicht existierenden Spalten gesendet werden.
     return {
         ...project,
         rooms,
@@ -722,9 +713,6 @@ function toSnake(o) {
 
         const db = new DatabaseManager();
 
-        // ============================================================
-        // ============ ECHTZEIT & SYNC LOGIK =========================
-        // ============================================================
         async function handleRemoteChange(payload) {
             const { table, eventType, new: newRec, old: oldRec } = payload;
             console.log("Supabase Live Update:", eventType, table);
@@ -737,7 +725,6 @@ function toSnake(o) {
                 localData._remote = true;
                 await db.putLocalOnly(table, localData);
             }
-            // Lade aktuelle Seite neu, um die empfangenen Daten anzuzeigen
             app.navigate(app.currentPage, app.currentProjectId);
         }
 
@@ -769,10 +756,8 @@ function toSnake(o) {
                 return;
             }
             try {
-                // 1. Lokale, ungespeicherte Änderungen hochladen
                 await backgroundSyncPush();
 
-                // 2. Alle Daten aus Supabase herunterladen
                 const failedTables = [];
                 for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
                     const { data, error } = await sb.from(t).select('*');
@@ -789,8 +774,6 @@ function toSnake(o) {
                     }
                 }
                 if (failedTables.length > 0) {
-                    // Sichtbar machen statt nur in der Konsole zu verstecken: sonst merkt man
-                    // z.B. ein fehlendes Datenbank-Schema erst, wenn Daten "verschwunden" scheinen.
                     updateSyncStatus('offline', '🟡 Sync unvollständig');
                     const details = failedTables.map(f => `${f.table}: ${f.message}`).join(' | ');
                     console.error('Folgende Tabellen konnten nicht synchronisiert werden:', details);
@@ -829,11 +812,6 @@ function toSnake(o) {
                             nr._synced = true;
                             nr._remote = true;
 
-                            // Falls dem Datensatz gerade erstmalig eine Server-ID zugewiesen wurde
-                            // (lokal neu angelegt, noch keine Server-ID), müssen alle abhängigen
-                            // Datensätze (z.B. Räume/Bilder/Angebote, die auf die alte lokale
-                            // projectId zeigen) auf die neue ID umgestellt werden. Sonst verlieren
-                            // sie nach der Synchronisation ihre Zuordnung.
                             const idChanged = !rec._remote && oldPK !== undefined && oldPK !== nr.id;
 
                             await db.deleteLocalOnly(t, oldPK);
@@ -844,10 +822,6 @@ function toSnake(o) {
                             }
                         } else if (error) {
                             console.warn(`Sync-Push-Fehler bei Tabelle "${t}":`, error.message);
-                            // Nur einmal pro Tabelle und Sitzung anzeigen, damit bei einem dauerhaften
-                            // Problem (z.B. fehlende Tabelle/Spalte) nicht bei jedem Speichern erneut
-                            // ein Toast erscheint – der Datensatz bleibt aber lokal als "nicht synced"
-                            // markiert und wird bei jedem weiteren Versuch erneut hochgeladen.
                             if (!_pushErrorsWarned.has(t)) {
                                 _pushErrorsWarned.add(t);
                                 showToast(`"${t}" konnte nicht synchronisiert werden: ${error.message}`, 'error');
@@ -858,8 +832,6 @@ function toSnake(o) {
             } catch(e) { console.warn('Sync Push Fehler:', e); }
         }
 
-        // Aktualisiert Fremdschlüssel in abhängigen Tabellen, nachdem ein lokaler
-        // Datensatz beim ersten Sync eine neue, vom Server vergebene ID erhalten hat.
         async function remapForeignKeys(table, oldId, newId) {
             const relations = {
                 customers: [{ store: 'projects', field: 'customerId' }],
@@ -880,9 +852,6 @@ function toSnake(o) {
             }
         }
 
-        // ============================================================
-        // ============ KÄLTELEISTUNGS-BERECHNUNG =====================
-        // ============================================================
         function calculateCoolingCapacity(rooms) {
             if (!rooms || rooms.length === 0) return { totalKW: 0, recommendation: null, details: [] };
 
@@ -927,9 +896,6 @@ function toSnake(o) {
             return { totalKW, recommendation, details };
         }
 
-        // ============================================================
-        // ============ UI-HILFSFUNKTIONEN ============================
-        // ============================================================
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
@@ -1026,19 +992,10 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         reader.readAsDataURL(file);
     });
 }
-        // ---- ID-Hilfsfunktionen ----
-        // Wichtig, weil IDs zwei unterschiedliche Formen annehmen können:
-        // - Zahlen, solange ein Datensatz nur lokal (IndexedDB autoIncrement) existiert
-        // - Strings/UUIDs, sobald Supabase dem Datensatz beim ersten Sync eine eigene ID vergibt
-        // idJS() bettet eine ID sicher in einen dynamisch erzeugten onclick-Handler ein
-        // (Zahl bleibt unquotiert, String wird korrekt gequotet/escaped).
         function idJS(id) {
             if (typeof id === 'number') return String(id);
             return "'" + String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
         }
-        // parseId() ist das Gegenstück beim Auslesen aus <select>/dataset-Werten:
-        // rein numerische Strings werden zu Zahlen, alles andere (z.B. UUIDs) bleibt String.
-        // So bricht die Zuordnung nicht mehr, sobald ein Datensatz über Supabase eine UUID erhält.
         function parseId(value) {
             if (value === null || value === undefined || value === '') return null;
             return /^\d+$/.test(value) ? Number(value) : value;
@@ -1053,13 +1010,10 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         }
 
         const MATERIAL_CATEGORIES = ['Klimageräte','Außengeräte','Multisplit','Wärmepumpen','Kupferrohre','Isolierung','Kabel','Kondensat','Elektromaterial','Befestigung','Arbeitszeit','Anfahrt','Zubehör','Sonstiges'];
-// ============================================================
-// ANGEBOTSEINSTELLUNGEN (LOKAL SPEICHERN)
-// ============================================================
 const OFFER_DEFAULTS = {
     autoNumber: true,
     lastNumber: 0,
-    defaultVatRate: 0.20,      // 20 % (Österreich)
+    defaultVatRate: 0.20,
     vatEnabled: true,
     validUntilEnabled: true,
     defaultValidDays: 14,
@@ -1096,14 +1050,8 @@ async function isOfferNumberUnique(number, excludeId = null) {
     const allOffers = await db.getAll('offers');
     return !allOffers.some(o => o.offerNumber === number && o.id !== excludeId);
 }
-        // ============================================================
-        // ============ SEITEN-RENDERER ===============================
-        // ============================================================
         const contentArea = document.getElementById('contentArea');
 
-        // ============================================================
-        // ============ KALENDER =======================================
-        // ============================================================
         let calendarViewDate = new Date();
 
         function eventTypeClass(type) {
@@ -1132,12 +1080,10 @@ async function isOfferNumberUnique(number, excludeId = null) {
                     (eventsByDate[ev.date] = eventsByDate[ev.date] || []).push(ev);
                 }
 
-                // Montag-basierter Kalender: Tage vor dem 1. und nach dem letzten Tag auffüllen,
-                // damit das Grid immer volle Wochen zeigt.
                 const firstOfMonth = new Date(year, month, 1);
-                const startOffset = (firstOfMonth.getDay() + 6) % 7; // 0 = Montag
+                const startOffset = (firstOfMonth.getDay() + 6) % 7;
                 const gridStart = new Date(year, month, 1 - startOffset);
-                const totalCells = 42; // 6 Wochen, damit das Layout nie springt
+                const totalCells = 42;
 
                 const todayStr = toLocalDateString(new Date());
 
@@ -1551,9 +1497,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
             `;
         }
 
-        // ============================================================
-        // ============ APP-CONTROLLER ================================
-        // ============================================================
         const app = {
             currentPage: 'dashboard',
             currentProjectId: null,
@@ -1569,7 +1512,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
 
                 this.hideSplash();
 
-                // Start synchronisation process (läuft im Hintergrund, blockiert die UI nicht)
                 if (navigator.onLine) {
                     initialFullSync().then(initRealtime);
                 } else {
@@ -1734,7 +1676,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 });
             },
 
-            // ---- Kunden-Modul ----
             async openCustomerModal(id = null) {
                 const customer = id ? await db.get('customers', id) : null;
                 const modal = showModal(
@@ -1817,7 +1758,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('customers');
             },
 
-            // ---- Projekt-Modul ----
             async openProjectModal(id = null) {
                 const project = id ? await db.get('projects', id) : null;
                 const customers = await db.getAll('customers');
@@ -1880,7 +1820,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 }
             },
 
-            // ---- Raum-Modul ----
             async openRoomModal(projectId) {
                 const modal = showModal(
                     'Raum hinzufügen',
@@ -1931,11 +1870,18 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('projects', projectId);
             },
 
-            // ---- Bild-Modul ----
-                       async openImageModal(projectId) {
+            async openImageModal(projectId) {
                 const modal = showModal(
                     'Bild hinzufügen',
-                    `...`,  // (dein unveränderter HTML-String)
+                    `
+                        <div class="form-group"><label>Bild auswählen *</label><input type="file" id="imgFile" accept="image/*" capture="environment"></div>
+                        <div class="form-group"><label>Kategorie</label>
+                            <select id="imgCategory">
+                                ${['Bestandssituation','Außeneinheit','Innengerät','Elektroanschluss','Kondensatablauf','Rohrleitung','Wanddurchbruch','Sonstiges'].map(c => `<option value="${c}">${c}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Bezeichnung (optional)</label><input type="text" id="imgLabel" placeholder="z.B. Wohnzimmer Nordwand"></div>
+                    `,
                     async (overlay) => {
                         const fileInput = overlay.querySelector('#imgFile');
                         const file = fileInput.files[0];
@@ -1956,9 +1902,9 @@ async function isOfferNumberUnique(number, excludeId = null) {
                         }).catch(() => {
                             showToast('Fehler beim Komprimieren des Bildes.', 'error');
                         });
-                    }  // ← Ende async Callback
-                );  // ← Ende showModal
-            },  // ← Ende openImageModal
+                    }
+                );
+            },
 
             viewImage(dataUrl) {
                 const win = window.open('', '_blank');
@@ -1967,7 +1913,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 win.document.title = 'Bildvorschau';
             },
 
-            // ---- Material-Modul ----
             async openMaterialModal(id = null) {
                 const mat = id ? await db.get('materials', id) : null;
                 let imgData = mat?.image || '';
@@ -2021,7 +1966,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                         this.navigate('materials');
                     }
                 );
-   // Event-Listener richtig nach dem showModal-Aufruf anhängen
                 modal.querySelector('#matImage').addEventListener('change', (e) => {
                     const file = e.target.files[0];
                     if (!file) return;
@@ -2030,7 +1974,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                         modal.querySelector('#matImgPreview').innerHTML = `<img src="${imgData}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
                     }).catch(() => showToast('Bild konnte nicht komprimiert werden.', 'error'));
                 });
-            },  // ← Ende openMaterialModal (dieses Komma fehlt vermutlich auch)
+            },
 
             async deleteMaterial(id) {
                 if (!confirm('Material löschen?')) return;
@@ -2039,7 +1983,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('materials');
             },
 
-            // ---- Kalender-Modul ----
             calendarShiftMonth(delta) {
                 calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + delta, 1);
                 renderCalendar();
@@ -2055,6 +1998,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 const projects = await db.getAll('projects');
                 const customers = await db.getAll('customers');
                 const types = ['Besichtigung', 'Montage', 'Wartung', 'Sonstiges'];
+                if (prefillDate) calendarViewDate = new Date(prefillDate);
                 const modal = showModal(
                     id ? 'Termin bearbeiten' : 'Neuer Termin',
                     `
@@ -2106,8 +2050,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                         this.navigate('calendar');
                     }
                 );
-                // Angeklickter Kalendertag setzt den Sichtbereich, falls über den Kalender aufgerufen.
-                if (prefillDate) calendarViewDate = new Date(prefillDate);
             },
 
             async deleteEvent(id) {
@@ -2117,7 +2059,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
                 this.navigate('calendar');
             },
 
-            // ---- Angebots-Modul ----
       async createOffer(projectId) {
     const project = await db.getProjectWithDetails(projectId);
     if (!project) { showToast('Projekt nicht gefunden.', 'error'); return; }
@@ -2131,8 +2072,7 @@ async function isOfferNumberUnique(number, excludeId = null) {
 
     let selected = [];
     let activeFilter = 'Alle';
-    
-    // Angebotseinstellungen (live änderbar)
+
     let offerSettings = {
         offerNumber: defaults.autoNumber ? await getNextAutoNumber() : '',
         autoNumber: defaults.autoNumber,
@@ -2233,15 +2173,14 @@ async function isOfferNumberUnique(number, excludeId = null) {
         async (overlay) => {
             if (selected.length === 0) { showToast('Bitte mindestens eine Position wählen.', 'error'); return; }
 
-            // Aktuelle Einstellungen auslesen
             const autoNumber = overlay.querySelector('#offerAutoNumber').checked;
             const offerNumber = overlay.querySelector('#offerNumberInput').value.trim();
-            
+
             if (!offerNumber) {
                 showToast('Bitte eine Angebotsnummer eingeben.', 'error');
                 return;
             }
-            
+
             if (!(await isOfferNumberUnique(offerNumber))) {
                 showToast('Diese Angebotsnummer existiert bereits!', 'error');
                 return;
@@ -2251,16 +2190,15 @@ async function isOfferNumberUnique(number, excludeId = null) {
             const validUntilEnabled = overlay.querySelector('#offerValidUntilToggle').checked;
             const validUntil = overlay.querySelector('#offerValidUntilInput').value;
             const vatEnabled = overlay.querySelector('#offerVatToggle').checked;
-            
+
             let vatRate = parseFloat(overlay.querySelector('#offerVatRate').value);
             if (overlay.querySelector('#offerVatRate').value === 'custom') {
                 vatRate = (parseFloat(overlay.querySelector('#offerVatCustom').value) || 0) / 100;
             }
-            
+
             const discountEnabled = overlay.querySelector('#offerDiscountToggle').checked;
             const discountRate = discountEnabled ? (parseFloat(overlay.querySelector('#offerDiscountRate').value) || 0) : 0;
 
-            // Standardwerte speichern
             await saveOfferDefault('autoNumber', autoNumber);
             await saveOfferDefault('vatEnabled', vatEnabled);
             await saveOfferDefault('vatRate', vatRate);
@@ -2308,7 +2246,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
         { wide: true }
     );
 
-    // --- Hilfsfunktionen für die Berechnung (innerhalb des Modals) ---
     function computeOfferTotals() {
         const subtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
         const discountRateVal = offerSettings.discountEnabled ? (offerSettings.discountRate / 100) : 0;
@@ -2319,7 +2256,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
         return { subtotal, discountRate: discountRateVal, discountAmount, netAfterDiscount, vatAmount, total };
     }
 
-    // Live-Update der Einstellungen aus den UI-Elementen
     function updateSettingsFromUI() {
         const autoNumCheckbox = modal.querySelector('#offerAutoNumber');
         const numInput = modal.querySelector('#offerNumberInput');
@@ -2348,7 +2284,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
         offerSettings.discountRate = discountToggle.checked ? (parseFloat(discountInput.value) || 0) : 0;
     }
 
-    // Event Listener für alle Steuerelemente
     modal.querySelector('#offerAutoNumber').addEventListener('change', async function() {
         updateSettingsFromUI();
         if (this.checked) {
@@ -2416,7 +2351,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
         renderSummary();
     });
 
-    // --- Positions- und Materiallogik (wie bisher, aber mit Live-Update) ---
     function renderPosList() {
         const list = modal.querySelector('#offerPosList');
         list.innerHTML = selected.map((s, idx) => `
@@ -2466,7 +2400,6 @@ async function isOfferNumberUnique(number, excludeId = null) {
         modal.querySelector('#offerSummaryBox').innerHTML = html;
     }
 
-    // Material-Filter und Suche (wie bisher)
     function matchesFilter(m) {
         if (activeFilter === 'Alle') return true;
         if (activeFilter.startsWith('cat:')) return m.category === activeFilter.slice(4);
@@ -2547,12 +2480,10 @@ async function isOfferNumberUnique(number, excludeId = null) {
         });
     });
 
-    // Initialisierung
     renderQuickResults();
     renderPosList();
     renderSummary();
 },
-            async generateOfferNumberPublic() { return generateOfferNumber(); },
 
 async exportOfferPDF(offerId) {
     if (typeof window.jspdf === 'undefined') {
@@ -2617,7 +2548,7 @@ async exportOfferPDF(offerId) {
     doc.setTextColor(...grayColor);
     doc.text(`Angebotsnummer: ${offer.offerNumber || offer.id}`, marginX, y); y += 5;
     doc.text(`Angebotsdatum: ${formatDate(offer.offerDate || offer.createdAt)}`, marginX, y); y += 5;
-    
+
     if (offer.validUntilEnabled && offer.validUntil) {
         doc.text(`Gültig bis: ${formatDate(offer.validUntil)}`, marginX, y); y += 5;
     }
@@ -2692,7 +2623,7 @@ async exportOfferPDF(offerId) {
     doc.setTextColor(60, 64, 72);
 
     const summaryRows = [['Nettobetrag', formatCurrency(offer.subtotal || 0)]];
-    
+
     if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
         summaryRows.push([`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
     }
@@ -2743,7 +2674,6 @@ async exportOfferPDF(offerId) {
                 this.navigate('offers');
             },
 
-            // ---- Excel Exports ----
             async exportMaterialsExcel() {
                 if (typeof XLSX === 'undefined') { showToast('Excel-Bibliothek nicht verfügbar.', 'error'); return; }
                 const materials = await db.getAll('materials');
@@ -2873,7 +2803,6 @@ async exportOfferPDF(offerId) {
                 input.click();
             },
 
-            // ---- Backup ----
             async createBackup() {
                 const data = await db.exportAllData();
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -2908,7 +2837,6 @@ async exportOfferPDF(offerId) {
                 input.click();
             },
 
-            // ---- Einstellungen ----
             async openCompanySettings() {
                 const companyName = await getSetting('companyName');
                 const companyLogo = await getSetting('companyLogo');
@@ -3007,14 +2935,6 @@ async exportOfferPDF(offerId) {
             return `A-${year}-${String(counter).padStart(4, '0')}`;
         }
 
-        // ============================================================
-        // ============ START =========================================
-        // ============================================================
-        // Sicherheitsnetz: Falls die Initialisierung aus irgendeinem Grund
-        // (defekte IndexedDB, blockierter Tab, unerwarteter Fehler) hängen
-        // bleibt, wird der Splash-Screen spätestens nach 8 Sekunden mit einer
-        // verständlichen Fehlermeldung versehen, statt endlos "Wird geladen..."
-        // anzuzeigen.
         let appStarted = false;
         const startupWatchdog = setTimeout(() => {
             if (!appStarted) {
@@ -3034,9 +2954,6 @@ async exportOfferPDF(offerId) {
             });
         });
 
-        // Service Worker registrieren (optional für PWA-Funktionalität).
-        // Läuft nur auf https/localhost und wird defensiv behandelt, damit ein
-        // fehlendes sw.js (z.B. bei erstmaligem Deployment) die App nicht stört.
         if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js').catch((err) => {
