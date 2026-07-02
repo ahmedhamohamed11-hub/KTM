@@ -299,6 +299,40 @@
         .offer-summary-box { background: var(--bg-tertiary); border-radius: var(--radius-md); padding: 18px; margin-top: 16px; }
         .offer-summary-row { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; color: var(--text-secondary); }
         .offer-summary-row.total { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); margin-top: 8px; padding-top: 12px; }
+        .calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+        .calendar-nav { display: flex; align-items: center; gap: 10px; }
+        .calendar-nav .cal-month-label { font-family: var(--font-display); font-size: 18px; font-weight: 700; min-width: 170px; text-align: center; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 24px; }
+        .calendar-weekday { text-align: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); padding: 4px 0; }
+        .calendar-day {
+            position: relative; min-height: 78px; background: var(--bg-secondary); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 7px; cursor: pointer; transition: all var(--transition); overflow: hidden;
+        }
+        .calendar-day:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+        .calendar-day.other-month { opacity: 0.35; }
+        .calendar-day.today { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+        .calendar-day .cal-day-num { font-size: 12.5px; font-weight: 700; font-family: var(--font-mono); color: var(--text-secondary); }
+        .calendar-day.today .cal-day-num { color: var(--accent); }
+        .calendar-day .cal-event-pill {
+            margin-top: 4px; font-size: 10.5px; padding: 2px 6px; border-radius: 6px; background: var(--accent-light); color: var(--accent);
+            font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .calendar-day .cal-event-pill.type-montage { background: var(--success-light); color: var(--success); }
+        .calendar-day .cal-event-pill.type-besichtigung { background: var(--discharge-light); color: var(--discharge); }
+        .calendar-day .cal-event-pill.type-wartung { background: var(--info-light); color: var(--info); }
+        .calendar-day .cal-more { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+        .event-list-item {
+            display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius-sm);
+            background: var(--bg-tertiary); margin-bottom: 8px;
+        }
+        .event-list-item .event-date-box {
+            flex-shrink: 0; width: 46px; text-align: center; background: var(--bg-secondary-solid); border-radius: 8px; padding: 6px 4px; border: 1px solid var(--border);
+        }
+        .event-list-item .event-date-box .ed-day { font-family: var(--font-mono); font-weight: 700; font-size: 15px; color: var(--accent); }
+        .event-list-item .event-date-box .ed-month { font-size: 9.5px; text-transform: uppercase; color: var(--text-muted); }
+        .event-list-item .event-info { flex: 1; min-width: 0; }
+        .event-list-item .event-title { font-weight: 600; font-size: 13.5px; }
+        .event-list-item .event-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
         @media (max-width: 900px) {
             .sidebar { position: fixed; left: -280px; height: 100vh; transition: left 0.3s ease; }
             .sidebar.open { left: 0; box-shadow: var(--shadow-lg); }
@@ -365,6 +399,9 @@
                 <div class="nav-item" data-page="projects">
                     <span class="nav-icon">📋</span> Projekte
                     <span class="nav-badge" id="projectCount">0</span>
+                </div>
+                <div class="nav-item" data-page="calendar">
+                    <span class="nav-icon">📅</span> Kalender
                 </div>
             </div>
             <div class="nav-section">
@@ -478,15 +515,25 @@
                         reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
                         return;
                     }
-                    const req = indexedDB.open('KTM_DB', 2);
+                    const req = indexedDB.open('KTM_DB', 4);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
-                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'].forEach(s => {
+                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings', 'events'].forEach(s => {
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
                     };
                     req.onsuccess = (e) => { this.db = e.target.result; resolve(); };
-                    req.onerror = (e) => reject(e.target.error || new Error('IndexedDB konnte nicht geöffnet werden.'));
+                    req.onerror = (e) => {
+                        const err = e.target.error;
+                        if (err && err.name === 'VersionError') {
+                            // Der Browser hat bereits eine neuere KTM_DB-Version gespeichert (z.B. von
+                            // einer älteren/anderen Version dieser App). Klare Fehlermeldung statt
+                            // des kryptischen Browser-Texts "requested version is less than existing".
+                            reject(new Error('Es existiert bereits eine neuere lokale Datenbank in diesem Browser. Bitte lade die aktuellste Version der App, oder leere im Zweifel die Website-Daten für diese Seite (Browser-Einstellungen).'));
+                            return;
+                        }
+                        reject(err || new Error('IndexedDB konnte nicht geöffnet werden.'));
+                    };
                     req.onblocked = () => reject(new Error('Datenbank-Upgrade blockiert. Bitte alle anderen Tabs dieser App schließen.'));
                 });
             }
@@ -613,6 +660,7 @@
                     images: await this.getAll('images'),
                     materials: await this.getAll('materials'),
                     offers: await this.getAll('offers'),
+                    events: await this.getAll('events'),
                     settings: await this.getAll('settings'),
                     exportDate: new Date().toISOString(),
                     version: '2.0'
@@ -620,13 +668,14 @@
             }
 
             async importAllData(data) {
-                for(const s of ['customers','projects','rooms','images','materials','offers','settings']) await this.clear(s);
+                for(const s of ['customers','projects','rooms','images','materials','offers','settings','events']) await this.clear(s);
                 for (const c of data.customers || []) await this.addLocalOnly('customers', c);
                 for (const p of data.projects || []) await this.addLocalOnly('projects', p);
                 for (const r of data.rooms || []) await this.addLocalOnly('rooms', r);
                 for (const i of data.images || []) await this.addLocalOnly('images', i);
                 for (const m of data.materials || []) await this.addLocalOnly('materials', m);
                 for (const o of data.offers || []) await this.addLocalOnly('offers', o);
+                for (const ev of data.events || []) await this.addLocalOnly('events', ev);
                 for (const s of data.settings || []) await this.putLocalOnly('settings', s);
                 backgroundSyncPush();
             }
@@ -685,7 +734,7 @@
                 await backgroundSyncPush();
 
                 // 2. Alle Daten aus Supabase herunterladen
-                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
+                for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
                     const { data, error } = await sb.from(t).select('*');
                     if (!error && data) {
                         for (const row of data) {
@@ -709,7 +758,7 @@
         async function backgroundSyncPush() {
             if (!navigator.onLine || !supabaseAvailable) return;
             try {
-                for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
+                for (const t of ['customers','projects','rooms','images','materials','offers','events','settings']) {
                     const unsynced = (await db.getAll(t)).filter(r => !r._synced);
                     for (const rec of unsynced) {
                         const oldPK = getPK(t, rec);
@@ -911,6 +960,108 @@
         // ============================================================
         const contentArea = document.getElementById('contentArea');
 
+        // ============================================================
+        // ============ KALENDER =======================================
+        // ============================================================
+        let calendarViewDate = new Date();
+
+        function eventTypeClass(type) {
+            const map = { 'Besichtigung': 'type-besichtigung', 'Montage': 'type-montage', 'Wartung': 'type-wartung' };
+            return map[type] || '';
+        }
+
+        function eventTypeBadgeClass(type) {
+            const map = { 'Besichtigung': 'status-offen', 'Montage': 'status-aktiv', 'Wartung': 'status-neu', 'Sonstiges': 'status-fertig' };
+            return map[type] || 'status-neu';
+        }
+
+        function renderCalendar() {
+            (async () => {
+                const events = await db.getAll('events');
+                const projects = await db.getAll('projects');
+                const customers = await db.getAll('customers');
+
+                const year = calendarViewDate.getFullYear();
+                const month = calendarViewDate.getMonth();
+                const monthLabel = calendarViewDate.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+
+                const eventsByDate = {};
+                for (const ev of events) {
+                    if (!ev.date) continue;
+                    (eventsByDate[ev.date] = eventsByDate[ev.date] || []).push(ev);
+                }
+
+                // Montag-basierter Kalender: Tage vor dem 1. und nach dem letzten Tag auffüllen,
+                // damit das Grid immer volle Wochen zeigt.
+                const firstOfMonth = new Date(year, month, 1);
+                const startOffset = (firstOfMonth.getDay() + 6) % 7; // 0 = Montag
+                const gridStart = new Date(year, month, 1 - startOffset);
+                const totalCells = 42; // 6 Wochen, damit das Layout nie springt
+
+                const todayStr = new Date().toISOString().slice(0, 10);
+
+                let cellsHtml = '';
+                for (let i = 0; i < totalCells; i++) {
+                    const cellDate = new Date(gridStart);
+                    cellDate.setDate(gridStart.getDate() + i);
+                    const cellStr = cellDate.toISOString().slice(0, 10);
+                    const inMonth = cellDate.getMonth() === month;
+                    const dayEvents = (eventsByDate[cellStr] || []).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+                    const visible = dayEvents.slice(0, 2);
+                    const more = dayEvents.length - visible.length;
+
+                    cellsHtml += `
+                        <div class="calendar-day ${inMonth ? '' : 'other-month'} ${cellStr === todayStr ? 'today' : ''}" onclick="app.openEventModal(null, '${cellStr}')">
+                            <div class="cal-day-num">${cellDate.getDate()}</div>
+                            ${visible.map(ev => `<div class="cal-event-pill ${eventTypeClass(ev.type)}" onclick="event.stopPropagation();app.openEventModal(${idJS(ev.id)})">${ev.time ? escapeHtml(ev.time) + ' ' : ''}${escapeHtml(ev.title)}</div>`).join('')}
+                            ${more > 0 ? `<div class="cal-more">+${more} weitere</div>` : ''}
+                        </div>
+                    `;
+                }
+
+                const weekdays = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+
+                const upcoming = events
+                    .filter(ev => ev.date >= todayStr)
+                    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')))
+                    .slice(0, 8);
+
+                contentArea.innerHTML = `
+                    <div class="calendar-header">
+                        <h1 class="page-title" style="margin-bottom:0;">Kalender</h1>
+                        <div class="calendar-nav">
+                            <button class="icon-btn btn-outline" style="border-radius:var(--radius-sm);width:auto;padding:8px 12px;" onclick="app.calendarShiftMonth(-1)">←</button>
+                            <span class="cal-month-label">${monthLabel}</span>
+                            <button class="icon-btn btn-outline" style="border-radius:var(--radius-sm);width:auto;padding:8px 12px;" onclick="app.calendarShiftMonth(1)">→</button>
+                            <button class="btn btn-outline btn-sm" onclick="app.calendarGoToday()">Heute</button>
+                            <button class="btn btn-primary" onclick="app.openEventModal()">+ Termin</button>
+                        </div>
+                    </div>
+                    <div class="calendar-grid">
+                        ${weekdays.map(w => `<div class="calendar-weekday">${w}</div>`).join('')}
+                        ${cellsHtml}
+                    </div>
+                    <h3 style="margin-bottom:12px;">Nächste Termine</h3>
+                    ${upcoming.length === 0 ? '<div style="color:var(--text-muted);font-size:13px;">Keine anstehenden Termine.</div>' : upcoming.map(ev => {
+                        const d = new Date(ev.date);
+                        const proj = ev.projectId ? projects.find(p => p.id === ev.projectId) : null;
+                        const cust = ev.customerId ? customers.find(c => c.id === ev.customerId) : null;
+                        const metaParts = [ev.time, proj?.title, cust ? `${cust.firstName} ${cust.lastName}` : null].filter(Boolean);
+                        return `
+                            <div class="event-list-item">
+                                <div class="event-date-box"><div class="ed-day">${d.getDate()}</div><div class="ed-month">${d.toLocaleDateString('de-DE',{month:'short'})}</div></div>
+                                <div class="event-info">
+                                    <div class="event-title">${escapeHtml(ev.title)} <span class="status-badge ${eventTypeBadgeClass(ev.type)}" style="margin-left:4px;">${escapeHtml(ev.type || 'Termin')}</span></div>
+                                    <div class="event-meta">${escapeHtml(metaParts.join(' · '))}</div>
+                                </div>
+                                <button class="btn btn-sm btn-outline" onclick="app.openEventModal(${idJS(ev.id)})">✏️</button>
+                                <button class="btn btn-sm btn-danger" onclick="app.deleteEvent(${idJS(ev.id)})">🗑</button>
+                            </div>
+                        `;
+                    }).join('')}
+                `;
+            })();
+        }
         function renderDashboard() {
             (async () => {
                 try {
@@ -918,10 +1069,13 @@
                 const projects = await db.getAll('projects');
                 const offers = await db.getAll('offers');
                 const materials = await db.getAll('materials');
+                const events = await db.getAll('events');
 
                 const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
                 const gesendeteAngebote = offers.filter(o => o.status === 'Angebot gesendet').length;
                 const fertigeProjekte = projects.filter(p => p.status === 'Fertig').length;
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const anstehendeTermine = events.filter(ev => ev.date >= todayStr).length;
 
                 document.getElementById('customerCount').textContent = customers.length;
                 document.getElementById('projectCount').textContent = projects.length;
@@ -955,6 +1109,10 @@
                         <div class="nav-card" onclick="app.navigate('projects')">
                             <div class="card-icon green">📋</div>
                             <div><div class="card-title">Projekte & Besichtigungen</div><div class="card-subtitle">${offeneProjekte} offen</div></div>
+                        </div>
+                        <div class="nav-card" onclick="app.navigate('calendar')">
+                            <div class="card-icon purple">📅</div>
+                            <div><div class="card-title">Kalender</div><div class="card-subtitle">${anstehendeTermine} anstehende Termine</div></div>
                         </div>
                         <div class="nav-card" onclick="app.navigate('materials')">
                             <div class="card-icon amber">📦</div>
@@ -1340,6 +1498,7 @@
                     case 'dashboard': renderDashboard(); break;
                     case 'customers': renderCustomers(); break;
                     case 'projects': renderProjects(param); break;
+                    case 'calendar': renderCalendar(param); break;
                     case 'materials': renderMaterials(); break;
                     case 'offers': renderOffers(); break;
                     case 'settings': renderSettings(); break;
@@ -1747,6 +1906,84 @@
                 await db.delete('materials', id);
                 showToast('Material gelöscht.', 'info');
                 this.navigate('materials');
+            },
+
+            // ---- Kalender-Modul ----
+            calendarShiftMonth(delta) {
+                calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + delta, 1);
+                renderCalendar();
+            },
+
+            calendarGoToday() {
+                calendarViewDate = new Date();
+                renderCalendar();
+            },
+
+            async openEventModal(id = null, prefillDate = null) {
+                const ev = id ? await db.get('events', id) : null;
+                const projects = await db.getAll('projects');
+                const customers = await db.getAll('customers');
+                const types = ['Besichtigung', 'Montage', 'Wartung', 'Sonstiges'];
+                const modal = showModal(
+                    id ? 'Termin bearbeiten' : 'Neuer Termin',
+                    `
+                        <div class="form-group"><label>Titel *</label><input type="text" id="evTitle" value="${escapeHtml(ev?.title || '')}" placeholder="z.B. Besichtigung Familie Huber"></div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Datum *</label><input type="date" id="evDate" value="${ev?.date || prefillDate || new Date().toISOString().slice(0,10)}"></div>
+                            <div class="form-group"><label>Uhrzeit</label><input type="time" id="evTime" value="${ev?.time || ''}"></div>
+                        </div>
+                        <div class="form-group"><label>Typ</label>
+                            <select id="evType">${types.map(t => `<option value="${t}" ${ev?.type === t ? 'selected' : ''}>${t}</option>`).join('')}</select>
+                        </div>
+                        <div class="form-group"><label>Projekt (optional)</label>
+                            <select id="evProject">
+                                <option value="">-- kein Projekt --</option>
+                                ${projects.map(p => `<option value="${escapeHtml(String(p.id))}" ${ev?.projectId === p.id ? 'selected' : ''}>${escapeHtml(p.title)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Kunde (optional)</label>
+                            <select id="evCustomer">
+                                <option value="">-- kein Kunde --</option>
+                                ${customers.map(c => `<option value="${escapeHtml(String(c.id))}" ${ev?.customerId === c.id ? 'selected' : ''}>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Notizen</label><textarea id="evNotes" rows="2">${escapeHtml(ev?.notes || '')}</textarea></div>
+                    `,
+                    async (overlay) => {
+                        const data = {
+                            title: overlay.querySelector('#evTitle').value.trim(),
+                            date: overlay.querySelector('#evDate').value,
+                            time: overlay.querySelector('#evTime').value,
+                            type: overlay.querySelector('#evType').value,
+                            projectId: parseId(overlay.querySelector('#evProject').value),
+                            customerId: parseId(overlay.querySelector('#evCustomer').value),
+                            notes: overlay.querySelector('#evNotes').value.trim(),
+                        };
+                        if (!data.title || !data.date) {
+                            showToast('Titel und Datum sind Pflichtfelder.', 'error');
+                            return;
+                        }
+                        if (id) {
+                            data.id = id;
+                            data.createdAt = ev.createdAt;
+                            await db.put('events', data);
+                        } else {
+                            await db.add('events', data);
+                        }
+                        overlay.remove();
+                        showToast(id ? 'Termin aktualisiert.' : 'Termin angelegt.', 'success');
+                        this.navigate('calendar');
+                    }
+                );
+                // Angeklickter Kalendertag setzt den Sichtbereich, falls über den Kalender aufgerufen.
+                if (prefillDate) calendarViewDate = new Date(prefillDate);
+            },
+
+            async deleteEvent(id) {
+                if (!confirm('Termin wirklich löschen?')) return;
+                await db.delete('events', id);
+                showToast('Termin gelöscht.', 'info');
+                this.navigate('calendar');
             },
 
             // ---- Angebots-Modul ----
@@ -2420,7 +2657,7 @@
             async resetAllData() {
                 if (!confirm('ALLE DATEN UNWIDERRUFLICH LÖSCHEN? Dies kann nicht rückgängig gemacht werden!')) return;
                 if (!confirm('Wirklich ALLES löschen?')) return;
-                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'settings'];
+                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'events', 'settings'];
                 for (const store of stores) await db.clear(store);
                 showToast('Alle Daten gelöscht.', 'info');
                 this.navigate('dashboard');
