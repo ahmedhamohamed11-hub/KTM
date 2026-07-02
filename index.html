@@ -12,7 +12,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        /* Exakt das gleiche CSS wie in deiner letzten funktionierenden Offline-Version */
         :root {
             --bg-primary: #f5f6f8; --bg-secondary: #ffffff; --bg-tertiary: #eef1f5;
             --text-primary: #1a1d23; --text-secondary: #5a5f6b; --text-muted: #8b909c;
@@ -135,60 +134,50 @@
 <div id="modalContainer"></div>
 
 <script>
-    // ==================== SUPABASE KONFIGURATION ====================
+    // ==================== SUPABASE ====================
     const SUPABASE_URL = 'https://byajcepqydkyoegztcgj.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';  // <<< HIER DEINEN ECHTEN ANON KEY EINTRAGEN!
+    const SUPABASE_ANON_KEY = 'sb_publishable_s3zhy_TO4KWnVQN1XSYDHg_zcOwA6Qn';
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // ==================== SYNCHRONISATION (manuell, kein automatischer Sync) ====================
+    // ==================== SYNC ====================
     const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
     const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
+    function toSnake(o) { const r={}; for(const k in o) { if(['id','_synced'].includes(k)) continue; r[FIELD_MAP[k]||k]=o[k]; } return r; }
+    function toCamel(o) { const r={}; for(const k in o) r[REVERSE_MAP[k]||k]=o[k]; return r; }
 
     async function syncPush(table) {
         const all = await db.getAll(table);
         for (const rec of all) { if(rec._synced) continue;
-            const p = {}; for(const k in rec) { const snake = FIELD_MAP[k]||k; if(!['id','_synced'].includes(k)) p[snake] = rec[k]; }
+            const p = toSnake(rec);
             try {
                 const { data, error } = await sb.from(table).insert(p).select();
-                if (!error && data?.length) { await db.delete(table, rec.id); const nr = {}; for(const k in data[0]) { nr[REVERSE_MAP[k]||k] = data[0][k]; } nr._synced = true; await db.add(table, nr); }
-                else if (error) console.warn(`Push-Fehler ${table}:`, error.message);
-            } catch(e) { console.warn(`Push-Exception ${table}:`, e.message); }
+                if (!error && data?.length) { await db.delete(table, rec.id); const nr = toCamel(data[0]); nr._synced = true; await db.add(table, nr); }
+                else if (error) console.warn(`Push ${table}:`, error.message);
+            } catch(e) { console.warn(`Push-Ex ${table}:`, e.message); }
         }
     }
 
     async function syncPull(table) {
         try {
             const { data, error } = await sb.from(table).select('*');
-            if (error) { console.warn(`Pull-Fehler ${table}:`, error.message); return; }
+            if (error) { console.warn(`Pull ${table}:`, error.message); return; }
             const ids = new Set((await db.getAll(table)).map(r=>r.id));
-            for (const row of data) {
-                const rec = {}; for(const k in row) rec[REVERSE_MAP[k]||k] = row[k];
-                rec._synced = true;
-                if(ids.has(rec.id)) await db.put(table, rec);
-                else await db.add(table, rec);
-            }
-        } catch(e) { console.warn(`Pull-Exception ${table}:`, e.message); }
+            for (const row of data) { const rec = toCamel(row); rec._synced = true; if(ids.has(rec.id)) await db.put(table, rec); else await db.add(table, rec); }
+        } catch(e) { console.warn(`Pull-Ex ${table}:`, e.message); }
     }
 
     async function fullSync() {
-        if (!navigator.onLine) { showToast('Keine Internetverbindung', 'info'); return; }
-        const statusEl = document.getElementById('syncStatus');
-        statusEl.textContent = 'Sync...';
+        if (!navigator.onLine) { showToast('Offline', 'info'); return; }
+        document.getElementById('syncStatus').textContent = 'Sync...';
         try {
-            for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
-                await syncPush(t);
-                await syncPull(t);
-            }
-            showToast('Synchronisation abgeschlossen', 'success');
-        } catch(e) {
-            showToast('Sync-Fehler – bitte Konsole prüfen', 'error');
-            console.error(e);
-        }
-        statusEl.textContent = navigator.onLine ? 'Online' : 'Offline';
-        app.navigate(app.currentPage, app.currentProjectId); // Seite aktualisieren
+            for (const t of ['customers','projects','rooms','images','materials','offers','settings']) { await syncPush(t); await syncPull(t); }
+            showToast('Sync abgeschlossen', 'success');
+        } catch(e) { showToast('Sync-Fehler', 'error'); console.error(e); }
+        document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
+        app.navigate(app.currentPage, app.currentProjectId);
     }
 
-    // ==================== DATENBANK (Original) ====================
+    // ==================== DATENBANK ====================
     const DB_NAME = 'KTM_DB';
     class DatabaseManager {
         constructor() { this.db = null; }
@@ -211,39 +200,235 @@
         async getAll(store) { return new Promise(r => { this.db.transaction(store).objectStore(store).getAll().onsuccess = e => r(e.target.result); }); }
         async delete(store, id) { return new Promise(r => { this.db.transaction(store,'readwrite').objectStore(store).delete(id).onsuccess = () => r(); }); }
         async clear(store) { return new Promise(r => { this.db.transaction(store,'readwrite').objectStore(store).clear().onsuccess = () => r(); }); }
-        async getByIndex(store, index, value) {
-            return new Promise(r => {
-                const tx = this.db.transaction(store);
-                const req = tx.objectStore(store).index(index).getAll(value);
-                req.onsuccess = e => r(e.target.result);
-            });
-        }
-        async exportAllData() { /* wie zuvor */ }
-        async importAllData(data) { /* wie zuvor */ }
+        async getByIndex(store, index, value) { return new Promise(r => { const tx = this.db.transaction(store); const req = tx.objectStore(store).index(index).getAll(value); req.onsuccess = e => r(e.target.result); }); }
+        async getProjectWithDetails(id) { const p = await this.get('projects', id); if(!p) return null; const rooms = await this.getByIndex('rooms','projectId',id); const images = await this.getByIndex('images','projectId',id); const offers = await this.getByIndex('offers','projectId',id); return {...p, rooms, images, offers}; }
+        async exportAllData() { return { customers: await this.getAll('customers'), projects: await this.getAll('projects'), rooms: await this.getAll('rooms'), images: await this.getAll('images'), materials: await this.getAll('materials'), offers: await this.getAll('offers'), settings: await this.getAll('settings'), exportDate: new Date().toISOString(), version: '1.0' }; }
+        async importAllData(data) { for(const s of ['customers','projects','rooms','images','materials','offers','settings']) await this.clear(s); for(const c of data.customers||[]) await this.add('customers', c); for(const p of data.projects||[]) await this.add('projects', p); for(const r of data.rooms||[]) await this.add('rooms', r); for(const i of data.images||[]) await this.add('images', i); for(const m of data.materials||[]) await this.add('materials', m); for(const o of data.offers||[]) await this.add('offers', o); for(const s of data.settings||[]) await this.put('settings', s); }
     }
     const db = new DatabaseManager();
 
     // ==================== HILFSFUNKTIONEN ====================
-    function showToast(msg, type='info') { /* wie zuvor */ }
+    function showToast(msg, type='info') { const c = document.getElementById('toastContainer'); const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg; c.appendChild(t); setTimeout(() => t.remove(), 3000); }
     function formatCurrency(v) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(v||0); }
     function formatDate(iso) { return iso ? new Date(iso).toLocaleDateString('de-DE') : '-'; }
     function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
-    function getStatusClass(st) { /* wie zuvor */ }
-    function calcCooling(rooms) { /* wie zuvor */ }
-    function showModal(title, html, onSave) { /* wie zuvor */ }
+    function getStatusClass(s) { const m = { 'Neu':'status-neu', 'Besichtigung offen':'status-offen', 'Angebot gesendet':'status-aktiv', 'Fertig':'status-fertig' }; return m[s] || 'status-neu'; }
+    function calcCooling(rooms) { if(!rooms?.length) return { totalKW:0, recommendation:null }; let total=0; rooms.forEach(r => total += (r.length||0)*(r.width||0)*80); const kw = Math.round(total/100)/10; const sizes = [2.0,2.5,3.5,4.2,5.0,6.0,7.1,8.5,10.0]; return { totalKW:kw, recommendation: sizes.find(s=>s>=kw) || sizes[sizes.length-1], details:[] }; }
+    function showModal(title, html, onSave) { const modal = document.createElement('div'); modal.className = 'modal-overlay'; modal.innerHTML = `<div class="modal"><h3>${title}</h3>${html}<div class="modal-actions"><button class="btn btn-outline cancel-btn">Abbrechen</button><button class="btn btn-primary save-btn">Speichern</button></div></div>`; document.body.appendChild(modal); modal.querySelector('.cancel-btn').onclick = () => modal.remove(); modal.querySelector('.save-btn').onclick = () => { if(onSave) onSave(modal); }; modal.addEventListener('click', (e) => { if(e.target === modal) modal.remove(); }); }
 
-    // ==================== SEITEN (identisch zur Offline‑Version) ====================
+    // ==================== SEITEN ====================
     const contentArea = document.getElementById('contentArea');
-    let currentPage = 'dashboard';
-    let currentProjectId = null;
 
-    async function renderDashboard() { /* wie zuvor */ }
-    async function renderCustomers() { /* wie zuvor */ }
-    async function renderProjects(projectId) { /* wie zuvor */ }
-    async function renderMaterials() { /* wie zuvor */ }
-    async function renderOffers() { /* wie zuvor */ }
-    async function renderSettings() { /* wie zuvor */ }
-    async function renderBackup() { /* wie zuvor */ }
+    async function renderDashboard() {
+        const [customers, projects, offers, materials] = await Promise.all([db.getAll('customers'), db.getAll('projects'), db.getAll('offers'), db.getAll('materials')]);
+        document.getElementById('customerCount').textContent = customers.length;
+        document.getElementById('projectCount').textContent = projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length;
+        contentArea.innerHTML = `<h1 class="page-title">Dashboard</h1>
+            <div class="stats-row">
+                <div class="stat-card"><div class="stat-value">${customers.length}</div><div class="stat-label">Kunden</div></div>
+                <div class="stat-card"><div class="stat-value">${projects.filter(p=>!['Fertig','Archiv'].includes(p.status)).length}</div><div class="stat-label">Offene Projekte</div></div>
+                <div class="stat-card"><div class="stat-value">${offers.length}</div><div class="stat-label">Angebote</div></div>
+            </div>
+            <div class="card-grid">
+                <div class="nav-card" onclick="app.navigate('customers')"><div class="card-icon blue">👥</div><div><div class="card-title">Kunden</div><div class="card-subtitle">${customers.length} Kunden</div></div></div>
+                <div class="nav-card" onclick="app.navigate('projects')"><div class="card-icon green">📋</div><div><div class="card-title">Projekte</div><div class="card-subtitle">${projects.length} gesamt</div></div></div>
+                <div class="nav-card" onclick="app.navigate('materials')"><div class="card-icon amber">📦</div><div><div class="card-title">Material</div><div class="card-subtitle">${materials.length} Artikel</div></div></div>
+                <div class="nav-card" onclick="app.navigate('offers')"><div class="card-icon purple">📄</div><div><div class="card-title">Angebote</div><div class="card-subtitle">${offers.length} erstellt</div></div></div>
+            </div>`;
+    }
+
+    async function renderCustomers() {
+        const customers = await db.getAll('customers');
+        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Kunden</h1><button class="btn btn-primary" onclick="openCustomerModal()">+ Neuer Kunde</button></div>
+            <div class="table-container"><table><thead><tr><th>Name</th><th>Ort</th><th>Telefon</th><th></th></tr></thead><tbody>
+            ${customers.map(c=>`<tr><td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong></td><td>${escapeHtml(c.city||'')}</td><td>${escapeHtml(c.phone||'')}</td><td>
+                <button class="btn btn-sm btn-outline" onclick="openCustomerModal(${c.id})">✏️</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteCustomer(${c.id})">🗑</button>
+            </td></tr>`).join('')}</tbody></table></div>`;
+    }
+
+    async function openCustomerModal(id) {
+        const cust = id ? await db.get('customers', id) : {};
+        showModal(id?'Kunde bearbeiten':'Neuer Kunde', `
+            <div class="form-row"><div class="form-group"><label>Vorname</label><input id="cfname" value="${escapeHtml(cust.firstName||'')}"></div><div class="form-group"><label>Nachname</label><input id="clname" value="${escapeHtml(cust.lastName||'')}"></div></div>
+            <div class="form-row"><div class="form-group"><label>Straße</label><input id="cstreet" value="${escapeHtml(cust.street||'')}"></div><div class="form-group"><label>Hausnr.</label><input id="chnumber" value="${escapeHtml(cust.houseNumber||'')}"></div></div>
+            <div class="form-row"><div class="form-group"><label>PLZ</label><input id="czip" value="${escapeHtml(cust.zip||'')}"></div><div class="form-group"><label>Ort</label><input id="ccity" value="${escapeHtml(cust.city||'')}"></div></div>
+            <div class="form-group"><label>Telefon</label><input id="cphone" value="${escapeHtml(cust.phone||'')}"></div>
+        `, async (modal) => {
+            const data = { firstName: modal.querySelector('#cfname').value, lastName: modal.querySelector('#clname').value, street: modal.querySelector('#cstreet').value, houseNumber: modal.querySelector('#chnumber').value, zip: modal.querySelector('#czip').value, city: modal.querySelector('#ccity').value, phone: modal.querySelector('#cphone').value };
+            if(id) { data.id = id; await db.put('customers', data); } else await db.add('customers', data);
+            modal.remove(); renderCustomers();
+        });
+    }
+    async function deleteCustomer(id) { if(confirm('Löschen?')) { await db.delete('customers', id); renderCustomers(); } }
+
+    async function renderProjects(projectId) {
+        const projects = await db.getAll('projects'); const customers = await db.getAll('customers');
+        let detail = '';
+        if(projectId) {
+            const p = await db.getProjectWithDetails(projectId);
+            if(p) {
+                const cust = customers.find(c=>c.id===p.customerId);
+                const cooling = calcCooling(p.rooms||[]);
+                detail = `<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;margin-top:20px;">
+                    <h3>📋 ${escapeHtml(p.title)}</h3><p>Kunde: ${cust?`${cust.firstName} ${cust.lastName}`:'-'}</p><p>Status: ${p.status}</p>
+                    <button class="btn btn-sm btn-outline" onclick="openProjectModal(${projectId})">✏️</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteProject(${projectId})">🗑</button>
+                    <h4>Räume</h4><table><tr><th>Name</th><th>Maße</th><th>Fläche</th><th>kW</th></tr>
+                    ${(p.rooms||[]).map(r=>`<tr><td>${escapeHtml(r.name||'Raum')}</td><td>${r.length}x${r.width}x${r.height}</td><td>${((r.length*r.width).toFixed(1))} m²</td><td>${((r.length*r.width*80)/1000).toFixed(1)}</td></tr>`).join('')}</table>
+                    <button class="btn btn-sm btn-primary" onclick="openRoomModal(${projectId})">+ Raum</button>
+                    ${cooling.recommendation?`<p>❄️ Empf. Kälteleistung: <strong>${cooling.recommendation} kW</strong></p>`:''}
+                    <h4>Bilder</h4><div class="image-grid">${(p.images||[]).map(i=>`<div class="image-card"><img src="${i.data}" onerror="this.style.display='none'"><div class="img-overlay">${escapeHtml(i.category||'')}</div></div>`).join('')}</div>
+                    <button class="btn btn-sm btn-primary" onclick="openImageModal(${projectId})">+ Bild</button>
+                    <button class="btn btn-sm btn-primary" onclick="createOffer(${projectId})">📄 Angebot</button>
+                </div>`;
+            }
+        }
+        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Projekte</h1><button class="btn btn-primary" onclick="openProjectModal()">+ Neues Projekt</button></div>
+            <div class="table-container"><table><thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th></th></tr></thead><tbody>
+            ${projects.map(p=>{ const c=customers.find(x=>x.id===p.customerId); return `<tr style="cursor:pointer" onclick="app.navigate('projects',${p.id})"><td>${escapeHtml(p.title)}</td><td>${c?`${c.firstName} ${c.lastName}`:'-'}</td><td>${p.status}</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button></td></tr>`; }).join('')}
+            </tbody></table></div>${detail}`;
+    }
+
+    async function openProjectModal(id) {
+        const p = id ? await db.get('projects', id) : {}; const custs = await db.getAll('customers');
+        showModal(id?'Projekt bearbeiten':'Neues Projekt', `
+            <div class="form-group"><label>Titel</label><input id="ptitle" value="${escapeHtml(p.title||'')}"></div>
+            <div class="form-group"><label>Kunde</label><select id="pcustomer"><option value="">-</option>${custs.map(c=>`<option value="${c.id}" ${p.customerId==c.id?'selected':''}>${c.firstName} ${c.lastName}</option>`).join('')}</select></div>
+        `, async (modal) => {
+            const obj = { title: modal.querySelector('#ptitle').value, customerId: parseInt(modal.querySelector('#pcustomer').value)||null, status: p.status||'Neu' };
+            if(id) { obj.id = id; await db.put('projects', obj); } else await db.add('projects', obj);
+            modal.remove(); app.navigate('projects', obj.id);
+        });
+    }
+
+    async function deleteProject(id) {
+        if(!confirm('Projekt und alle zugehörigen Daten löschen?')) return;
+        const rooms = await db.getByIndex('rooms','projectId',id); for(const r of rooms) await db.delete('rooms', r.id);
+        const images = await db.getByIndex('images','projectId',id); for(const i of images) await db.delete('images', i.id);
+        const offers = await db.getByIndex('offers','projectId',id); for(const o of offers) await db.delete('offers', o.id);
+        await db.delete('projects', id); showToast('Projekt gelöscht','info'); app.navigate('projects');
+    }
+
+    function openRoomModal(projectId) {
+        showModal('Raum hinzufügen', `
+            <div class="form-row"><div class="form-group"><label>Länge (m)</label><input type="number" id="rlength" step="0.1" value="0"></div><div class="form-group"><label>Breite (m)</label><input type="number" id="rwidth" step="0.1" value="0"></div><div class="form-group"><label>Höhe (m)</label><input type="number" id="rheight" step="0.1" value="2.5"></div></div>
+        `, async (modal) => {
+            const obj = { projectId, length: parseFloat(modal.querySelector('#rlength').value)||0, width: parseFloat(modal.querySelector('#rwidth').value)||0, height: parseFloat(modal.querySelector('#rheight').value)||2.5, name: 'Raum' };
+            await db.add('rooms', obj); modal.remove(); app.navigate('projects', projectId);
+        });
+    }
+
+    function openImageModal(projectId) {
+        showModal('Bild hinzufügen', `<input type="file" id="imgfile" accept="image/*">`, async (modal) => {
+            const file = modal.querySelector('#imgfile').files[0]; if(!file) return;
+            const reader = new FileReader(); reader.onload = async (e) => {
+                await db.add('images', { projectId, data: e.target.result, category: 'Sonstiges', label: '' });
+                modal.remove(); app.navigate('projects', projectId);
+            }; reader.readAsDataURL(file);
+        });
+    }
+
+    async function renderMaterials() {
+        const materials = await db.getAll('materials');
+        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Material</h1><button class="btn btn-primary" onclick="openMaterialModal()">+ Neues Material</button></div>
+            <div class="table-container"><table><thead><tr><th>Name</th><th>Kategorie</th><th>Einheit</th><th>VK-Preis</th><th></th></tr></thead><tbody>
+            ${materials.map(m=>`<tr><td><strong>${escapeHtml(m.name)}</strong></td><td>${escapeHtml(m.category||'')}</td><td>${m.unit||'Stk'}</td><td>${formatCurrency(m.sellingPrice)}</td><td>
+                <button class="btn btn-sm btn-outline" onclick="openMaterialModal(${m.id})">✏️</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteMaterial(${m.id})">🗑</button>
+            </td></tr>`).join('')}</tbody></table></div>`;
+    }
+
+    async function openMaterialModal(id) {
+        const mat = id ? await db.get('materials', id) : {};
+        showModal(id?'Material bearbeiten':'Neues Material', `
+            <div class="form-group"><label>Name</label><input id="mname" value="${escapeHtml(mat.name||'')}"></div>
+            <div class="form-row"><div class="form-group"><label>Kategorie</label><input id="mcat" value="${escapeHtml(mat.category||'')}"></div><div class="form-group"><label>Einheit</label><input id="munit" value="${escapeHtml(mat.unit||'Stk')}"></div></div>
+            <div class="form-row"><div class="form-group"><label>EK (€)</label><input type="number" id="mpurchase" step="0.01" value="${mat.purchasePrice||0}"></div><div class="form-group"><label>VK (€)</label><input type="number" id="mselling" step="0.01" value="${mat.sellingPrice||0}"></div></div>
+        `, async (modal) => {
+            const obj = { name: modal.querySelector('#mname').value, category: modal.querySelector('#mcat').value, unit: modal.querySelector('#munit').value||'Stk', purchasePrice: parseFloat(modal.querySelector('#mpurchase').value)||0, sellingPrice: parseFloat(modal.querySelector('#mselling').value)||0 };
+            if(id) { obj.id = id; await db.put('materials', obj); } else await db.add('materials', obj);
+            modal.remove(); renderMaterials();
+        });
+    }
+    async function deleteMaterial(id) { if(confirm('Löschen?')) { await db.delete('materials', id); renderMaterials(); } }
+
+    async function renderOffers() {
+        const offers = await db.getAll('offers'); const projects = await db.getAll('projects'); const customers = await db.getAll('customers');
+        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Angebote</h1></div>
+            <div class="table-container"><table><thead><tr><th>ID</th><th>Projekt</th><th>Kunde</th><th>Summe</th><th>Status</th><th></th></tr></thead><tbody>
+            ${offers.map(o=>{ const proj = projects.find(p=>p.id===o.projectId); const cust = proj ? customers.find(c=>c.id===proj.customerId) : null; return `<tr><td>#${o.id}</td><td>${escapeHtml(proj?.title||'')}</td><td>${cust?`${cust.firstName} ${cust.lastName}`:'-'}</td><td>${formatCurrency(o.totalPrice)}</td><td><span class="status-badge ${getStatusClass(o.status)}">${o.status}</span></td><td>
+                <button class="btn btn-sm btn-primary" onclick="exportOfferPDF(${o.id})">📄 PDF</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteOffer(${o.id})">🗑</button>
+            </td></tr>`; }).join('')}</tbody></table></div>`;
+    }
+
+    async function createOffer(projectId) {
+        const project = await db.get('projects', projectId); if(!project) return;
+        const customer = project.customerId ? await db.get('customers', project.customerId) : null;
+        if(!customer) { showToast('Kein Kunde zugewiesen','error'); return; }
+        const materials = await db.getAll('materials'); const cooling = calcCooling(await db.getByIndex('rooms','projectId',projectId));
+        showModal('Angebot erstellen', `
+            <p><strong>Projekt:</strong> ${escapeHtml(project.title)}</p><p><strong>Kunde:</strong> ${customer.firstName} ${customer.lastName}</p>
+            <p><strong>Empf. Kälteleistung:</strong> ${cooling.recommendation||'?'} kW</p>
+            <div class="table-container"><table><thead><tr><th>Wählen</th><th>Artikel</th><th>Preis</th><th>Menge</th></tr></thead><tbody>
+            ${materials.map(m=>`<tr><td><input type="checkbox" class="sel" data-price="${m.sellingPrice||0}" data-name="${escapeHtml(m.name)}" data-unit="${m.unit||'Stk'}"></td><td>${escapeHtml(m.name)}</td><td>${formatCurrency(m.sellingPrice)}</td><td><input type="number" class="qty" value="1" min="1"></td></tr>`).join('')}
+            </tbody></table></div>
+        `, async (modal) => {
+            const items = []; modal.querySelectorAll('tbody tr').forEach(row=>{ const cb=row.querySelector('.sel'); const qty=row.querySelector('.qty'); if(cb.checked) items.push({ name:cb.dataset.name, unit:cb.dataset.unit, price:parseFloat(cb.dataset.price), quantity:parseInt(qty.value)||1 }); });
+            let subtotal = 0; const positions = items.map(i=>{ const t=i.price*i.quantity; subtotal+=t; return {...i,total:t}; });
+            const vat = subtotal*0.19; const offer = { projectId, customerId:project.customerId, positions, subtotal, vatRate:0.19, vatAmount:vat, totalPrice:subtotal+vat, coolingRecommendation:cooling.recommendation, status:'Angebot offen' };
+            await db.add('offers', offer); modal.remove(); renderOffers();
+        });
+    }
+
+    async function exportOfferPDF(offerId) {
+        const offer = await db.get('offers', offerId); if(!offer) return;
+        const project = await db.get('projects', offer.projectId); const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+        const { jsPDF } = window.jspdf; const doc = new jsPDF(); let y=20;
+        doc.setFontSize(18).text('Angebot',20,y); y+=10;
+        if(customer) { doc.setFontSize(12).text(`${customer.firstName} ${customer.lastName}`,20,y); y+=6; }
+        doc.setFontSize(10).text(`Projekt: ${project?.title||''}`,20,y); y+=6;
+        doc.text(`Datum: ${formatDate(offer.createdAt)}`,20,y); y+=8;
+        let pos=1; (offer.positions||[]).forEach(p=>{ if(y>270){doc.addPage();y=20;} doc.text(`${pos}. ${p.name}`,20,y); doc.text(`${p.quantity} ${p.unit} x ${formatCurrency(p.price)}`,100,y); doc.text(formatCurrency(p.total),150,y); y+=5; pos++; });
+        y+=5; doc.text(`Netto: ${formatCurrency(offer.subtotal)}`,130,y); y+=5; doc.text(`MwSt: ${formatCurrency(offer.vatAmount)}`,130,y); y+=5; doc.text(`Gesamt: ${formatCurrency(offer.totalPrice)}`,130,y);
+        doc.save(`Angebot_${offerId}.pdf`);
+    }
+    async function deleteOffer(id) { if(confirm('Angebot löschen?')) { await db.delete('offers', id); renderOffers(); } }
+
+    async function renderSettings() {
+        contentArea.innerHTML = `<h1 class="page-title">Einstellungen</h1><div class="card-grid">
+            <div class="nav-card" onclick="openCompanySettings()"><div class="card-icon blue">🏢</div><div><div class="card-title">Firmendaten</div></div></div>
+            <div class="nav-card" onclick="openPDFSettings()"><div class="card-icon purple">📄</div><div><div class="card-title">PDF-Footer</div></div></div>
+            <div class="nav-card" onclick="resetAllData()"><div class="card-icon red">⚠️</div><div><div class="card-title">Alle Daten löschen</div></div></div>
+        </div>`;
+    }
+    async function openCompanySettings() {
+        const name = (await db.get('settings','companyName'))?.value||''; const addr = (await db.get('settings','companyAddress'))?.value||'';
+        showModal('Firmendaten', `<div class="form-group"><label>Name</label><input id="cn" value="${escapeHtml(name)}"></div><div class="form-group"><label>Adresse</label><textarea id="ca">${escapeHtml(addr)}</textarea></div>`, async (modal) => {
+            await db.put('settings',{key:'companyName',value:modal.querySelector('#cn').value});
+            await db.put('settings',{key:'companyAddress',value:modal.querySelector('#ca').value});
+            modal.remove();
+        });
+    }
+    async function openPDFSettings() {
+        const footer = (await db.get('settings','pdfFooter'))?.value||'';
+        showModal('PDF-Footer', `<div class="form-group"><label>Text</label><textarea id="pf">${escapeHtml(footer)}</textarea></div>`, async (modal) => {
+            await db.put('settings',{key:'pdfFooter',value:modal.querySelector('#pf').value}); modal.remove();
+        });
+    }
+    async function resetAllData() { if(confirm('ALLE DATEN LÖSCHEN?')) { for(const s of ['customers','projects','rooms','images','materials','offers','settings']) await db.clear(s); showToast('Alle Daten gelöscht','info'); app.navigate('dashboard'); } }
+
+    async function renderBackup() {
+        contentArea.innerHTML = `<h1 class="page-title">Backup</h1><div class="card-grid">
+            <div class="nav-card" onclick="createBackup()"><div class="card-icon blue">💾</div><div><div class="card-title">Backup erstellen</div></div></div>
+            <div class="nav-card" onclick="restoreBackup()"><div class="card-icon green">📥</div><div><div class="card-title">Backup wiederherstellen</div></div></div>
+            <div class="nav-card" onclick="exportAllExcel()"><div class="card-icon purple">📊</div><div><div class="card-title">Excel-Export</div></div></div>
+        </div>`;
+    }
+    async function createBackup() { const data=await db.exportAllData(); const blob=new Blob([JSON.stringify(data)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`KTM_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); }
+    async function restoreBackup() { const input=document.createElement('input'); input.type='file'; input.accept='.json'; input.onchange=async(e)=>{ if(!confirm('Alle Daten überschreiben?'))return; const file=e.target.files[0]; const text=await file.text(); const data=JSON.parse(text); await db.importAllData(data); showToast('Backup wiederhergestellt','success'); app.navigate('dashboard'); }; input.click(); }
+    async function exportAllExcel() { const data={customers:await db.getAll('customers'),projects:await db.getAll('projects'),materials:await db.getAll('materials')}; const wb=XLSX.utils.book_new(); const cd=[['ID','Vorname','Nachname','Ort']]; data.customers.forEach(c=>cd.push([c.id,c.firstName,c.lastName,c.city])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cd),'Kunden'); const pd=[['ID','Titel','Kunde']]; data.projects.forEach(p=>pd.push([p.id,p.title,p.customerId])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pd),'Projekte'); const md=[['ID','Name','VK']]; data.materials.forEach(m=>md.push([m.id,m.name,m.sellingPrice])); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(md),'Material'); XLSX.writeFile(wb,'KTM_Export.xlsx'); }
 
     // ==================== APP‑CONTROLLER ====================
     const app = {
@@ -254,10 +439,9 @@
             await db.init();
             document.getElementById('syncStatus').textContent = navigator.onLine ? 'Online' : 'Offline';
             this.setupNavigation();
-            this.setupSearch();
             this.setupTheme();
-            this.navigate('dashboard');
             this.setupResponsive();
+            this.navigate('dashboard');
         },
 
         setupNavigation() {
@@ -286,15 +470,29 @@
             }
         },
 
-        setupSearch() { /* wie zuvor */ },
-        setupTheme() { /* wie zuvor */ },
-        setupResponsive() { /* wie zuvor */ },
+        setupTheme() {
+            const toggle = document.getElementById('themeToggle');
+            const saved = localStorage.getItem('klima-theme') || 'light';
+            document.body.dataset.theme = saved;
+            toggle.innerHTML = saved === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
+            toggle.addEventListener('click', () => {
+                const cur = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+                document.body.dataset.theme = cur;
+                localStorage.setItem('klima-theme', cur);
+                toggle.innerHTML = cur === 'dark' ? '<span class="nav-icon">☀️</span> Hellmodus' : '<span class="nav-icon">🌙</span> Dunkelmodus';
+            });
+        },
 
-        // Alle weiteren Methoden (Kunden, Projekte, Räume, Bilder, Material, Angebote, PDF, Excel, Backup, Einstellungen)
-        // ... (identisch zur Originalversion)
+        setupResponsive() {
+            const menuToggle = document.getElementById('menuToggle');
+            const sidebar = document.getElementById('sidebar');
+            const check = () => { menuToggle.style.display = window.innerWidth <= 900 ? 'flex' : 'none'; if(window.innerWidth > 900) sidebar.classList.remove('open'); };
+            check(); window.addEventListener('resize', check);
+            menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+            document.addEventListener('click', (e) => { if(window.innerWidth <= 900 && !sidebar.contains(e.target) && e.target !== menuToggle) sidebar.classList.remove('open'); });
+        }
     };
 
-    // ==================== INITIALISIERUNG ====================
     document.addEventListener('DOMContentLoaded', () => app.init());
 </script>
 </body>
