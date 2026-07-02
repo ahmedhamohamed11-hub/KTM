@@ -651,13 +651,14 @@
         const FIELD_MAP = { firstName:'first_name', lastName:'last_name', houseNumber:'house_number', customerId:'customer_id', projectId:'project_id', roomCount:'room_count', purchasePrice:'purchase_price', sellingPrice:'selling_price', totalPrice:'total_price', vatRate:'vat_rate', vatAmount:'vat_amount', coolingRecommendation:'cooling_recommendation', coolingDetails:'cooling_details', createdAt:'created_at', updatedAt:'updated_at' };
         const REVERSE_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k,v])=>[v,k]));
 
-        function toSnake(o) {
-            const r={};
-            for(const k in o) {
-                if(['id','_synced'].includes(k)) continue;
-                r[FIELD_MAP[k]||k]=o[k];
-            }
-            return r;
+        function toSnake(o) { 
+    const r={}; 
+    for(const k in o) { 
+        if(['_synced','_remote'].includes(k)) continue; 
+        r[FIELD_MAP[k]||k]=o[k]; 
+    } 
+    return r; 
+}
         }
         function toCamel(o) {
             const r={};
@@ -717,7 +718,8 @@
                 const remoteData = payload.new;
                 const localData = toCamel(remoteData);
                 localData._synced = true;
-
+                localData._remote = true;
+                
                 // FIX: getPK() statt localData.id
                 const existing = await db.get(table, getPK(table, localData));
 
@@ -750,22 +752,22 @@
                 for (const t of ['customers','projects','rooms','images','materials','offers','settings']) {
                     const all = await db.getAll(t);
                     const unsynced = all.filter(r => !r._synced);
-
-                    for (const rec of unsynced) {
-                        const p = toSnake(rec);
-                        // Wenn der Datensatz keine ID in der DB hat, mach ein Insert, ansonsten ein Upsert
-                        const { data, error } = await sb.from(t).upsert(p).select();
-                        if (!error && data?.length) {
-                            // FIX: getPK(t, rec) statt rec.id, damit settings (keyPath 'key')
-                            // korrekt lokal gelöscht wird, bevor der neue Datensatz von
-                            // Supabase eingefügt wird. Vorher: DataError -> ganze Sync-
-                            // Schleife brach für ALLE Tabellen ab.
-                            await db.deleteLocalOnly(t, getPK(t, rec));
-                            const nr = toCamel(data[0]);
-                            nr._synced = true;
-                            await db.addLocalOnly(t, nr);
-                        }
-                    }
+for (const rec of unsynced) {
+    const p = toSnake(rec);
+    if (!rec._remote) delete p.id; // neu -> Supabase vergibt eigene ID
+    const { data, error } = await sb.from(t)
+        .upsert(p, rec._remote ? { onConflict: 'id' } : undefined)
+        .select();
+    if (!error && data?.length) { 
+        await db.deleteLocalOnly(t, rec.id); 
+        const nr = toCamel(data[0]); 
+        nr._synced = true; 
+        nr._remote = true;
+        await db.addLocalOnly(t, nr); 
+    } else if (error) {
+        console.warn(`Sync-Fehler ${t}:`, error);
+    }
+}
                 }
                 updateSyncStatus('online', '🟢 Online & Live');
             } catch(e) {
@@ -792,7 +794,7 @@
                         for (const row of data) {
                             const rec = toCamel(row);
                             rec._synced = true;
-
+                            rec._remote = true;
                             const existing = await db.get(t, getPK(t, rec));
                             if (!existing || new Date(rec.updatedAt) > new Date(existing.updatedAt)) {
                                 await db.putLocalOnly(t, rec);
