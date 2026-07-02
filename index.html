@@ -179,23 +179,35 @@
 
     // ==================== DATENBANK ====================
     const DB_NAME = 'KTM_DB';
+    const DB_VERSION = 2; // v2: Index "projectId" auf rooms/images/offers ergänzt (fehlte in v1 -> löschen/laden schlug fehl)
     class DatabaseManager {
         constructor() { this.db = null; }
         async init() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, 1);
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
                 request.onupgradeneeded = (e) => {
                     const db = e.target.result;
-                    ['customers','projects','rooms','images','materials','offers','settings'].forEach(s => {
-                        if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id', autoIncrement: true });
+                    const tx = e.target.transaction;
+                    const stores = ['customers','projects','rooms','images','materials','offers','settings'];
+                    const indexedStores = ['rooms','images','offers'];
+                    stores.forEach(s => {
+                        let store;
+                        if (!db.objectStoreNames.contains(s)) {
+                            store = db.createObjectStore(s, { keyPath: 'id', autoIncrement: true });
+                        } else {
+                            store = tx.objectStore(s);
+                        }
+                        if (indexedStores.includes(s) && !store.indexNames.contains('projectId')) {
+                            store.createIndex('projectId', 'projectId', { unique: false });
+                        }
                     });
                 };
                 request.onsuccess = (e) => { this.db = e.target.result; resolve(); };
                 request.onerror = () => reject(request.error);
             });
         }
-        async add(store, data) { data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).add(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
-        async put(store, data) { data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).put(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
+        async add(store, data) { if (data._synced === undefined) data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).add(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
+        async put(store, data) { if (data._synced === undefined) data._synced = false; return new Promise((resolve, reject) => { const tx = this.db.transaction(store, 'readwrite'); const req = tx.objectStore(store).put(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
         async get(store, id) { return new Promise(r => { this.db.transaction(store).objectStore(store).get(id).onsuccess = e => r(e.target.result); }); }
         async getAll(store) { return new Promise(r => { this.db.transaction(store).objectStore(store).getAll().onsuccess = e => r(e.target.result); }); }
         async delete(store, id) { return new Promise(r => { this.db.transaction(store,'readwrite').objectStore(store).delete(id).onsuccess = () => r(); }); }
@@ -274,8 +286,8 @@
                     <h3>📋 ${escapeHtml(p.title)}</h3><p>Kunde: ${cust?`${cust.firstName} ${cust.lastName}`:'-'}</p><p>Status: ${p.status}</p>
                     <button class="btn btn-sm btn-outline" onclick="openProjectModal(${projectId})">✏️</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteProject(${projectId})">🗑</button>
-                    <h4>Räume</h4><table><tr><th>Name</th><th>Maße</th><th>Fläche</th><th>kW</th></tr>
-                    ${(p.rooms||[]).map(r=>`<tr><td>${escapeHtml(r.name||'Raum')}</td><td>${r.length}x${r.width}x${r.height}</td><td>${((r.length*r.width).toFixed(1))} m²</td><td>${((r.length*r.width*80)/1000).toFixed(1)}</td></tr>`).join('')}</table>
+                    <h4>Räume</h4><table><tr><th>Name</th><th>Maße</th><th>Fläche</th><th>kW</th><th></th></tr>
+                    ${(p.rooms||[]).map(r=>`<tr><td>${escapeHtml(r.name||'Raum')}</td><td>${r.length}x${r.width}x${r.height}</td><td>${((r.length*r.width).toFixed(1))} m²</td><td>${((r.length*r.width*80)/1000).toFixed(1)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteRoom(${r.id},${projectId})">🗑</button></td></tr>`).join('')}</table>
                     <button class="btn btn-sm btn-primary" onclick="openRoomModal(${projectId})">+ Raum</button>
                     ${cooling.recommendation?`<p>❄️ Empf. Kälteleistung: <strong>${cooling.recommendation} kW</strong></p>`:''}
                     <h4>Bilder</h4><div class="image-grid">${(p.images||[]).map(i=>`<div class="image-card"><img src="${i.data}" onerror="this.style.display='none'"><div class="img-overlay">${escapeHtml(i.category||'')}</div></div>`).join('')}</div>
@@ -286,7 +298,10 @@
         }
         contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Projekte</h1><button class="btn btn-primary" onclick="openProjectModal()">+ Neues Projekt</button></div>
             <div class="table-container"><table><thead><tr><th>Titel</th><th>Kunde</th><th>Status</th><th></th></tr></thead><tbody>
-            ${projects.map(p=>{ const c=customers.find(x=>x.id===p.customerId); return `<tr style="cursor:pointer" onclick="app.navigate('projects',${p.id})"><td>${escapeHtml(p.title)}</td><td>${c?`${c.firstName} ${c.lastName}`:'-'}</td><td>${p.status}</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button></td></tr>`; }).join('')}
+            ${projects.map(p=>{ const c=customers.find(x=>x.id===p.customerId); return `<tr style="cursor:pointer" onclick="app.navigate('projects',${p.id})"><td>${escapeHtml(p.title)}</td><td>${c?`${c.firstName} ${c.lastName}`:'-'}</td><td>${p.status}</td><td>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openProjectModal(${p.id})">✏️</button>
+                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteProject(${p.id})">🗑</button>
+            </td></tr>`; }).join('')}
             </tbody></table></div>${detail}`;
     }
 
@@ -304,10 +319,17 @@
 
     async function deleteProject(id) {
         if(!confirm('Projekt und alle zugehörigen Daten löschen?')) return;
-        const rooms = await db.getByIndex('rooms','projectId',id); for(const r of rooms) await db.delete('rooms', r.id);
-        const images = await db.getByIndex('images','projectId',id); for(const i of images) await db.delete('images', i.id);
-        const offers = await db.getByIndex('offers','projectId',id); for(const o of offers) await db.delete('offers', o.id);
-        await db.delete('projects', id); showToast('Projekt gelöscht','info'); app.navigate('projects');
+        try {
+            const rooms = await db.getByIndex('rooms','projectId',id); for(const r of rooms) await db.delete('rooms', r.id);
+            const images = await db.getByIndex('images','projectId',id); for(const i of images) await db.delete('images', i.id);
+            const offers = await db.getByIndex('offers','projectId',id); for(const o of offers) await db.delete('offers', o.id);
+            await db.delete('projects', id);
+            showToast('Projekt gelöscht','info');
+            app.navigate('projects');
+        } catch(e) {
+            console.error('Löschen fehlgeschlagen:', e);
+            showToast('Fehler beim Löschen: ' + e.message, 'error');
+        }
     }
 
     function openRoomModal(projectId) {
@@ -317,6 +339,13 @@
             const obj = { projectId, length: parseFloat(modal.querySelector('#rlength').value)||0, width: parseFloat(modal.querySelector('#rwidth').value)||0, height: parseFloat(modal.querySelector('#rheight').value)||2.5, name: 'Raum' };
             await db.add('rooms', obj); modal.remove(); app.navigate('projects', projectId);
         });
+    }
+
+    async function deleteRoom(id, projectId) {
+        if(!confirm('Raum löschen?')) return;
+        await db.delete('rooms', id);
+        showToast('Raum gelöscht','info');
+        app.navigate('projects', projectId);
     }
 
     function openImageModal(projectId) {
@@ -331,7 +360,7 @@
 
     async function renderMaterials() {
         const materials = await db.getAll('materials');
-        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;"><h1 class="page-title" style="margin:0;">Material</h1><button class="btn btn-primary" onclick="openMaterialModal()">+ Neues Material</button></div>
+        contentArea.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:20px;gap:10px;"><h1 class="page-title" style="margin:0;">Material</h1><div style="display:flex;gap:10px;"><button class="btn btn-outline" onclick="importMaterialsExcel()">📥 Excel importieren</button><button class="btn btn-primary" onclick="openMaterialModal()">+ Neues Material</button></div></div>
             <div class="table-container"><table><thead><tr><th>Name</th><th>Kategorie</th><th>Einheit</th><th>VK-Preis</th><th></th></tr></thead><tbody>
             ${materials.map(m=>`<tr><td><strong>${escapeHtml(m.name)}</strong></td><td>${escapeHtml(m.category||'')}</td><td>${m.unit||'Stk'}</td><td>${formatCurrency(m.sellingPrice)}</td><td>
                 <button class="btn btn-sm btn-outline" onclick="openMaterialModal(${m.id})">✏️</button>
@@ -352,6 +381,45 @@
         });
     }
     async function deleteMaterial(id) { if(confirm('Löschen?')) { await db.delete('materials', id); renderMaterials(); } }
+
+    async function importMaterialsExcel() {
+        const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.xls';
+        input.onchange = async (e) => {
+            const file = e.target.files[0]; if(!file) return;
+            try {
+                const buf = await file.arrayBuffer();
+                const wb = XLSX.read(buf, { type: 'array' });
+                const sheetName = wb.SheetNames.find(n => /material/i.test(n)) || wb.SheetNames[0];
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+                const existing = await db.getAll('materials');
+                const existingNames = new Set(existing.map(m => m.name));
+                let imported = 0, skipped = 0;
+                for (const row of rows) {
+                    const artikel = (row['Artikel'] || '').toString().trim();
+                    if (!artikel) continue;
+                    const hersteller = (row['Hersteller'] || '').toString().trim();
+                    const name = hersteller ? `${hersteller} ${artikel}` : artikel;
+                    if (existingNames.has(name)) { skipped++; continue; }
+                    const obj = {
+                        name,
+                        category: (row['Kategorie'] || row['Unterkategorie'] || '').toString().trim(),
+                        unit: (row['Einheit'] || 'Stk').toString().trim() || 'Stk',
+                        purchasePrice: parseFloat(row['EK Netto']) || 0,
+                        sellingPrice: parseFloat(row['VK Netto']) || 0
+                    };
+                    await db.add('materials', obj);
+                    existingNames.add(name);
+                    imported++;
+                }
+                showToast(`${imported} Artikel importiert${skipped ? `, ${skipped} übersprungen (bereits vorhanden)` : ''}`, 'success');
+                renderMaterials();
+            } catch(err) {
+                console.error(err);
+                showToast('Fehler beim Import: ' + err.message, 'error');
+            }
+        };
+        input.click();
+    }
 
     async function renderOffers() {
         const offers = await db.getAll('offers'); const projects = await db.getAll('projects'); const customers = await db.getAll('customers');
