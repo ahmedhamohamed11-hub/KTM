@@ -492,6 +492,47 @@
         .empty-note { color: var(--text-muted); font-size: 13.5px; text-align: center; padding: 30px 12px; }
         .settings-form { max-width: 640px; }
 
+        /* ============ DETAIL-SEKTIONEN / BESICHTIGUNG ============ */
+        .detail-section { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 18px; }
+        .detail-section-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+        .detail-section-head h4 { margin: 0; font-size: 15px; }
+        .survey-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+        .survey-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+        .survey-chip {
+            background: var(--bg-tertiary); border: 1px solid var(--border);
+            border-radius: var(--radius-pill); padding: 5px 13px; font-size: 12.5px;
+            display: inline-flex; gap: 7px; align-items: center;
+        }
+        .survey-chip span { color: var(--text-muted); }
+
+        /* ============ FELDER & KATEGORIEN ============ */
+        .field-row {
+            display: flex; align-items: center; gap: 10px;
+            background: var(--bg-content); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 9px 12px; margin-bottom: 8px;
+        }
+        .field-row.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+        .drag-handle { cursor: grab; color: var(--text-muted); font-weight: 700; letter-spacing: -2px; user-select: none; }
+        .fields-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+        .tab-btn {
+            border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary);
+            font-size: 13px; font-weight: 600; padding: 7px 15px; border-radius: var(--radius-pill); cursor: pointer;
+            transition: all var(--transition);
+        }
+        .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        /* ============ KANBAN: STATUS & DRAG ============ */
+        .pc-status {
+            width: auto; max-width: 100%; font-size: 11px; font-weight: 600;
+            padding: 4px 22px 4px 8px; border-radius: 8px; cursor: pointer;
+            background-position: right 6px center; appearance: none; -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238aa0a9' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+        }
+        .pipe-col.drag-over { border-color: var(--accent); background: var(--accent-light); }
+        .pipe-card { user-select: none; }
+        .pipe-card:active { cursor: grabbing; }
+
         /* ============ RESPONSIVE ============ */
         /* Tablet */
         @media (max-width: 1024px) {
@@ -520,6 +561,7 @@
             .pipeline { display: flex; }
             .pipe-col { min-width: 240px; flex-shrink: 0; }
             .form-row, .form-row-3 { grid-template-columns: 1fr; }
+            .survey-grid { grid-template-columns: 1fr; }
             .calendar-day { min-height: 62px; padding: 4px; }
             .cal-event-pill { display: none; }
             .calendar-day .cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin: 2px auto 0; }
@@ -678,6 +720,8 @@ const FIELD_MAP = {
   articleNumber: 'article_number',
   purchasePrice: 'purchase_price',
   sellingPrice: 'selling_price',
+  materialId: 'material_id',
+  customData: 'custom_data',
 
   offerNumber: 'offer_number',
   offerDate: 'offer_date',
@@ -743,10 +787,10 @@ function toSnake(o) {
                         reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
                         return;
                     }
-                    const req = indexedDB.open('KTM_DB', 5);
+                    const req = indexedDB.open('KTM_DB', 6);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
-                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'settings', 'events'].forEach(s => {
+                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'settings', 'events'].forEach(s => {
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
                     };
@@ -927,6 +971,7 @@ async put(storeName, data) {
                     offers: await this.getAll('offers'),
                     events: await this.getAll('events'),
                     orders: await this.getAll('orders'),
+                    projectMaterials: await this.getAll('projectMaterials'),
                     settings: await this.getAll('settings'),
                     exportDate: new Date().toISOString(),
                     version: '2.0'
@@ -934,7 +979,7 @@ async put(storeName, data) {
             }
 
             async importAllData(data) {
-                for(const s of ['customers','projects','rooms','images','materials','offers','orders','settings','events']) await this.clear(s);
+                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','settings','events']) await this.clear(s);
                 for (const c of data.customers || []) await this.addLocalOnly('customers', c);
                 for (const p of data.projects || []) await this.addLocalOnly('projects', p);
                 for (const r of data.rooms || []) await this.addLocalOnly('rooms', r);
@@ -943,6 +988,7 @@ async put(storeName, data) {
                 for (const o of data.offers || []) await this.addLocalOnly('offers', o);
                 for (const ev of data.events || []) await this.addLocalOnly('events', ev);
                 for (const o of data.orders || []) await this.addLocalOnly('orders', o);
+                for (const pm of data.projectMaterials || []) await this.addLocalOnly('projectMaterials', pm);
                 for (const s of data.settings || []) await this.putLocalOnly('settings', s);
                 backgroundSyncPush();
             }
@@ -1013,14 +1059,28 @@ await db.putLocalOnly(table, localData);
                 await backgroundSyncPush();
 
                 const failedTables = [];
-                for (const t of ['customers','projects','rooms','images','materials','offers','orders','events','settings']) {
+                for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','events','settings']) {
                     const { data, error } = await sb.from(t).select('*');
                     if (!error && data) {
+                        const remoteIds = new Set(data.map(r => String(t === 'settings' ? r.key : r.id)));
                         for (const row of data) {
                             const localData = toCamel(row);
                             localData._synced = true;
                             localData._remote = true;
                             await db.putLocalOnly(t, localData);
+                        }
+                        // ECHTE LÖSCH-SYNCHRONISATION: Was auf dem Server nicht mehr
+                        // existiert, aber lokal als "synchronisiert" markiert ist, wurde
+                        // von einem anderen Gerät gelöscht -> lokal ebenfalls entfernen.
+                        // Lokale, noch nie gepushte Datensätze (_synced !== true) bleiben.
+                        const localRows = await db.getAll(t);
+                        for (const rec of localRows) {
+                            const key = t === 'settings' ? rec.key : rec.id;
+                            if (key === undefined || key === null) continue;
+                            if (t === 'settings' && typeof key === 'string' && key.startsWith('_')) continue;
+                            if (rec._synced === true && !remoteIds.has(String(key))) {
+                                await db.deleteLocalOnly(t, key);
+                            }
                         }
                     } else if (error) {
                         console.warn(`Sync-Fehler bei Tabelle "${t}":`, error.message);
@@ -1124,7 +1184,7 @@ async function backgroundSyncPushInner() {
         // einen späteren Push versehentlich wieder auftauchen).
         await flushPendingDeletes();
 
-        for (const t of ['customers','projects','rooms','images','materials','offers','orders','events','settings']) {
+        for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','events','settings']) {
 
             const unsynced = (await db.getAll(t)).filter(r => {
                 if (r._synced) return false;
@@ -1450,11 +1510,13 @@ async function reconcileOfferCounter() {
         const PAGE_TITLES = {
             dashboard: 'Dashboard', customers: 'Kunden', projects: 'Projekte',
             calendar: 'Kalender', materials: 'Materialien', offers: 'Angebote',
-            orders: 'Bestellungen', settings: 'Einstellungen', backup: 'Backup'
+            orders: 'Bestellungen', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien'
         };
         function setPageTitle(page) {
             const el = document.getElementById('pageTitle');
             if (el) el.textContent = PAGE_TITLES[page] || 'KTM';
+            // Kategorien/Felder still im Hintergrund aktualisieren (Realtime-Sync)
+            if (typeof loadCustomization === 'function') loadCustomization().catch(() => {});
         }
         function updateBottomNav(page) {
             document.querySelectorAll('#bottomNav button[data-bnav]').forEach(b => {
@@ -1770,6 +1832,7 @@ async function reconcileOfferCounter() {
                                         <td style="text-align:right;white-space:nowrap;">
                                             <button class="btn btn-sm btn-outline" onclick="app.openCustomerModal(${idJS(c.id)})">${icon('edit')}</button>
                                             <button class="btn btn-sm btn-outline" onclick="app.duplicateCustomer(${idJS(c.id)})">${icon('copy')}</button>
+                                            ${getCustomFields('customers').length ? `<button class="btn btn-sm btn-outline" title="Zusatzfelder" onclick="app.openCustomDataModal('customers', ${idJS(c.id)})">🔧</button>` : ''}
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteCustomer(${idJS(c.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>
@@ -1797,12 +1860,15 @@ async function reconcileOfferCounter() {
             { key: 'Montage', label: 'Montage', statuses: ['Auftrag erhalten', 'Material bestellt', 'Montage geplant', 'Montage läuft'] },
             { key: 'Fertig', label: 'Fertig', statuses: ['Fertig', 'Archiv'] }
         ];
+        const PROJECT_STATUSES = PIPELINE_COLS.flatMap(c => c.statuses);
 
         function renderProjects(selectedProjectId = null) {
             (async () => {
                 const projects = await db.getAll('projects');
                 const customers = await db.getAll('customers');
                 const allRooms = await db.getAll('rooms');
+                const allPM = await db.getAll('projectMaterials');
+                const materials = await db.getAll('materials');
                 const roomCountByProject = {};
                 for (const r of allRooms) {
                     if (r.projectId === undefined || r.projectId === null) continue;
@@ -1817,58 +1883,140 @@ async function reconcileOfferCounter() {
                     if (project) {
                         const customer = customers.find(c => String(c.id) === String(project.customerId));
                         const cooling = calculateCoolingCapacity(project.rooms || []);
+                        const pm = allPM.filter(x => String(x.projectId) === String(project.id));
+                        const survey = project.survey || {};
+                        const surveyFilled = Object.keys(survey).some(k => survey[k] !== '' && survey[k] !== null && survey[k] !== undefined && survey[k] !== false);
+                        const projFieldDefs = getCustomFields('projects');
+                        const cd = project.customData || {};
+
                         detailHtml = `
                             <div class="panel" id="projectDetail" style="margin-top:20px;">
-                                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:16px;">
-                                    <h3 style="margin:0;">${escapeHtml(project.title || 'Unbenannt')}</h3>
-                                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px;">
+                                    <div>
+                                        <h3 style="margin:0;">${escapeHtml(project.title || 'Unbenannt')}</h3>
+                                        <div style="color:var(--text-muted);font-size:13px;">${escapeHtml(customer ? `${customer.firstName} ${customer.lastName}` : 'Kein Kunde zugewiesen')}</div>
+                                    </div>
+                                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                                        <select class="filter-select" onchange="app.setProjectStatus(${idJS(project.id)}, this.value)">
+                                            ${PROJECT_STATUSES.map(s => `<option value="${s}" ${project.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                        </select>
                                         <button class="btn btn-sm btn-outline" onclick="app.openProjectModal(${idJS(project.id)})">${icon('edit')} Bearbeiten</button>
                                         <button class="btn btn-sm btn-primary" onclick="app.createOffer(${idJS(project.id)})">${icon('file')} Angebot</button>
+                                        <button class="btn btn-sm btn-outline" onclick="app.exportProjectOverviewPDF(${idJS(project.id)})">${icon('pdf')} Übersicht-PDF</button>
                                         <button class="btn btn-sm btn-outline" onclick="app.openOrderModal(null, ${idJS(project.id)})">${icon('cart')} Bestellung</button>
                                         <button class="btn btn-sm btn-danger" onclick="app.deleteProject(${idJS(project.id)})">${icon('trash')}</button>
                                     </div>
                                 </div>
-                                <p><strong>Kunde:</strong> ${escapeHtml(customer ? `${customer.firstName} ${customer.lastName}` : 'Kein Kunde zugewiesen')}</p>
-                                <p><strong>Status:</strong> <span class="status-badge ${getStatusClass(project.status)}">${escapeHtml(project.status || 'Neu')}</span></p>
-                                <p><strong>Notizen:</strong> ${escapeHtml(project.notes || '-')}</p>
+                                ${project.notes ? `<p style="margin-bottom:14px;"><strong>Notizen:</strong> ${escapeHtml(project.notes)}</p>` : ''}
 
-                                <h4 style="margin-top:20px;">Räume (${(project.rooms||[]).length})</h4>
-                                <div class="table-container" style="margin-top:8px;">
-                                    <table>
-                                        <thead><tr><th>Raum</th><th>Länge (m)</th><th>Breite (m)</th><th>Höhe (m)</th><th>Fläche (m²)</th><th>Volumen (m³)</th><th>Empf. kW</th><th></th></tr></thead>
-                                        <tbody>
-                                            ${(project.rooms||[]).map(r => {
-                                                const area = ((r.length||0)*(r.width||0)).toFixed(1);
-                                                const volume = (area*(r.height||2.5)).toFixed(1);
-                                                const roomKW = ((area*80)/1000).toFixed(1);
-                                                return `<tr>
-                                                    <td><strong>${escapeHtml(r.name||'Unbenannt')}</strong></td>
-                                                    <td>${r.length||0}</td><td>${r.width||0}</td><td>${r.height||2.5}</td>
-                                                    <td>${area}</td><td>${volume}</td><td>${roomKW} kW</td>
-                                                    <td><button class="btn btn-sm btn-danger" onclick="app.deleteRoom(${idJS(r.id)},${idJS(project.id)})">${icon('trash')}</button></td>
-                                                </tr>`;
-                                            }).join('') || '<tr><td colspan="8" class="empty-note">Keine Räume</td></tr>'}
-                                        </tbody>
-                                    </table>
+                                <!-- ===== Besichtigung ===== -->
+                                <div class="detail-section">
+                                    <div class="detail-section-head">
+                                        <h4>📋 Besichtigung</h4>
+                                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                            <button class="btn btn-sm btn-outline" onclick="app.openSurveyModal(${idJS(project.id)})">${icon('edit')} ${surveyFilled ? 'Bearbeiten' : 'Erfassen'}</button>
+                                            ${surveyFilled ? `<button class="btn btn-sm btn-primary" onclick="app.generateMaterialSuggestions(${idJS(project.id)})">${icon('box')} Materialvorschläge erzeugen</button>` : ''}
+                                        </div>
+                                    </div>
+                                    ${surveyFilled ? `<div class="survey-summary">${SURVEY_FIELDS.filter(f => {
+                                        const v = survey[f.key];
+                                        return v !== '' && v !== null && v !== undefined && v !== false && v !== 0;
+                                    }).map(f => `<div class="survey-chip"><span>${escapeHtml(f.label)}</span><strong>${survey[f.key] === true ? 'Ja' : escapeHtml(String(survey[f.key]))}${f.unit && survey[f.key] !== true ? ' ' + f.unit : ''}</strong></div>`).join('') || '<span class="empty-note" style="padding:8px;">Keine Angaben</span>'}</div>`
+                                    : '<div class="empty-note" style="padding:14px;">Noch keine Besichtigungsdaten erfasst.</div>'}
                                 </div>
-                                <button class="btn btn-sm btn-primary" style="margin-top:10px;" onclick="app.openRoomModal(${idJS(project.id)})">${icon('plus')} Raum hinzufügen</button>
 
-                                ${cooling.details.length > 0 ? `
-                                <div style="background:var(--accent-light);border-radius:var(--radius-md);padding:16px;margin-top:16px;">
-                                    <strong>❄ Kälteleistungs-Empfehlung:</strong> <span style="font-size:22px;font-weight:700;color:var(--accent);">${cooling.recommendation} kW</span>
-                                    <br><small>Gesamtlast: ${cooling.totalKW} kW | Faustformel: 80 W/m²</small>
+                                <!-- ===== Räume ===== -->
+                                <div class="detail-section">
+                                    <div class="detail-section-head">
+                                        <h4>🚪 Räume (${(project.rooms||[]).length})</h4>
+                                        <button class="btn btn-sm btn-primary" onclick="app.openRoomModal(${idJS(project.id)})">${icon('plus')} Raum</button>
+                                    </div>
+                                    <div class="table-container">
+                                        <table>
+                                            <thead><tr><th>Raum</th><th>L (m)</th><th>B (m)</th><th>H (m)</th><th>Fläche</th><th>Volumen</th><th>Empf. kW</th><th></th></tr></thead>
+                                            <tbody>
+                                                ${(project.rooms||[]).map(r => {
+                                                    const area = ((r.length||0)*(r.width||0)).toFixed(1);
+                                                    const volume = (area*(r.height||2.5)).toFixed(1);
+                                                    const roomKW = ((area*80)/1000).toFixed(1);
+                                                    return `<tr>
+                                                        <td><strong>${escapeHtml(r.name||'Unbenannt')}</strong></td>
+                                                        <td>${r.length||0}</td><td>${r.width||0}</td><td>${r.height||2.5}</td>
+                                                        <td>${area} m²</td><td>${volume} m³</td><td>${roomKW} kW</td>
+                                                        <td><button class="btn btn-sm btn-danger" onclick="app.deleteRoom(${idJS(r.id)},${idJS(project.id)})">${icon('trash')}</button></td>
+                                                    </tr>`;
+                                                }).join('') || '<tr><td colspan="8" class="empty-note">Keine Räume</td></tr>'}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    ${cooling.details.length > 0 ? `
+                                    <div style="background:var(--accent-light);border-radius:var(--radius-sm);padding:12px 16px;margin-top:10px;font-size:13.5px;">
+                                        <strong>❄ Kälteleistungs-Empfehlung:</strong> <span style="font-size:19px;font-weight:700;color:var(--accent);">${cooling.recommendation} kW</span>
+                                        &nbsp;<small style="color:var(--text-muted);">(Gesamtlast ${cooling.totalKW} kW · Faustformel 80 W/m²)</small>
+                                    </div>` : ''}
+                                </div>
+
+                                <!-- ===== Material ===== -->
+                                <div class="detail-section">
+                                    <div class="detail-section-head">
+                                        <h4>📦 Material (${pm.length})</h4>
+                                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                            <button class="btn btn-sm btn-primary" onclick="app.openProjectMaterialModal(null, ${idJS(project.id)})">${icon('plus')} Material</button>
+                                            ${pm.length > 0 ? `<button class="btn btn-sm btn-outline" onclick="app.createOrderFromProject(${idJS(project.id)})">${icon('cart')} Bestellliste erstellen</button>` : ''}
+                                        </div>
+                                    </div>
+                                    <div class="table-container">
+                                        <table>
+                                            <thead><tr><th>Material</th><th>Größe</th><th style="width:110px;">Menge</th><th style="width:100px;">Einheit</th><th>Raum</th><th>Bemerkung</th><th></th></tr></thead>
+                                            <tbody>
+                                                ${pm.map(x => {
+                                                    const mat = materials.find(m => String(m.id) === String(x.materialId));
+                                                    const room = (project.rooms||[]).find(r => String(r.id) === String(x.roomId));
+                                                    return `<tr>
+                                                        <td><strong>${escapeHtml(mat?.name || x.name || 'Material')}</strong></td>
+                                                        <td>${escapeHtml(x.size || mat?.size || '-')}</td>
+                                                        <td><input type="number" inputmode="decimal" step="any" min="0" value="${x.quantity ?? 0}" style="padding:6px 9px;text-align:center;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'quantity', this.value)"></td>
+                                                        <td><select style="padding:6px 6px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'unit', this.value)">${UNITS.map(u => `<option value="${u}" ${(x.unit || 'Stk') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></td>
+                                                        <td><select style="padding:6px 6px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'roomId', this.value)"><option value="">–</option>${(project.rooms||[]).map(r => `<option value="${escapeHtml(String(r.id))}" ${String(x.roomId) === String(r.id) ? 'selected' : ''}>${escapeHtml(r.name || 'Raum')}</option>`).join('')}</select></td>
+                                                        <td><input type="text" value="${escapeHtml(x.note || '')}" placeholder="..." style="padding:6px 9px;min-width:110px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'note', this.value)"></td>
+                                                        <td><button class="btn btn-sm btn-danger" onclick="app.deleteProjectMaterial(${idJS(x.id)}, ${idJS(project.id)})">${icon('trash')}</button></td>
+                                                    </tr>`;
+                                                }).join('') || '<tr><td colspan="7" class="empty-note">Noch kein Material zugeordnet. Tipp: erst Besichtigung erfassen, dann „Materialvorschläge erzeugen".</td></tr>'}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                ${projFieldDefs.length > 0 ? `
+                                <div class="detail-section">
+                                    <div class="detail-section-head">
+                                        <h4>🔧 Zusatzfelder</h4>
+                                        <button class="btn btn-sm btn-outline" onclick="app.openCustomDataModal('projects', ${idJS(project.id)})">${icon('edit')} Bearbeiten</button>
+                                    </div>
+                                    <div class="survey-summary">
+                                        ${projFieldDefs.map(f => {
+                                            const v = cd[f.id];
+                                            const disp = v === undefined || v === '' || v === null ? '–' : (v === true ? 'Ja' : v === false ? 'Nein' : Array.isArray(v) ? v.join(', ') : String(v));
+                                            return `<div class="survey-chip"><span>${escapeHtml(f.label)}</span><strong>${escapeHtml(disp)}${f.unit && disp !== '–' ? ' ' + escapeHtml(f.unit) : ''}</strong></div>`;
+                                        }).join('')}
+                                    </div>
                                 </div>` : ''}
 
-                                <h4 style="margin-top:20px;">Bilder (${(project.images||[]).length})</h4>
-                                <div class="image-grid" style="margin-top:8px;">
-                                    ${(project.images||[]).map(img => `
-                                        <div class="image-card" onclick="app.viewImage('${img.data}')">
-                                            <img src="${img.data}" alt="${escapeHtml(img.category||'')}">
-                                            <div class="img-overlay">${escapeHtml(img.category||'Sonstiges')} ${img.label ? '- '+escapeHtml(img.label) : ''}</div>
-                                        </div>
-                                    `).join('')}
+                                <!-- ===== Bilder ===== -->
+                                <div class="detail-section">
+                                    <div class="detail-section-head">
+                                        <h4>📷 Bilder (${(project.images||[]).length})</h4>
+                                        <button class="btn btn-sm btn-primary" onclick="app.openImageModal(${idJS(project.id)})">${icon('plus')} Bild</button>
+                                    </div>
+                                    <div class="image-grid">
+                                        ${(project.images||[]).map(img => `
+                                            <div class="image-card" onclick="app.viewImage('${img.data}')">
+                                                <img src="${img.data}" alt="${escapeHtml(img.category||'')}">
+                                                <div class="img-overlay">${escapeHtml(img.category||'Sonstiges')} ${img.label ? '- '+escapeHtml(img.label) : ''}</div>
+                                            </div>
+                                        `).join('') || '<div class="empty-note" style="grid-column:1/-1;">Keine Bilder</div>'}
+                                    </div>
                                 </div>
-                                <button class="btn btn-sm btn-primary" style="margin-top:10px;" onclick="app.openImageModal(${idJS(project.id)})">${icon('plus')} Bild hinzufügen</button>
                             </div>
                         `;
                     }
@@ -1879,17 +2027,24 @@ async function reconcileOfferCounter() {
                         .filter(p => col.statuses.includes(p.status || 'Neu'))
                         .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
                     return `
-                        <div class="pipe-col">
+                        <div class="pipe-col" data-status="${col.statuses[0]}"
+                             ondragover="event.preventDefault(); this.classList.add('drag-over');"
+                             ondragleave="this.classList.remove('drag-over');"
+                             ondrop="this.classList.remove('drag-over'); app.dropProjectCard(event, '${col.statuses[0]}')">
                             <div class="pipe-head"><span>${col.label}</span><span class="pipe-count">${colProjects.length}</span></div>
-                            ${colProjects.length === 0 ? '<div class="pipe-empty">Leer</div>' : colProjects.map(p => {
+                            ${colProjects.length === 0 ? '<div class="pipe-empty">Hierher ziehen</div>' : colProjects.map(p => {
                                 const cust = customers.find(c => String(c.id) === String(p.customerId));
                                 return `
-                                    <div class="pipe-card" onclick="app.navigate('projects', ${idJS(p.id)})">
+                                    <div class="pipe-card" draggable="true"
+                                         ondragstart="app.dragProjectCard(event, '${escapeHtml(String(p.id))}')"
+                                         onclick="app.navigate('projects', ${idJS(p.id)})">
                                         <div class="pc-title">${escapeHtml(p.title || 'Unbenannt')}</div>
                                         <div class="pc-sub">${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : 'Kein Kunde')}</div>
-                                        <div class="pc-sub" style="margin-top:5px;display:flex;justify-content:space-between;align-items:center;">
-                                            <span class="status-badge ${getStatusClass(p.status)}" style="font-size:10px;padding:2px 8px;">${escapeHtml(p.status || 'Neu')}</span>
-                                            <span>${roomCountByProject[String(p.id)] || 0} Räume</span>
+                                        <div class="pc-sub" style="margin-top:7px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                                            <select class="pc-status" onclick="event.stopPropagation()" onchange="event.stopPropagation(); app.setProjectStatus(${idJS(p.id)}, this.value)">
+                                                ${PROJECT_STATUSES.map(s => `<option value="${s}" ${(p.status || 'Neu') === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                            </select>
+                                            <span style="white-space:nowrap;">${roomCountByProject[String(p.id)] || 0} 🚪</span>
                                         </div>
                                     </div>
                                 `;
@@ -1900,7 +2055,7 @@ async function reconcileOfferCounter() {
 
                 contentArea.innerHTML = `
                     <div class="page-head">
-                        <div style="font-weight:700;font-size:16px;">Projekt-Pipeline</div>
+                        <div style="font-weight:700;font-size:16px;">Projekt-Pipeline <small style="color:var(--text-muted);font-weight:500;">– Karten per Drag & Drop verschieben</small></div>
                         <button class="btn btn-primary" onclick="app.openProjectModal()">${icon('plus')} Neues Projekt</button>
                     </div>
                     <div class="pipeline">${colsHtml}</div>
@@ -1922,7 +2077,7 @@ async function reconcileOfferCounter() {
                 const q = listFilters.materials.q.toLowerCase();
                 const filtered = materials.filter(m => {
                     if (!q) return true;
-                    return `${m.name || ''} ${m.articleNumber || ''} ${m.category || ''} ${m.manufacturer || ''}`.toLowerCase().includes(q);
+                    return `${m.name || ''} ${m.articleNumber || ''} ${m.category || ''} ${m.manufacturer || ''} ${m.size || ''}`.toLowerCase().includes(q);
                 });
 
                 contentArea.innerHTML = `
@@ -1938,7 +2093,7 @@ async function reconcileOfferCounter() {
                     </div>
                     <div class="table-container">
                         <table>
-                            <thead><tr><th>Artikel</th><th>Kategorie</th><th>Art.-Nr.</th><th>EK-Preis</th><th>VK-Preis</th><th>Bestand</th><th style="text-align:right;">Aktionen</th></tr></thead>
+                            <thead><tr><th>Artikel</th><th>Größe</th><th>Kategorie</th><th>Art.-Nr.</th><th>EK-Preis</th><th>VK-Preis</th><th>Bestand</th><th style="text-align:right;">Aktionen</th></tr></thead>
                             <tbody>
                                 ${filtered.map(m => `
                                     <tr>
@@ -1946,21 +2101,21 @@ async function reconcileOfferCounter() {
                                             ${m.image ? `<img src="${m.image}" style="width:34px;height:34px;object-fit:cover;border-radius:8px;">` : ''}
                                             <div><strong>${escapeHtml(m.name)}</strong>${m.manufacturer ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(m.manufacturer)}</div>` : ''}</div>
                                         </td>
-                                        <td>${escapeHtml(m.category || '-')}</td>
+                                        <td>${escapeHtml(m.size || '-')}</td>
+                                        <td>${m.category ? `<span class="status-badge" style="background:${catColor(m.category)}22;color:${catColor(m.category)};">${escapeHtml(m.category)}</span>` : '-'}</td>
                                         <td>${escapeHtml(m.articleNumber || '-')}</td>
                                         <td>${formatCurrency(m.purchasePrice || 0)}</td>
                                         <td>${formatCurrency(m.sellingPrice || 0)}</td>
                                         <td style="white-space:nowrap;">
-                                            <button class="btn btn-sm btn-outline" style="padding:3px 9px;" onclick="app.adjustStock(${idJS(m.id)}, -1)">−</button>
-                                            <span style="display:inline-block;min-width:32px;text-align:center;font-weight:700;">${m.stock ?? 0}</span>
-                                            <button class="btn btn-sm btn-outline" style="padding:3px 9px;" onclick="app.adjustStock(${idJS(m.id)}, 1)">+</button>
+                                            <input type="number" inputmode="decimal" step="any" min="0" value="${m.stock ?? 0}" style="width:84px;padding:6px 9px;text-align:center;font-weight:700;" onchange="app.setStock(${idJS(m.id)}, this.value)" title="Bestand direkt eingeben">
                                         </td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             <button class="btn btn-sm btn-outline" onclick="app.openMaterialModal(${idJS(m.id)})">${icon('edit')}</button>
+                                            ${getCustomFields('materials').length ? `<button class="btn btn-sm btn-outline" title="Zusatzfelder" onclick="app.openCustomDataModal('materials', ${idJS(m.id)})">🔧</button>` : ''}
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteMaterial(${idJS(m.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>
-                                `).join('') || '<tr><td colspan="7" class="empty-note">Keine Materialien</td></tr>'}
+                                `).join('') || '<tr><td colspan="8" class="empty-note">Keine Materialien</td></tr>'}
                             </tbody>
                         </table>
                     </div>
@@ -2096,7 +2251,9 @@ async function reconcileOfferCounter() {
                                         <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(o.items || '')}">${escapeHtml(o.items || '-')}</td>
                                         <td><span class="status-badge ${orderStatusClass(o.status || 'Offen')}">${escapeHtml(o.status || 'Offen')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
+                                            <button class="btn btn-sm btn-primary" onclick="app.exportOrderPDF(${idJS(o.id)})">${icon('pdf')} PDF</button>
                                             <button class="btn btn-sm btn-outline" onclick="app.openOrderModal(${idJS(o.id)})">${icon('edit')}</button>
+                                            ${getCustomFields('orders').length ? `<button class="btn btn-sm btn-outline" title="Zusatzfelder" onclick="app.openCustomDataModal('orders', ${idJS(o.id)})">🔧</button>` : ''}
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteOrder(${idJS(o.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>`;
@@ -2387,10 +2544,491 @@ async function reconcileOfferCounter() {
         }
 
         // ============================================================
-        // ============ APP-ERWEITERUNGEN (Bestellungen etc.) =========
+        // ============================================================
+        // ============ EINHEITEN & BESICHTIGUNG ======================
+        // ============================================================
+        const UNITS = ['Stk', 'm', 'm²', 'lfm', 'Rolle', 'Karton', 'Paket', 'l', 'kg', 'Paar', 'Set', 'Std', 'Pauschal'];
+
+        const SURVEY_FIELDS = [
+            { key: 'pipeLength', label: 'Rohrlänge', type: 'number', unit: 'm', group: 'Leitungen' },
+            { key: 'pipeDimension', label: 'Rohrdimension', type: 'text', placeholder: 'z. B. 1/4"+1/2", 22 mm', group: 'Leitungen' },
+            { key: 'insulation', label: 'Isolierung', type: 'text', placeholder: 'z. B. 9 mm, 13 mm', group: 'Leitungen' },
+            { key: 'cableDuct', label: 'Kabelkanal', type: 'number', unit: 'm', group: 'Leitungen' },
+            { key: 'powerCable', label: 'Stromkabel (Typ)', type: 'text', placeholder: 'z. B. 5×2,5 mm²', group: 'Leitungen' },
+            { key: 'powerCableLength', label: 'Stromkabel Länge', type: 'number', unit: 'm', group: 'Leitungen' },
+            { key: 'commCable', label: 'Kommunikationskabel (Typ)', type: 'text', placeholder: 'z. B. 4×0,75 mm²', group: 'Leitungen' },
+            { key: 'commCableLength', label: 'Kommunikationskabel Länge', type: 'number', unit: 'm', group: 'Leitungen' },
+            { key: 'condensateLine', label: 'Kondensatleitung', type: 'number', unit: 'm', group: 'Leitungen' },
+            { key: 'condensatePump', label: 'Kondensatpumpe', type: 'bool', group: 'Leitungen' },
+            { key: 'coreDrills', label: 'Kernbohrungen', type: 'number', unit: 'Stk', group: 'Montage' },
+            { key: 'wallMaterial', label: 'Wandmaterial', type: 'select', options: ['Ziegel', 'Beton', 'Holz', 'Rigips', 'Vollwärmeschutz', 'Sonstiges'], group: 'Montage' },
+            { key: 'outdoorMounting', label: 'Außengerät-Aufstellung', type: 'select', options: ['Big Foot', 'Wandkonsole', 'Fundament', 'Balkon', 'Dach', 'Garten', 'Sonstiges'], group: 'Montage' },
+            { key: 'fiProtection', label: 'FI-Schutz vorhanden', type: 'bool', group: 'Elektrik' },
+            { key: 'fuse', label: 'Absicherung', type: 'text', placeholder: 'z. B. 16 A', group: 'Elektrik' },
+            { key: 'remarks', label: 'Bemerkungen', type: 'textarea', group: 'Sonstiges' }
+        ];
+
+        // ============================================================
+        // ============ ANPASSUNGEN (Kategorien, Felder, Vorlagen) ====
+        // ============================================================
+        const CAT_PALETTE = ['#12808f', '#178a62', '#c07b2f', '#5b63d3', '#c24747', '#7a5cc4', '#2b8a9e', '#8a6d3b', '#3d7a4f', '#a05276', '#4a6fa5', '#767676', '#b3541e', '#1f7a8c'];
+        let _ktmCats = null, _ktmFields = null, _ktmTemplates = null;
+
+        async function loadCustomization() {
+            try {
+                const catsRaw = await getSetting('materialCategories', '');
+                _ktmCats = catsRaw ? JSON.parse(catsRaw) : null;
+            } catch (e) { _ktmCats = null; }
+            try {
+                const fieldsRaw = await getSetting('customFields', '');
+                _ktmFields = fieldsRaw ? JSON.parse(fieldsRaw) : [];
+            } catch (e) { _ktmFields = []; }
+            try {
+                const tplRaw = await getSetting('fieldTemplates', '');
+                _ktmTemplates = tplRaw ? JSON.parse(tplRaw) : [];
+            } catch (e) { _ktmTemplates = []; }
+        }
+
+        function getMaterialCategories() {
+            if (_ktmCats && Array.isArray(_ktmCats) && _ktmCats.length) return _ktmCats;
+            const base = (typeof MATERIAL_CATEGORIES !== 'undefined' ? MATERIAL_CATEGORIES : ['Sonstiges']);
+            return base.map((name, i) => ({ name, color: CAT_PALETTE[i % CAT_PALETTE.length] }));
+        }
+        function catColor(name) {
+            const c = getMaterialCategories().find(x => x.name === name);
+            return c?.color || '#767676';
+        }
+        async function saveMaterialCategories(cats) {
+            _ktmCats = cats;
+            await setSetting('materialCategories', JSON.stringify(cats));
+        }
+        function getCustomFields(entity) {
+            return (_ktmFields || []).filter(f => f.entity === entity).sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        async function saveCustomFields(fields) {
+            _ktmFields = fields;
+            await setSetting('customFields', JSON.stringify(fields));
+        }
+        async function saveFieldTemplates(tpls) {
+            _ktmTemplates = tpls;
+            await setSetting('fieldTemplates', JSON.stringify(tpls));
+        }
+
+        const FIELD_TYPES = [
+            { v: 'text', l: 'Text' }, { v: 'number', l: 'Zahl' }, { v: 'date', l: 'Datum' },
+            { v: 'select', l: 'Dropdown' }, { v: 'multiselect', l: 'Mehrfachauswahl' }, { v: 'boolean', l: 'Ja / Nein' }
+        ];
+        const FIELD_ENTITIES = [
+            { v: 'projects', l: 'Projekte' }, { v: 'customers', l: 'Kunden' },
+            { v: 'materials', l: 'Materialien' }, { v: 'orders', l: 'Bestellungen' }
+        ];
+        let fieldsActiveEntity = 'projects';
+        let _dragFieldId = null;
+
+        // ============================================================
+        // ============ SEITE: FELDER & KATEGORIEN ====================
+        // ============================================================
+        function renderFields() {
+            (async () => {
+                await loadCustomization();
+                const cats = getMaterialCategories();
+                const fields = getCustomFields(fieldsActiveEntity);
+                const tpls = (_ktmTemplates || []).filter(t => t.entity === fieldsActiveEntity);
+
+                contentArea.innerHTML = `
+                    <div class="panel" style="margin-bottom:18px;">
+                        <div class="panel-title">🎨 Materialkategorien</div>
+                        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Eigene Kategorien mit Farbe – werden in Materialliste und Auswahlfeldern verwendet und auf alle Geräte synchronisiert.</div>
+                        <div id="catList">
+                            ${cats.map((c, i) => `
+                                <div class="field-row" data-cat="${i}">
+                                    <input type="color" value="${escapeHtml(c.color || '#12808f')}" class="cat-color" style="width:42px;height:36px;padding:2px;cursor:pointer;">
+                                    <input type="text" value="${escapeHtml(c.name)}" class="cat-name" style="flex:1;">
+                                    <button class="btn btn-sm btn-danger cat-del">${icon('trash')}</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+                            <button class="btn btn-outline btn-sm" id="catAdd">${icon('plus')} Kategorie</button>
+                            <button class="btn btn-primary btn-sm" id="catSave">Kategorien speichern</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-title">🔧 Zusatzfelder</div>
+                        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Eigene Felder pro Bereich – mit Typ, Einheit, Pflichtfeld und Standardwert. Reihenfolge per Ziehen oder Pfeilen ändern. Die Werte werden pro Datensatz gespeichert und vollständig synchronisiert.</div>
+                        <div class="fields-tabs">
+                            ${FIELD_ENTITIES.map(e => `<button class="tab-btn ${fieldsActiveEntity === e.v ? 'active' : ''}" data-ent="${e.v}">${e.l}</button>`).join('')}
+                        </div>
+                        <div id="fieldList" style="margin-top:14px;">
+                            ${fields.length === 0 ? '<div class="empty-note">Noch keine Felder für diesen Bereich.</div>' : fields.map(f => `
+                                <div class="field-row" draggable="true" data-fid="${escapeHtml(f.id)}"
+                                     ondragstart="_dragFieldId='${escapeHtml(f.id)}'"
+                                     ondragover="event.preventDefault();this.classList.add('drag-over')"
+                                     ondragleave="this.classList.remove('drag-over')"
+                                     ondrop="this.classList.remove('drag-over');app.reorderField('${escapeHtml(f.id)}')">
+                                    <span class="drag-handle" title="Ziehen zum Sortieren">⋮⋮</span>
+                                    <div style="flex:1;min-width:0;">
+                                        <strong>${escapeHtml(f.label)}</strong>${f.required ? ' <span style="color:var(--danger);">*</span>' : ''}
+                                        <div style="font-size:12px;color:var(--text-muted);">${FIELD_TYPES.find(t => t.v === f.type)?.l || f.type}${f.unit ? ' · ' + escapeHtml(f.unit) : ''}${f.options?.length ? ' · ' + escapeHtml(f.options.join(', ')) : ''}${f.defaultValue !== undefined && f.defaultValue !== '' ? ' · Standard: ' + escapeHtml(String(f.defaultValue)) : ''}</div>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline" onclick="app.moveField('${escapeHtml(f.id)}', -1)">↑</button>
+                                    <button class="btn btn-sm btn-outline" onclick="app.moveField('${escapeHtml(f.id)}', 1)">↓</button>
+                                    <button class="btn btn-sm btn-outline" onclick="app.openFieldModal('${fieldsActiveEntity}', '${escapeHtml(f.id)}')">${icon('edit')}</button>
+                                    <button class="btn btn-sm btn-danger" onclick="app.deleteField('${escapeHtml(f.id)}')">${icon('trash')}</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center;">
+                            <button class="btn btn-primary btn-sm" onclick="app.openFieldModal('${fieldsActiveEntity}')">${icon('plus')} Feld</button>
+                            <div class="toolbar-spacer"></div>
+                            ${tpls.length ? `<select class="filter-select" id="tplSelect"><option value="">Vorlage wählen...</option>${tpls.map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`).join('')}</select>
+                            <button class="btn btn-outline btn-sm" id="tplApply">Anwenden</button>
+                            <button class="btn btn-outline btn-sm" id="tplDelete">Vorlage löschen</button>` : ''}
+                            <button class="btn btn-outline btn-sm" id="tplSave">Als Vorlage speichern</button>
+                        </div>
+                    </div>
+                `;
+
+                // Tabs
+                contentArea.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => {
+                    fieldsActiveEntity = b.dataset.ent;
+                    renderFields();
+                }));
+
+                // Kategorien
+                document.getElementById('catAdd').addEventListener('click', () => {
+                    const list = document.getElementById('catList');
+                    const div = document.createElement('div');
+                    div.className = 'field-row';
+                    div.innerHTML = `<input type="color" value="${CAT_PALETTE[list.children.length % CAT_PALETTE.length]}" class="cat-color" style="width:42px;height:36px;padding:2px;cursor:pointer;">
+                        <input type="text" value="" placeholder="Neue Kategorie" class="cat-name" style="flex:1;">
+                        <button class="btn btn-sm btn-danger cat-del">${icon('trash')}</button>`;
+                    list.appendChild(div);
+                    div.querySelector('.cat-del').addEventListener('click', () => div.remove());
+                    div.querySelector('.cat-name').focus();
+                });
+                contentArea.querySelectorAll('.cat-del').forEach(b => b.addEventListener('click', () => b.closest('.field-row').remove()));
+                document.getElementById('catSave').addEventListener('click', async () => {
+                    const cats2 = [...document.querySelectorAll('#catList .field-row')].map(r => ({
+                        name: r.querySelector('.cat-name').value.trim(),
+                        color: r.querySelector('.cat-color').value
+                    })).filter(c => c.name);
+                    if (cats2.length === 0) { showToast('Mindestens eine Kategorie behalten.', 'error'); return; }
+                    await saveMaterialCategories(cats2);
+                    showToast('Kategorien gespeichert.', 'success');
+                    renderFields();
+                });
+
+                // Vorlagen
+                document.getElementById('tplSave').addEventListener('click', async () => {
+                    const name = prompt('Name der Vorlage (z. B. "Splitklima", "Kühlraum", "Wärmepumpe"):');
+                    if (!name) return;
+                    const tpls2 = (_ktmTemplates || []).filter(t => !(t.entity === fieldsActiveEntity && t.name === name));
+                    tpls2.push({ name, entity: fieldsActiveEntity, fields: getCustomFields(fieldsActiveEntity).map(f => ({ ...f })) });
+                    await saveFieldTemplates(tpls2);
+                    showToast(`Vorlage "${name}" gespeichert.`, 'success');
+                    renderFields();
+                });
+                document.getElementById('tplApply')?.addEventListener('click', async () => {
+                    const name = document.getElementById('tplSelect').value;
+                    if (!name) return;
+                    const tpl = (_ktmTemplates || []).find(t => t.entity === fieldsActiveEntity && t.name === name);
+                    if (!tpl) return;
+                    const others = (_ktmFields || []).filter(f => f.entity !== fieldsActiveEntity);
+                    const applied = tpl.fields.map((f, i) => ({ ...f, id: f.id || generateUUID(), entity: fieldsActiveEntity, order: i }));
+                    await saveCustomFields([...others, ...applied]);
+                    showToast(`Vorlage "${name}" angewendet.`, 'success');
+                    renderFields();
+                });
+                document.getElementById('tplDelete')?.addEventListener('click', async () => {
+                    const name = document.getElementById('tplSelect').value;
+                    if (!name) return;
+                    if (!confirm(`Vorlage "${name}" löschen?`)) return;
+                    await saveFieldTemplates((_ktmTemplates || []).filter(t => !(t.entity === fieldsActiveEntity && t.name === name)));
+                    renderFields();
+                });
+            })();
+        }
+
+        // Eingabe-Element für ein Zusatzfeld erzeugen
+        function customFieldInput(f, value) {
+            const val = value !== undefined && value !== null ? value : (f.defaultValue !== undefined ? f.defaultValue : '');
+            const req = f.required ? 'data-required="1"' : '';
+            const unitSuffix = f.unit ? `<span style="align-self:center;color:var(--text-muted);font-size:13px;white-space:nowrap;">${escapeHtml(f.unit)}</span>` : '';
+            switch (f.type) {
+                case 'number':
+                    return `<div style="display:flex;gap:8px;"><input type="number" inputmode="decimal" step="any" class="cf-input" data-cf="${escapeHtml(f.id)}" ${req} value="${escapeHtml(String(val))}">${unitSuffix}</div>`;
+                case 'date':
+                    return `<input type="date" class="cf-input" data-cf="${escapeHtml(f.id)}" ${req} value="${escapeHtml(String(val))}">`;
+                case 'select':
+                    return `<select class="cf-input" data-cf="${escapeHtml(f.id)}" ${req}><option value="">– bitte wählen –</option>${(f.options || []).map(o => `<option value="${escapeHtml(o)}" ${String(val) === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`;
+                case 'multiselect': {
+                    const arr = Array.isArray(val) ? val : (val ? [val] : []);
+                    return `<div class="cf-multi" data-cf="${escapeHtml(f.id)}" ${req}>${(f.options || []).map(o => `<label style="display:inline-flex;align-items:center;gap:6px;margin:3px 12px 3px 0;font-size:13.5px;font-weight:500;"><input type="checkbox" style="width:auto;" value="${escapeHtml(o)}" ${arr.includes(o) ? 'checked' : ''}> ${escapeHtml(o)}</label>`).join('')}</div>`;
+                }
+                case 'boolean':
+                    return `<select class="cf-input" data-cf="${escapeHtml(f.id)}" ${req}><option value="">–</option><option value="true" ${val === true || val === 'true' ? 'selected' : ''}>Ja</option><option value="false" ${val === false || val === 'false' ? 'selected' : ''}>Nein</option></select>`;
+                default:
+                    return `<div style="display:flex;gap:8px;"><input type="text" class="cf-input" data-cf="${escapeHtml(f.id)}" ${req} value="${escapeHtml(String(val))}" placeholder="${escapeHtml(f.placeholder || '')}">${unitSuffix}</div>`;
+            }
+        }
+        // Werte aus einem Modal einsammeln (mit Pflichtfeld-Prüfung)
+        function collectCustomFieldValues(overlay, defs) {
+            const data = {};
+            for (const f of defs) {
+                if (f.type === 'multiselect') {
+                    const wrap = overlay.querySelector(`.cf-multi[data-cf="${f.id}"]`);
+                    const vals = [...wrap.querySelectorAll('input:checked')].map(i => i.value);
+                    if (f.required && vals.length === 0) return { error: `"${f.label}" ist ein Pflichtfeld.` };
+                    data[f.id] = vals;
+                } else {
+                    const el = overlay.querySelector(`.cf-input[data-cf="${f.id}"]`);
+                    let v = el.value;
+                    if (f.type === 'number') v = v === '' ? '' : Number(v);
+                    if (f.type === 'boolean') v = v === '' ? '' : v === 'true';
+                    if (f.required && (v === '' || v === null || v === undefined)) return { error: `"${f.label}" ist ein Pflichtfeld.` };
+                    data[f.id] = v;
+                }
+            }
+            return { data };
+        }
+        // ============================================================
+        // ============ PDF-SUITE (professionelles Design) ============
+        // ============================================================
+        const PDF_TEAL = [18, 128, 143];
+        const PDF_TEAL_DARK = [10, 95, 107];
+        const PDF_INK = [23, 49, 60];
+        const PDF_GRAY = [96, 116, 126];
+        const PDF_LIGHT = [237, 243, 245];
+
+        function pdfSnowflake(doc, cx, cy, r, color, lineW) {
+            doc.setDrawColor(...color);
+            doc.setLineWidth(lineW);
+            doc.setLineCap('round');
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI / 3) * i;
+                const dx = Math.cos(a), dy = Math.sin(a);
+                const ex = cx + dx * r, ey = cy + dy * r;
+                doc.line(cx, cy, ex, ey);
+                // Seitenzweige bei 55% und 80% des Astes
+                for (const t of [0.55, 0.8]) {
+                    const bx = cx + dx * r * t, by = cy + dy * r * t;
+                    const tl = r * (t === 0.55 ? 0.24 : 0.16);
+                    for (const s of [1, -1]) {
+                        const ba = a + s * Math.PI / 5;
+                        doc.line(bx, by, bx + Math.cos(ba) * tl, by + Math.sin(ba) * tl);
+                    }
+                }
+                // kleiner Innenkreis-Akzent
+            }
+            doc.circle(cx, cy, r * 0.09, 'S');
+        }
+
+        function pdfWatermark(doc) {
+            try {
+                const pw = doc.internal.pageSize.getWidth();
+                const ph = doc.internal.pageSize.getHeight();
+                if (doc.GState && doc.setGState) {
+                    doc.saveGraphicsState();
+                    doc.setGState(new doc.GState({ opacity: 0.05 }));
+                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 62, PDF_TEAL, 1.6);
+                    doc.restoreGraphicsState();
+                } else {
+                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 62, [232, 240, 242], 1.6);
+                }
+            } catch (e) { /* Wasserzeichen ist optional */ }
+        }
+
+        async function pdfCompany() {
+            return {
+                name: await getSetting('companyName', ''),
+                logo: await getSetting('companyLogo', ''),
+                phone: await getSetting('companyPhone', ''),
+                email: await getSetting('companyEmail', ''),
+                website: await getSetting('companyWebsite', ''),
+                address: await getSetting('companyAddress', ''),
+                uid: await getSetting('companyUID', ''),
+                fb: await getSetting('companyFirmenbuch', ''),
+                bank: await getSetting('companyBank', ''),
+                paymentTerms: await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.')
+            };
+        }
+
+        // Kopfbereich: weiße Zeile mit Logo/Kontakt + Teal-Band mit Titel & Schneeflocke
+        function pdfHeader(doc, co, title, metaLines) {
+            const pw = doc.internal.pageSize.getWidth();
+            const mx = 16;
+            let topY = 12;
+
+            if (co.logo) {
+                try {
+                    const imgProps = doc.getImageProperties(co.logo);
+                    const logoH = 13;
+                    const logoW = (imgProps.width / imgProps.height) * logoH;
+                    doc.addImage(co.logo, imgProps.fileType || 'PNG', mx, topY - 3, logoW, logoH);
+                } catch (e) { /* Logo optional */ }
+            } else if (co.name) {
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(13);
+                doc.setTextColor(...PDF_INK);
+                doc.text(co.name, mx, topY + 4);
+            }
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(...PDF_GRAY);
+            const contact = [co.address, [co.phone, co.email].filter(Boolean).join('  ·  '), co.website].filter(Boolean);
+            let cy = topY;
+            contact.forEach(line => { doc.text(line, pw - mx, cy, { align: 'right' }); cy += 4; });
+
+            // Teal-Band
+            const bandY = Math.max(topY + 14, cy + 3);
+            const bandH = 24;
+            doc.setFillColor(...PDF_TEAL);
+            doc.rect(0, bandY, pw, bandH, 'F');
+            // dunkler Akzentstreifen unten am Band
+            doc.setFillColor(...PDF_TEAL_DARK);
+            doc.rect(0, bandY + bandH, pw, 1.2, 'F');
+            // dezente Schneeflocken im Band
+            try {
+                if (doc.GState && doc.setGState) {
+                    doc.saveGraphicsState();
+                    doc.setGState(new doc.GState({ opacity: 0.18 }));
+                    pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, [255, 255, 255], 0.7);
+                    pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, [255, 255, 255], 0.45);
+                    doc.restoreGraphicsState();
+                }
+            } catch (e) { /* optional */ }
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(19);
+            doc.setTextColor(255, 255, 255);
+            doc.text(title, mx, bandY + 10.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(224, 240, 243);
+            let my = bandY + 16.5;
+            (metaLines || []).slice(0, 2).forEach(l => { doc.text(l, mx, my); my += 4.2; });
+
+            return bandY + bandH + 10;
+        }
+
+        function pdfFooter(doc, co) {
+            const pw = doc.internal.pageSize.getWidth();
+            const ph = doc.internal.pageSize.getHeight();
+            const mx = 16;
+            const fy = ph - 18;
+            doc.setDrawColor(...PDF_TEAL);
+            doc.setLineWidth(0.5);
+            doc.line(mx, fy, pw - mx, fy);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.2);
+            doc.setTextColor(...PDF_GRAY);
+            const left = [co.address, [co.phone, co.email].filter(Boolean).join('  ·  ')].filter(Boolean).join('   |   ');
+            const right = [co.uid ? `UID: ${co.uid}` : '', co.fb ? `FB-Nr.: ${co.fb}` : '', co.bank].filter(Boolean).join('   |   ');
+            doc.text(left, mx, fy + 4.5);
+            if (right) doc.text(right, mx, fy + 8.5);
+            const pageInfo = `Seite ${doc.internal.getCurrentPageInfo ? doc.internal.getCurrentPageInfo().pageNumber : doc.internal.getNumberOfPages()}`;
+            doc.text(pageInfo, pw - mx, fy + 4.5, { align: 'right' });
+        }
+
+        // Zwei Info-Boxen nebeneinander (z. B. Kunde | Projekt)
+        function pdfInfoBoxes(doc, y, leftTitle, leftLines, rightTitle, rightLines) {
+            const pw = doc.internal.pageSize.getWidth();
+            const mx = 16;
+            const gap = 6;
+            const boxW = (pw - mx * 2 - gap) / 2;
+            const lineH = 4.6;
+            const boxH = Math.max(leftLines.length, rightLines.length) * lineH + 13;
+            [[mx, leftTitle, leftLines], [mx + boxW + gap, rightTitle, rightLines]].forEach(([bx, title, lines]) => {
+                doc.setFillColor(...PDF_LIGHT);
+                doc.roundedRect(bx, y, boxW, boxH, 2.5, 2.5, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8);
+                doc.setTextColor(...PDF_TEAL);
+                doc.text(String(title).toUpperCase(), bx + 5, y + 6.5);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(...PDF_INK);
+                let ly = y + 12.5;
+                lines.forEach(l => { doc.text(String(l), bx + 5, ly, { maxWidth: boxW - 10 }); ly += lineH; });
+            });
+            return y + boxH + 8;
+        }
+
+        // Aufstellungsplan: Räume maßstäblich als Skizze
+        function pdfRoomSketch(doc, rooms, x, y, maxW, title = 'Aufstellungsplan (schematisch)') {
+            const valid = (rooms || []).filter(r => (r.length || 0) > 0 && (r.width || 0) > 0);
+            if (valid.length === 0) return y;
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.setTextColor(...PDF_INK);
+            doc.text(title, x, y);
+            y += 5;
+
+            // Layout: Räume nebeneinander, umbrechen wenn zu breit. Maßstab so,
+            // dass der größte Raum max. 55 mm breit ist.
+            const maxRoomM = Math.max(...valid.map(r => Math.max(r.length, r.width)));
+            const scale = Math.min(55 / maxRoomM, 9); // mm pro Meter, gedeckelt
+            const pad = 6;
+            let cx = x, cy = y, rowH = 0;
+
+            valid.forEach(r => {
+                const w = Math.max(r.length * scale, 20);
+                const h = Math.max(r.width * scale, 14);
+                if (cx + w > x + maxW) { cx = x; cy += rowH + pad; rowH = 0; }
+                // Raum-Rechteck
+                doc.setFillColor(240, 247, 249);
+                doc.setDrawColor(...PDF_TEAL);
+                doc.setLineWidth(0.5);
+                doc.roundedRect(cx, cy, w, h, 1.5, 1.5, 'FD');
+                // Beschriftung
+                const area = (r.length * r.width).toFixed(1);
+                const kw = ((r.length * r.width * 80) / 1000).toFixed(1);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7.5);
+                doc.setTextColor(...PDF_INK);
+                doc.text(String(r.name || 'Raum'), cx + w / 2, cy + h / 2 - 2.5, { align: 'center', maxWidth: w - 3 });
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(6.6);
+                doc.setTextColor(...PDF_GRAY);
+                doc.text(`${r.length} × ${r.width} m · ${area} m²`, cx + w / 2, cy + h / 2 + 1.5, { align: 'center', maxWidth: w - 2 });
+                doc.setTextColor(...PDF_TEAL);
+                doc.text(`${kw} kW`, cx + w / 2, cy + h / 2 + 5, { align: 'center' });
+                // Maßangaben außen
+                doc.setFontSize(6);
+                doc.setTextColor(...PDF_GRAY);
+                doc.text(`${r.length} m`, cx + w / 2, cy - 1, { align: 'center' });
+                doc.text(`${r.width} m`, cx - 1, cy + h / 2, { align: 'right' });
+                cx += w + pad;
+                rowH = Math.max(rowH, h);
+            });
+            return cy + rowH + 8;
+        }
+
+        function pdfNewPageIfNeeded(doc, y, needed, co) {
+            const ph = doc.internal.pageSize.getHeight();
+            if (y + needed > ph - 26) {
+                doc.addPage();
+                pdfWatermark(doc);
+                pdfFooter(doc, co);
+                return 18;
+            }
+            return y;
+        }
+
+        const PDF_TABLE_STYLES = {
+            styles: { font: 'helvetica', fontSize: 8.6, cellPadding: 2.8, textColor: PDF_INK, lineColor: [214, 226, 230], lineWidth: 0.15 },
+            headStyles: { fillColor: PDF_TEAL, textColor: 255, fontStyle: 'bold', fontSize: 8.3 },
+            alternateRowStyles: { fillColor: [246, 250, 251] }
+        };
+        // ============================================================
+        // ============ APP-ERWEITERUNGEN =============================
         // ============================================================
         const ktmV2Extensions = {
-            async openOrderModal(id = null, presetProjectId = null) {
+            // ---------- Bestellungen ----------
+            async openOrderModal(id = null, presetProjectId = null, presetItems = '') {
                 const order = id ? await db.get('orders', id) : null;
                 const projects = await db.getAll('projects');
                 const materials = await db.getAll('materials');
@@ -2415,8 +3053,8 @@ async function reconcileOfferCounter() {
                             <div class="form-group"><label>Datum</label><input type="date" id="ordDate" value="${escapeHtml(order?.date || todayStr)}"></div>
                         </div>
                         <div class="form-group"><label>Artikel *</label>
-                            <textarea id="ordItems" rows="4" placeholder="z. B. 2× Verdichter GEA Bock HGX34, 30 m Cu-Rohr 12 mm...">${escapeHtml(order?.items || '')}</textarea>
-                            ${materials.length > 0 ? `<select id="ordMatPicker" style="margin-top:8px;"><option value="">+ Artikel aus Materialdatenbank einfügen...</option>${materials.map(m => `<option value="${escapeHtml(m.name)}${m.articleNumber ? ' (' + escapeHtml(m.articleNumber) + ')' : ''}">${escapeHtml(m.name)}</option>`).join('')}</select>` : ''}
+                            <textarea id="ordItems" rows="6" placeholder="z. B. 18 m Kupferrohr 22 mm, 42 m Kabel 5×2,5 mm²...">${escapeHtml(order?.items || presetItems || '')}</textarea>
+                            ${materials.length > 0 ? `<select id="ordMatPicker" style="margin-top:8px;"><option value="">+ Artikel aus Materialdatenbank einfügen...</option>${materials.map(m => `<option value="${escapeHtml(m.name)}${m.size ? ' ' + escapeHtml(m.size) : ''}${m.articleNumber ? ' (' + escapeHtml(m.articleNumber) + ')' : ''}">${escapeHtml(m.name)}${m.size ? ' ' + escapeHtml(m.size) : ''}</option>`).join('')}</select>` : ''}
                         </div>
                         <div class="form-row">
                             <div class="form-group"><label>Status</label>
@@ -2443,7 +3081,7 @@ async function reconcileOfferCounter() {
                         if (id) { await db.put('orders', data); } else { await db.add('orders', data); }
                         overlay.remove();
                         showToast(id ? 'Bestellung aktualisiert.' : 'Bestellung angelegt.', 'success');
-                        if (app.currentPage === 'orders' || app.currentPage === 'dashboard') app.navigate(app.currentPage);
+                        if (app.currentPage === 'orders' || app.currentPage === 'dashboard' || app.currentPage === 'projects') app.navigate(app.currentPage, app.currentProjectId);
                         else app.navigate('orders');
                     }
                 );
@@ -2451,7 +3089,7 @@ async function reconcileOfferCounter() {
                 modal.querySelector('#ordMatPicker')?.addEventListener('change', (e) => {
                     if (!e.target.value) return;
                     const ta = modal.querySelector('#ordItems');
-                    ta.value = (ta.value ? ta.value.trimEnd() + '\n' : '') + '1× ' + e.target.value;
+                    ta.value = (ta.value ? ta.value.trimEnd() + '\n' : '') + '1 Stk ' + e.target.value;
                     e.target.value = '';
                 });
             },
@@ -2463,7 +3101,16 @@ async function reconcileOfferCounter() {
                 app.navigate('orders');
             },
 
-            async adjustStock(id, delta) {
+            // ---------- Materialbestand ----------
+            async setStock(id, value) {
+                const m = await db.get('materials', id);
+                if (!m) return;
+                const v = parseFloat(String(value).replace(',', '.'));
+                m.stock = isNaN(v) || v < 0 ? 0 : v;
+                await db.put('materials', m);
+                showToast(`Bestand: ${m.stock}`, 'success');
+            },
+            async adjustStock(id, delta) { // Rückwärtskompatibilität
                 const m = await db.get('materials', id);
                 if (!m) return;
                 m.stock = Math.max(0, (Number(m.stock) || 0) + delta);
@@ -2471,6 +3118,339 @@ async function reconcileOfferCounter() {
                 renderMaterials();
             },
 
+            // ---------- Projekt-Material ----------
+            async openProjectMaterialModal(id = null, projectId = null) {
+                const pm = id ? await db.get('projectMaterials', id) : null;
+                const pid = pm?.projectId ?? projectId;
+                const materials = (await db.getAll('materials')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                const rooms = (await db.getByIndex('rooms', 'projectId', pid)) || [];
+
+                if (materials.length === 0) {
+                    showToast('Bitte lege zuerst Materialien in der Materialdatenbank an.', 'info');
+                    this.openMaterialModal();
+                    return;
+                }
+
+                const modal = showModal(
+                    id ? 'Material bearbeiten' : 'Material zum Projekt hinzufügen',
+                    `
+                        <div class="form-group"><label>Material (aus Datenbank) *</label>
+                            <select id="pmMaterial">
+                                ${materials.map(m => `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" data-size="${escapeHtml(m.size || '')}" ${String(pm?.materialId) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}${m.category ? ' (' + escapeHtml(m.category) + ')' : ''}</option>`).join('')}
+                            </select>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:5px;">Fehlt etwas? <a href="#" id="pmNewMat" style="color:var(--accent);font-weight:600;">Neues Material anlegen</a></div>
+                        </div>
+                        <div class="form-row-3">
+                            <div class="form-group"><label>Menge *</label><input type="number" inputmode="decimal" step="any" min="0" id="pmQty" value="${pm?.quantity ?? 1}"></div>
+                            <div class="form-group"><label>Einheit</label><select id="pmUnit">${UNITS.map(u => `<option value="${u}" ${(pm?.unit || '') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+                            <div class="form-group"><label>Größe (überschreiben)</label><input type="text" id="pmSize" value="${escapeHtml(pm?.size || '')}" placeholder="Standard aus Material"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Raum (optional)</label>
+                                <select id="pmRoom"><option value="">— Ganzes Projekt —</option>${rooms.map(r => `<option value="${escapeHtml(String(r.id))}" ${String(pm?.roomId) === String(r.id) ? 'selected' : ''}>${escapeHtml(r.name || 'Raum')}</option>`).join('')}</select>
+                            </div>
+                            <div class="form-group"><label>Bemerkung</label><input type="text" id="pmNote" value="${escapeHtml(pm?.note || '')}"></div>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const matId = overlay.querySelector('#pmMaterial').value;
+                        const qty = parseFloat(String(overlay.querySelector('#pmQty').value).replace(',', '.'));
+                        if (!matId || isNaN(qty) || qty <= 0) { showToast('Material und Menge sind Pflichtfelder.', 'error'); return; }
+                        const data = {
+                            ...(pm || {}),
+                            projectId: pid,
+                            materialId: parseId(matId),
+                            quantity: qty,
+                            unit: overlay.querySelector('#pmUnit').value,
+                            size: overlay.querySelector('#pmSize').value.trim(),
+                            roomId: overlay.querySelector('#pmRoom').value ? parseId(overlay.querySelector('#pmRoom').value) : null,
+                            note: overlay.querySelector('#pmNote').value.trim()
+                        };
+                        if (id) { await db.put('projectMaterials', data); } else { await db.add('projectMaterials', data); }
+                        overlay.remove();
+                        showToast('Material gespeichert.', 'success');
+                        app.navigate('projects', pid);
+                    }
+                );
+
+                // Einheit aus Material vorbelegen
+                const sel = modal.querySelector('#pmMaterial');
+                const applyUnit = () => {
+                    if (!pm) modal.querySelector('#pmUnit').value = sel.selectedOptions[0]?.dataset.unit || 'Stk';
+                };
+                sel.addEventListener('change', applyUnit);
+                if (!pm) applyUnit();
+                modal.querySelector('#pmNewMat')?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    modal.closest('.modal-overlay')?.remove();
+                    this.openMaterialModal();
+                });
+            },
+
+            async updateProjectMaterial(id, field, value) {
+                const pm = await db.get('projectMaterials', id);
+                if (!pm) return;
+                if (field === 'quantity') {
+                    const v = parseFloat(String(value).replace(',', '.'));
+                    pm.quantity = isNaN(v) || v < 0 ? 0 : v;
+                } else if (field === 'roomId') {
+                    pm.roomId = value ? parseId(value) : null;
+                } else {
+                    pm[field] = value;
+                }
+                await db.put('projectMaterials', pm);
+            },
+
+            async deleteProjectMaterial(id, projectId) {
+                await db.delete('projectMaterials', id);
+                app.navigate('projects', projectId);
+            },
+
+            // Bestellliste aus Projekt-Material erzeugen
+            async createOrderFromProject(projectId) {
+                const pm = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+                if (pm.length === 0) { showToast('Kein Material im Projekt.', 'info'); return; }
+                const materials = await db.getAll('materials');
+                const rooms = (await db.getByIndex('rooms', 'projectId', projectId)) || [];
+                const lines = pm.map(x => {
+                    const mat = materials.find(m => String(m.id) === String(x.materialId));
+                    const room = rooms.find(r => String(r.id) === String(x.roomId));
+                    const size = x.size || mat?.size || '';
+                    return `${x.quantity} ${x.unit || mat?.unit || 'Stk'} ${mat?.name || x.name || 'Material'}${size ? ' ' + size : ''}${room ? ' [' + (room.name || 'Raum') + ']' : ''}${x.note ? ' – ' + x.note : ''}`;
+                });
+                this.openOrderModal(null, projectId, lines.join('\n'));
+            },
+
+            // ---------- Projektstatus (Dropdown + Drag & Drop) ----------
+            async setProjectStatus(id, status) {
+                const p = await db.get('projects', id);
+                if (!p) return;
+                p.status = status;
+                await db.put('projects', p);
+                showToast(`Status: ${status}`, 'success');
+                app.navigate('projects', app.currentProjectId);
+            },
+            dragProjectCard(ev, id) {
+                ev.dataTransfer.setData('text/plain', String(id));
+                ev.dataTransfer.effectAllowed = 'move';
+            },
+            dropProjectCard(ev, status) {
+                ev.preventDefault();
+                const id = ev.dataTransfer.getData('text/plain');
+                if (!id) return;
+                this.setProjectStatus(parseId(id), status);
+            },
+
+            // ---------- Besichtigung ----------
+            async openSurveyModal(projectId) {
+                const project = await db.get('projects', projectId);
+                if (!project) return;
+                const survey = project.survey || {};
+
+                const groups = [...new Set(SURVEY_FIELDS.map(f => f.group))];
+                const body = groups.map(g => `
+                    <div style="font-weight:700;font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px;">${g}</div>
+                    <div class="survey-grid">
+                        ${SURVEY_FIELDS.filter(f => f.group === g).map(f => {
+                            const v = survey[f.key];
+                            if (f.type === 'bool') {
+                                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><select id="sv_${f.key}"><option value="">–</option><option value="true" ${v === true ? 'selected' : ''}>Ja</option><option value="false" ${v === false ? 'selected' : ''}>Nein</option></select></div>`;
+                            }
+                            if (f.type === 'select') {
+                                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><select id="sv_${f.key}"><option value="">–</option>${f.options.map(o => `<option value="${escapeHtml(o)}" ${v === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></div>`;
+                            }
+                            if (f.type === 'textarea') {
+                                return `<div class="form-group" style="grid-column:1/-1;"><label>${escapeHtml(f.label)}</label><textarea id="sv_${f.key}" rows="3">${escapeHtml(v || '')}</textarea></div>`;
+                            }
+                            if (f.type === 'number') {
+                                return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' (' + f.unit + ')' : ''}</label><input type="number" inputmode="decimal" step="any" min="0" id="sv_${f.key}" value="${v ?? ''}"></div>`;
+                            }
+                            return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="sv_${f.key}" value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}"></div>`;
+                        }).join('')}
+                    </div>
+                `).join('');
+
+                showModal(
+                    `Besichtigung – ${escapeHtml(project.title || '')}`,
+                    `<div class="modal-scroll-hint">${body}</div>`,
+                    async (overlay) => {
+                        const data = {};
+                        for (const f of SURVEY_FIELDS) {
+                            const el = overlay.querySelector(`#sv_${f.key}`);
+                            if (!el) continue;
+                            let v = el.value;
+                            if (f.type === 'number') v = v === '' ? '' : parseFloat(String(v).replace(',', '.'));
+                            if (f.type === 'bool') v = v === '' ? '' : v === 'true';
+                            data[f.key] = v;
+                        }
+                        project.survey = data;
+                        // Status automatisch weiterschalten, wenn noch ganz am Anfang
+                        if (!project.status || project.status === 'Neu' || project.status === 'Besichtigung offen') {
+                            project.status = 'Besichtigt';
+                        }
+                        await db.put('projects', project);
+                        showToast('Besichtigung gespeichert – Projektübersicht ist aktuell.', 'success');
+                        app.navigate('projects', projectId);
+                    },
+                    null,
+                    { wide: true }
+                );
+            },
+
+            // Materialvorschläge aus Besichtigungsdaten
+            async generateMaterialSuggestions(projectId) {
+                const project = await db.get('projects', projectId);
+                const s = project?.survey || {};
+                const materials = await db.getAll('materials');
+                const existing = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+
+                const wanted = [];
+                const num = v => (typeof v === 'number' && v > 0 ? v : 0);
+                if (num(s.pipeLength)) wanted.push({ name: 'Kupferrohr', size: s.pipeDimension || '', qty: s.pipeLength, unit: 'm', category: 'Kupferrohre' });
+                if (num(s.pipeLength) && s.insulation) wanted.push({ name: 'Isolierung', size: s.insulation, qty: s.pipeLength, unit: 'm', category: 'Isolierung' });
+                if (num(s.cableDuct)) wanted.push({ name: 'Kabelkanal', size: '', qty: s.cableDuct, unit: 'm', category: 'Elektromaterial' });
+                if (num(s.powerCableLength)) wanted.push({ name: 'Stromkabel', size: s.powerCable || '', qty: s.powerCableLength, unit: 'm', category: 'Kabel' });
+                if (num(s.commCableLength)) wanted.push({ name: 'Kommunikationskabel', size: s.commCable || '', qty: s.commCableLength, unit: 'm', category: 'Kabel' });
+                if (num(s.condensateLine)) wanted.push({ name: 'Kondensatleitung', size: '', qty: s.condensateLine, unit: 'm', category: 'Kondensat' });
+                if (s.condensatePump === true) wanted.push({ name: 'Kondensatpumpe', size: '', qty: 1, unit: 'Stk', category: 'Kondensat' });
+                if (num(s.coreDrills)) wanted.push({ name: 'Kernbohrung', size: s.wallMaterial ? 'Wand: ' + s.wallMaterial : '', qty: s.coreDrills, unit: 'Stk', category: 'Arbeitszeit' });
+                if (s.outdoorMounting === 'Big Foot') wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
+                if (s.outdoorMounting === 'Wandkonsole') wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
+
+                if (wanted.length === 0) { showToast('Keine verwertbaren Besichtigungsdaten gefunden.', 'info'); return; }
+
+                let added = 0, skipped = 0, created = 0;
+                for (const w of wanted) {
+                    // Material im Katalog finden (Name + ggf. Größe), sonst anlegen
+                    let mat = materials.find(m =>
+                        (m.name || '').toLowerCase().includes(w.name.toLowerCase()) &&
+                        (!w.size || (m.size || '').toLowerCase() === w.size.toLowerCase())
+                    );
+                    if (!mat) {
+                        const newId = await db.add('materials', {
+                            name: w.name, size: w.size, category: w.category, unit: w.unit,
+                            manufacturer: '', articleNumber: '', purchasePrice: 0, sellingPrice: 0, notes: 'Automatisch aus Besichtigung angelegt'
+                        });
+                        mat = await db.get('materials', newId);
+                        materials.push(mat);
+                        created++;
+                    }
+                    if (existing.some(x => String(x.materialId) === String(mat.id))) { skipped++; continue; }
+                    await db.add('projectMaterials', {
+                        projectId, materialId: mat.id, quantity: w.qty, unit: w.unit, size: w.size, roomId: null,
+                        note: 'Aus Besichtigung'
+                    });
+                    added++;
+                }
+                showToast(`${added} Materialposition(en) erzeugt${created ? `, ${created} neu im Katalog` : ''}${skipped ? `, ${skipped} übersprungen (bereits vorhanden)` : ''}.`, 'success');
+                app.navigate('projects', projectId);
+            },
+
+            // ---------- Zusatzfelder ----------
+            async openFieldModal(entity, fieldId = null) {
+                const f = fieldId ? (_ktmFields || []).find(x => x.id === fieldId) : null;
+                showModal(
+                    f ? 'Feld bearbeiten' : 'Neues Feld',
+                    `
+                        <div class="form-group"><label>Bezeichnung *</label><input type="text" id="cfLabel" value="${escapeHtml(f?.label || '')}" placeholder="z. B. Anlagentyp, Seriennummer, Garantie bis"></div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Typ</label><select id="cfType">${FIELD_TYPES.map(t => `<option value="${t.v}" ${f?.type === t.v ? 'selected' : ''}>${t.l}</option>`).join('')}</select></div>
+                            <div class="form-group"><label>Maßeinheit (optional)</label><input type="text" id="cfUnit" value="${escapeHtml(f?.unit || '')}" placeholder="z. B. m, kW, kg"></div>
+                        </div>
+                        <div class="form-group" id="cfOptionsWrap" style="display:${f?.type === 'select' || f?.type === 'multiselect' ? 'block' : 'none'};">
+                            <label>Optionen (mit Komma trennen)</label>
+                            <input type="text" id="cfOptions" value="${escapeHtml((f?.options || []).join(', '))}" placeholder="z. B. Splitgerät, Multisplit, VRF">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Standardwert (optional)</label><input type="text" id="cfDefault" value="${escapeHtml(f?.defaultValue !== undefined ? String(f.defaultValue) : '')}"></div>
+                            <div class="form-group"><label>Pflichtfeld</label><select id="cfRequired"><option value="">Nein</option><option value="1" ${f?.required ? 'selected' : ''}>Ja</option></select></div>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const label = overlay.querySelector('#cfLabel').value.trim();
+                        if (!label) { showToast('Bezeichnung ist ein Pflichtfeld.', 'error'); return; }
+                        const type = overlay.querySelector('#cfType').value;
+                        const all = _ktmFields || [];
+                        const entityFields = all.filter(x => x.entity === entity);
+                        const def = {
+                            id: f?.id || generateUUID(),
+                            entity, label, type,
+                            unit: overlay.querySelector('#cfUnit').value.trim(),
+                            options: (type === 'select' || type === 'multiselect') ? overlay.querySelector('#cfOptions').value.split(',').map(x => x.trim()).filter(Boolean) : [],
+                            required: overlay.querySelector('#cfRequired').value === '1',
+                            defaultValue: overlay.querySelector('#cfDefault').value.trim(),
+                            order: f?.order ?? entityFields.length
+                        };
+                        const rest = all.filter(x => x.id !== def.id);
+                        await saveCustomFields([...rest, def]);
+                        overlay.remove();
+                        showToast('Feld gespeichert.', 'success');
+                        renderFields();
+                    }
+                ).querySelector('#cfType').addEventListener('change', (e) => {
+                    document.getElementById('cfOptionsWrap').style.display = (e.target.value === 'select' || e.target.value === 'multiselect') ? 'block' : 'none';
+                });
+            },
+            async deleteField(fieldId) {
+                if (!confirm('Dieses Feld löschen? Bereits gespeicherte Werte bleiben in den Datensätzen erhalten.')) return;
+                await saveCustomFields((_ktmFields || []).filter(x => x.id !== fieldId));
+                renderFields();
+            },
+            async moveField(fieldId, dir) {
+                const fields = getCustomFields(fieldsActiveEntity);
+                const idx = fields.findIndex(f => f.id === fieldId);
+                const target = idx + dir;
+                if (idx < 0 || target < 0 || target >= fields.length) return;
+                [fields[idx], fields[target]] = [fields[target], fields[idx]];
+                fields.forEach((f, i) => f.order = i);
+                const rest = (_ktmFields || []).filter(x => x.entity !== fieldsActiveEntity);
+                await saveCustomFields([...rest, ...fields]);
+                renderFields();
+            },
+            async reorderField(targetId) {
+                if (!_dragFieldId || _dragFieldId === targetId) return;
+                const fields = getCustomFields(fieldsActiveEntity);
+                const from = fields.findIndex(f => f.id === _dragFieldId);
+                const to = fields.findIndex(f => f.id === targetId);
+                if (from < 0 || to < 0) return;
+                const [moved] = fields.splice(from, 1);
+                fields.splice(to, 0, moved);
+                fields.forEach((f, i) => f.order = i);
+                const rest = (_ktmFields || []).filter(x => x.entity !== fieldsActiveEntity);
+                _dragFieldId = null;
+                await saveCustomFields([...rest, ...fields]);
+                renderFields();
+            },
+
+            // Zusatzfeld-Werte eines Datensatzes bearbeiten
+            async openCustomDataModal(entity, id) {
+                await loadCustomization();
+                const defs = getCustomFields(entity);
+                if (defs.length === 0) {
+                    showToast('Für diesen Bereich sind keine Zusatzfelder definiert. Lege sie unter Einstellungen → Felder & Kategorien an.', 'info');
+                    return;
+                }
+                const rec = await db.get(entity, id);
+                if (!rec) return;
+                const cd = rec.customData || {};
+                showModal(
+                    'Zusatzfelder',
+                    defs.map(f => `<div class="form-group"><label>${escapeHtml(f.label)}${f.required ? ' *' : ''}</label>${customFieldInput(f, cd[f.id])}</div>`).join(''),
+                    async (overlay) => {
+                        const res = collectCustomFieldValues(overlay, defs);
+                        if (res.error) { showToast(res.error, 'error'); return; }
+                        rec.customData = { ...(rec.customData || {}), ...res.data };
+                        await db.put(entity, rec);
+                        overlay.remove();
+                        showToast('Zusatzfelder gespeichert.', 'success');
+                        app.navigate(app.currentPage, app.currentProjectId);
+                    }
+                );
+            },
+
+            openFieldSettings() { app.navigate('fields'); },
+
+            // ---------- Angebots-Flow ----------
             async createOfferFlow() {
                 const projects = await db.getAll('projects');
                 if (projects.length === 0) {
@@ -2493,6 +3473,362 @@ async function reconcileOfferCounter() {
                         this.createOffer(pid);
                     }
                 );
+            },
+
+            // ============================================================
+            // ============ PDF: ANGEBOT (Redesign) =======================
+            // ============================================================
+            async exportOfferPDF(offerId) {
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
+                const offer = await db.get('offers', offerId);
+                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+                const project = offer.projectId ? await db.get('projects', offer.projectId) : null;
+                const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+                const co = await pdfCompany();
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pw = doc.internal.pageSize.getWidth();
+                const mx = 16;
+
+                pdfWatermark(doc);
+                let y = pdfHeader(doc, co, 'ANGEBOT', [
+                    `Nr. ${offer.offerNumber || offer.id}  ·  ${formatDate(offer.offerDate || offer.createdAt)}`,
+                    offer.validUntilEnabled && offer.validUntil ? `Gültig bis ${formatDate(offer.validUntil)}` : ''
+                ].filter(Boolean));
+
+                const custLines = [];
+                if (customer) {
+                    custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
+                    if (customer.company) custLines.push(customer.company);
+                    if (customer.street) custLines.push(customer.street);
+                    if (customer.city) custLines.push(customer.city);
+                    if (customer.phone) custLines.push(customer.phone);
+                }
+                if (custLines.length === 0) custLines.push('–');
+                const projLines = [];
+                if (project?.title) projLines.push(project.title);
+                if (offer.siteAddress) projLines.push(`Baustelle: ${offer.siteAddress}`);
+                if (offer.contactPerson) projLines.push(`Ansprechpartner: ${offer.contactPerson}`);
+                if (offer.contactPhone) projLines.push(offer.contactPhone);
+                if (offer.contactEmail) projLines.push(offer.contactEmail);
+                if (projLines.length === 0) projLines.push('–');
+                y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Projekt / Baustelle', projLines);
+
+                if (offer.coolingRecommendation) {
+                    doc.setFillColor(...PDF_LIGHT);
+                    doc.roundedRect(mx, y, pw - mx * 2, 11, 2.5, 2.5, 'F');
+                    pdfSnowflake(doc, mx + 6.5, y + 5.5, 3.2, PDF_TEAL, 0.5);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(...PDF_TEAL);
+                    doc.text(`Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, mx + 13, y + 7);
+                    y += 16;
+                }
+
+                const rows = (offer.positions || []).map((p, i) => [
+                    String(i + 1),
+                    p.name || '',
+                    p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : ''),
+                    String(p.quantity),
+                    p.unit || 'Stk',
+                    formatCurrency(p.price),
+                    formatCurrency(p.price * p.quantity)
+                ]);
+
+                doc.autoTable({
+                    startY: y,
+                    margin: { left: mx, right: mx, bottom: 26 },
+                    head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
+                    body: rows,
+                    ...PDF_TABLE_STYLES,
+                    columnStyles: {
+                        0: { cellWidth: 9, halign: 'center' },
+                        3: { cellWidth: 14, halign: 'center' },
+                        4: { cellWidth: 13, halign: 'center' },
+                        5: { cellWidth: 25, halign: 'right' },
+                        6: { cellWidth: 25, halign: 'right', fontStyle: 'bold' }
+                    },
+                    didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                });
+
+                let fy = doc.lastAutoTable.finalY + 8;
+                fy = pdfNewPageIfNeeded(doc, fy, 45, co);
+
+                const boxW = 80;
+                const boxX = pw - mx - boxW;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9.2);
+                doc.setTextColor(...PDF_INK);
+                const summaryRows = [['Nettobetrag', formatCurrency(offer.subtotal || 0)]];
+                if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
+                    summaryRows.push([`Rabatt (${((offer.discountRate || 0) * 100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
+                }
+                if (offer.vatEnabled) {
+                    summaryRows.push([`MwSt. (${((offer.vatRate || 0) * 100).toFixed(0)}%)`, formatCurrency(offer.vatAmount || 0)]);
+                }
+                summaryRows.forEach(([label, val]) => {
+                    doc.text(label, boxX, fy);
+                    doc.text(val, pw - mx, fy, { align: 'right' });
+                    fy += 5.8;
+                });
+                fy += 1.5;
+                doc.setFillColor(...PDF_TEAL);
+                doc.roundedRect(boxX, fy - 5.5, boxW, 12.5, 2.5, 2.5, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11.5);
+                doc.setTextColor(255, 255, 255);
+                doc.text('Gesamtbetrag', boxX + 4, fy + 2.3);
+                doc.text(formatCurrency(offer.totalPrice || 0), pw - mx - 4, fy + 2.3, { align: 'right' });
+                fy += 15;
+
+                // Zahlungshinweis + Zusatzfelder des Projekts
+                doc.setFont('helvetica', 'italic');
+                doc.setFontSize(8.5);
+                doc.setTextColor(...PDF_GRAY);
+                doc.text(co.paymentTerms, mx, fy, { maxWidth: pw - mx * 2 });
+                fy += 9;
+
+                const projDefs = getCustomFields('projects');
+                const cd = project?.customData || {};
+                const cdRows = projDefs
+                    .map(f => {
+                        const v = cd[f.id];
+                        if (v === undefined || v === '' || v === null || (Array.isArray(v) && v.length === 0)) return null;
+                        const disp = v === true ? 'Ja' : v === false ? 'Nein' : Array.isArray(v) ? v.join(', ') : String(v);
+                        return [f.label, disp + (f.unit ? ' ' + f.unit : '')];
+                    })
+                    .filter(Boolean);
+                if (cdRows.length) {
+                    fy = pdfNewPageIfNeeded(doc, fy, 12 + cdRows.length * 7, co);
+                    doc.autoTable({
+                        startY: fy,
+                        margin: { left: mx, right: mx, bottom: 26 },
+                        head: [['Weitere Angaben', '']],
+                        body: cdRows,
+                        ...PDF_TABLE_STYLES,
+                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                    });
+                }
+
+                pdfFooter(doc, co);
+                doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
+                showToast('Angebot als PDF exportiert.', 'success');
+            },
+
+            // ============================================================
+            // ============ PDF: MATERIALBESTELLUNG mit Skizze ============
+            // ============================================================
+            async exportOrderPDF(orderId) {
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
+                const order = await db.get('orders', orderId);
+                if (!order) { showToast('Bestellung nicht gefunden.', 'error'); return; }
+                const project = order.projectId ? await db.get('projects', order.projectId) : null;
+                const customer = project?.customerId ? await db.get('customers', project.customerId) : null;
+                const rooms = project ? ((await db.getByIndex('rooms', 'projectId', project.id)) || []) : [];
+                const pm = project ? ((await db.getByIndex('projectMaterials', 'projectId', project.id)) || []) : [];
+                const materials = await db.getAll('materials');
+                const co = await pdfCompany();
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pw = doc.internal.pageSize.getWidth();
+                const mx = 16;
+
+                pdfWatermark(doc);
+                let y = pdfHeader(doc, co, 'MATERIALBESTELLUNG', [
+                    `${formatDate(order.date || order.createdAt)}  ·  Status: ${order.status || 'Offen'}`
+                ]);
+
+                const custLines = customer ? [
+                    `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+                    customer.company || '',
+                    [customer.street, customer.city].filter(Boolean).join(', '),
+                    customer.phone || ''
+                ].filter(Boolean) : ['–'];
+                const infoLines = [
+                    project ? `Projekt: ${project.title || ''}` : 'Ohne Projekt',
+                    `Lieferant: ${order.supplier || '–'}`,
+                    order.notes ? `Notiz: ${order.notes}` : ''
+                ].filter(Boolean);
+                y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Bestellung', infoLines);
+
+                // Materialliste: strukturiert aus Projekt-Material, sonst aus den Textzeilen
+                let head, body;
+                if (pm.length > 0) {
+                    head = [['Pos', 'Material', 'Größe', 'Menge', 'Einheit', 'Raum / Bereich', 'Bemerkung']];
+                    body = pm.map((x, i) => {
+                        const mat = materials.find(m => String(m.id) === String(x.materialId));
+                        const room = rooms.find(r => String(r.id) === String(x.roomId));
+                        return [
+                            String(i + 1),
+                            mat?.name || x.name || 'Material',
+                            x.size || mat?.size || '–',
+                            String(x.quantity ?? ''),
+                            x.unit || mat?.unit || 'Stk',
+                            room?.name || 'Gesamt',
+                            x.note || ''
+                        ];
+                    });
+                } else {
+                    head = [['Pos', 'Artikel']];
+                    body = String(order.items || '').split('\n').map(l => l.trim()).filter(Boolean).map((l, i) => [String(i + 1), l]);
+                }
+
+                doc.autoTable({
+                    startY: y,
+                    margin: { left: mx, right: mx, bottom: 26 },
+                    head, body,
+                    ...PDF_TABLE_STYLES,
+                    columnStyles: pm.length > 0 ? {
+                        0: { cellWidth: 9, halign: 'center' },
+                        3: { cellWidth: 15, halign: 'center' },
+                        4: { cellWidth: 16, halign: 'center' }
+                    } : { 0: { cellWidth: 10, halign: 'center' } },
+                    didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                });
+
+                let fy = doc.lastAutoTable.finalY + 10;
+
+                // Aufstellungsplan / Projektskizze
+                if (rooms.length > 0) {
+                    fy = pdfNewPageIfNeeded(doc, fy, 70, co);
+                    fy = pdfRoomSketch(doc, rooms, mx, fy, pw - mx * 2);
+                }
+
+                pdfFooter(doc, co);
+                doc.save(`Bestellung_${(order.supplier || 'Lieferant').replace(/\s+/g, '_')}_${(order.date || '').replaceAll('-', '')}.pdf`);
+                showToast('Bestellung als PDF exportiert.', 'success');
+            },
+
+            // ============================================================
+            // ============ PDF: PROJEKTÜBERSICHT =========================
+            // ============================================================
+            async exportProjectOverviewPDF(projectId) {
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
+                const project = await db.get('projects', projectId);
+                if (!project) return;
+                const customer = project.customerId ? await db.get('customers', project.customerId) : null;
+                const rooms = (await db.getByIndex('rooms', 'projectId', projectId)) || [];
+                const pm = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+                const materials = await db.getAll('materials');
+                const cooling = calculateCoolingCapacity(rooms);
+                const s = project.survey || {};
+                const co = await pdfCompany();
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pw = doc.internal.pageSize.getWidth();
+                const mx = 16;
+
+                pdfWatermark(doc);
+                let y = pdfHeader(doc, co, 'PROJEKTÜBERSICHT', [
+                    `${project.title || ''}  ·  Status: ${project.status || 'Neu'}`
+                ]);
+
+                const custLines = customer ? [
+                    `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+                    customer.company || '',
+                    [customer.street, customer.city].filter(Boolean).join(', '),
+                    [customer.phone, customer.email].filter(Boolean).join('  ·  ')
+                ].filter(Boolean) : ['–'];
+                const projLines = [
+                    `Räume: ${rooms.length}`,
+                    cooling.details.length ? `Empf. Kälteleistung: ${cooling.recommendation} kW (Last ${cooling.totalKW} kW)` : '',
+                    project.notes || ''
+                ].filter(Boolean);
+                y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Projekt', projLines);
+
+                // Räume
+                if (rooms.length) {
+                    doc.autoTable({
+                        startY: y,
+                        margin: { left: mx, right: mx, bottom: 26 },
+                        head: [['Raum', 'L (m)', 'B (m)', 'H (m)', 'Fläche (m²)', 'Volumen (m³)', 'Empf. kW']],
+                        body: rooms.map(r => {
+                            const area = (r.length || 0) * (r.width || 0);
+                            return [r.name || 'Raum', String(r.length || 0), String(r.width || 0), String(r.height || 2.5), area.toFixed(1), (area * (r.height || 2.5)).toFixed(1), ((area * 80) / 1000).toFixed(1)];
+                        }),
+                        ...PDF_TABLE_STYLES,
+                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                    });
+                    y = doc.lastAutoTable.finalY + 8;
+                }
+
+                // Besichtigung
+                const svRows = SURVEY_FIELDS
+                    .map(f => {
+                        const v = s[f.key];
+                        if (v === '' || v === null || v === undefined || v === false || v === 0) return null;
+                        return [f.label, (v === true ? 'Ja' : String(v)) + (f.unit && v !== true ? ' ' + f.unit : '')];
+                    })
+                    .filter(Boolean);
+                if (svRows.length) {
+                    y = pdfNewPageIfNeeded(doc, y, 14 + svRows.length * 6.5, co);
+                    doc.autoTable({
+                        startY: y,
+                        margin: { left: mx, right: mx, bottom: 26 },
+                        head: [['Besichtigung', '']],
+                        body: svRows,
+                        ...PDF_TABLE_STYLES,
+                        columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold' } },
+                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                    });
+                    y = doc.lastAutoTable.finalY + 8;
+                }
+
+                // Material
+                if (pm.length) {
+                    y = pdfNewPageIfNeeded(doc, y, 14 + pm.length * 6.5, co);
+                    doc.autoTable({
+                        startY: y,
+                        margin: { left: mx, right: mx, bottom: 26 },
+                        head: [['Material', 'Größe', 'Menge', 'Einheit', 'Raum', 'Bemerkung']],
+                        body: pm.map(x => {
+                            const mat = materials.find(m => String(m.id) === String(x.materialId));
+                            const room = rooms.find(r => String(r.id) === String(x.roomId));
+                            return [mat?.name || x.name || 'Material', x.size || mat?.size || '–', String(x.quantity ?? ''), x.unit || 'Stk', room?.name || 'Gesamt', x.note || ''];
+                        }),
+                        ...PDF_TABLE_STYLES,
+                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                    });
+                    y = doc.lastAutoTable.finalY + 10;
+                }
+
+                // Zusatzfelder
+                const projDefs = getCustomFields('projects');
+                const cd = project.customData || {};
+                const cdRows = projDefs
+                    .map(f => {
+                        const v = cd[f.id];
+                        if (v === undefined || v === '' || v === null || (Array.isArray(v) && v.length === 0)) return null;
+                        const disp = v === true ? 'Ja' : v === false ? 'Nein' : Array.isArray(v) ? v.join(', ') : String(v);
+                        return [f.label, disp + (f.unit ? ' ' + f.unit : '')];
+                    })
+                    .filter(Boolean);
+                if (cdRows.length) {
+                    y = pdfNewPageIfNeeded(doc, y, 14 + cdRows.length * 6.5, co);
+                    doc.autoTable({
+                        startY: y,
+                        margin: { left: mx, right: mx, bottom: 26 },
+                        head: [['Zusatzfelder', '']],
+                        body: cdRows,
+                        ...PDF_TABLE_STYLES,
+                        columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold' } },
+                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                    });
+                    y = doc.lastAutoTable.finalY + 10;
+                }
+
+                // Skizze
+                if (rooms.length) {
+                    y = pdfNewPageIfNeeded(doc, y, 70, co);
+                    y = pdfRoomSketch(doc, rooms, mx, y, pw - mx * 2);
+                }
+
+                pdfFooter(doc, co);
+                doc.save(`Projektuebersicht_${(project.title || 'Projekt').replace(/[^\wäöüÄÖÜß-]+/g, '_')}.pdf`);
+                showToast('Projektübersicht als PDF exportiert.', 'success');
             }
         };
 
@@ -2512,6 +3848,7 @@ async function reconcileOfferCounter() {
                 this.hideSplash();
 
                 try { await repairLegacyIds(); } catch (e) { console.warn('ID-Reparatur fehlgeschlagen:', e); }
+                try { await loadCustomization(); } catch (e) { console.warn('Anpassungen konnten nicht geladen werden:', e); }
 
                 if (navigator.onLine) {
                     initialFullSync().then(initRealtime);
@@ -2589,6 +3926,7 @@ async function reconcileOfferCounter() {
                     case 'materials': renderMaterials(); break;
                     case 'offers': renderOffers(); break;
                     case 'orders': renderOrders(); break;
+                    case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
                     default: renderDashboard();
@@ -2925,10 +4263,11 @@ async function reconcileOfferCounter() {
                             <div class="form-group"><label>Hersteller</label><input type="text" id="matManufacturer" value="${escapeHtml(mat?.manufacturer || '')}" placeholder="z.B. Mitsubishi Electric"></div>
                             <div class="form-group"><label>Artikelnummer</label><input type="text" id="matArticleNumber" value="${escapeHtml(mat?.articleNumber || '')}"></div>
                         </div>
+                        <div class="form-group"><label>Größe / Durchmesser (optional)</label><input type="text" id="matSize" value="${escapeHtml(mat?.size || '')}" placeholder="z. B. 22 mm, 5×2,5 mm², 1/2 Zoll"></div>
                         <div class="form-row">
                             <div class="form-group"><label>Kategorie</label>
                                 <select id="matCategory">
-                                    ${MATERIAL_CATEGORIES.map(c => `<option value="${c}" ${mat?.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                    ${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}" ${mat?.category === c.name ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
                                 </select>
                             </div>
                             <div class="form-group"><label>Einheit</label><input type="text" id="matUnit" value="${escapeHtml(mat?.unit || 'Stk')}"></div>
@@ -2946,6 +4285,7 @@ async function reconcileOfferCounter() {
                             name: overlay.querySelector('#matName').value.trim(),
                             manufacturer: overlay.querySelector('#matManufacturer').value.trim(),
                             articleNumber: overlay.querySelector('#matArticleNumber').value.trim(),
+                            size: overlay.querySelector('#matSize').value.trim(),
                             category: overlay.querySelector('#matCategory').value,
                             unit: overlay.querySelector('#matUnit').value.trim() || 'Stk',
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
@@ -3920,7 +5260,7 @@ async exportOfferPDF(offerId) {
             async resetAllData() {
                 if (!confirm('ALLE DATEN UNWIDERRUFLICH LÖSCHEN? Dies kann nicht rückgängig gemacht werden!')) return;
                 if (!confirm('Wirklich ALLES löschen?')) return;
-                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'events', 'settings'];
+                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'events', 'settings'];
                 for (const store of stores) await db.clear(store);
                 showToast('Alle Daten gelöscht.', 'info');
                 this.navigate('dashboard');
