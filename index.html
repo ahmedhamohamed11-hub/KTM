@@ -2209,6 +2209,86 @@ async function reconcileOfferCounter() {
         }
 
         // ============================================================
+        // ============ AUTO-REPARATUR: ALT-IDs -> UUID ===============
+        // ============================================================
+        // Supabase-Tabellen nutzen UUID-Spalten. Lokale Alt-Datensätze mit
+        // Ganzzahl-IDs (aus der Zeit vor der UUID-Umstellung) können deshalb
+        // nie gepusht werden ("invalid input syntax for type uuid"). Diese
+        // Routine läuft bei jedem App-Start und stellt solche Datensätze
+        // automatisch auf UUIDs um - inklusive der Verknüpfungen.
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        function isUuidId(v) { return typeof v === 'string' && UUID_RE.test(v); }
+
+        async function repairLegacyIds() {
+            const parentStores = ['customers', 'projects'];
+            const childStores = ['rooms', 'images', 'materials', 'offers', 'orders', 'events'];
+            const remap = { customers: new Map(), projects: new Map() };
+            let repaired = 0, refsFixed = 0, refsCleared = 0;
+
+            for (const store of [...parentStores, ...childStores]) {
+                const rows = await db.getAll(store);
+                for (const rec of rows) {
+                    if (rec.id === undefined || rec.id === null) continue;
+                    if (isUuidId(String(rec.id))) continue;
+                    // Bereits erfolgreich synchronisierte Alt-Daten nicht anfassen
+                    if (rec._synced === true) continue;
+                    const oldId = rec.id;
+                    const newId = generateUUID();
+                    if (remap[store]) remap[store].set(String(oldId), newId);
+                    await db.deleteLocalOnly(store, oldId);
+                    rec.id = newId;
+                    rec._synced = false;
+                    await db.putLocalOnly(store, rec);
+                    repaired++;
+                }
+            }
+
+            // Verknüpfungen (projectId/customerId) unsynchronisierter Datensätze nachziehen
+            const refFields = {
+                projects: ['customerId'],
+                rooms: ['projectId'],
+                images: ['projectId'],
+                offers: ['projectId'],
+                orders: ['projectId'],
+                events: ['projectId', 'customerId']
+            };
+            for (const [store, fields] of Object.entries(refFields)) {
+                const rows = await db.getAll(store);
+                for (const rec of rows) {
+                    if (rec._synced === true) continue;
+                    let changed = false;
+                    for (const f of fields) {
+                        const v = rec[f];
+                        if (v === undefined || v === null || v === '') continue;
+                        if (isUuidId(String(v))) continue;
+                        const parent = f === 'customerId' ? 'customers' : 'projects';
+                        const mapped = remap[parent].get(String(v));
+                        if (mapped) { rec[f] = mapped; refsFixed++; }
+                        else { rec[f] = null; refsCleared++; }
+                        changed = true;
+                    }
+                    if (changed) { rec._synced = false; await db.putLocalOnly(store, rec); }
+                }
+            }
+
+            // Lösch-Warteschlange von Alt-IDs säubern (UUID-Spalten können sie nie annehmen,
+            // sonst bleiben sie ewig hängen und werfen bei jedem Sync Fehler)
+            try {
+                const pend = await getPendingDeletes();
+                const cleaned = pend.filter(p => p.table === 'settings' || isUuidId(String(p.id)));
+                if (cleaned.length !== pend.length) {
+                    await db.putLocalOnly('settings', { key: PENDING_DELETES_KEY, value: JSON.stringify(cleaned) });
+                    console.log(`ID-Reparatur: ${pend.length - cleaned.length} veraltete Einträge aus der Lösch-Warteschlange entfernt.`);
+                }
+            } catch (e) { /* ignorieren */ }
+
+            if (repaired > 0 || refsFixed > 0 || refsCleared > 0) {
+                console.log(`ID-Reparatur: ${repaired} Datensätze auf UUID umgestellt, ${refsFixed} Verknüpfungen aktualisiert, ${refsCleared} verwaiste Verknüpfungen entfernt.`);
+                showToast(`${repaired} alte Datensätze für den Sync repariert.`, 'success');
+            }
+        }
+
+        // ============================================================
         // ============ SYNC-DIAGNOSE =================================
         // ============================================================
         async function runSyncDiagnosis(resultEl) {
@@ -2236,7 +2316,7 @@ async function reconcileOfferCounter() {
                     const { error } = await sb.from(t).select(t === 'settings' ? 'key' : 'id').limit(1);
                     if (error) {
                         let hint = error.message;
-                        if (/does not exist/i.test(error.message)) hint = 'Tabelle fehlt in Supabase → SQL-Skript im Supabase SQL-Editor ausführen.';
+                        if (/does not exist|Could not find the table|schema cache/i.test(error.message)) hint = 'Tabelle fehlt in Supabase → SQL-Skript im Supabase SQL-Editor ausführen.';
                         else if (/bigint|invalid input syntax/i.test(error.message)) hint = 'ID-Typ passt nicht (bigint statt text/uuid) → Migrations-SQL nötig. Original: ' + error.message;
                         else if (/permission|policy|row-level/i.test(error.message)) hint = 'RLS-Policy blockiert Zugriff → Policy für diese Tabelle anlegen. Original: ' + error.message;
                         lines.push(row(false, 'Tabelle "' + t + '"', hint));
@@ -2248,7 +2328,18 @@ async function reconcileOfferCounter() {
                 }
             }
 
-            // 3) Lokale Warteschlangen
+            // 3) Alt-IDs, die nicht in UUID-Spalten passen
+            try {
+                let legacy = 0;
+                for (const t of tables) {
+                    if (t === 'settings') continue;
+                    const rows = await db.getAll(t);
+                    legacy += rows.filter(r => r.id !== undefined && r.id !== null && !isUuidId(String(r.id)) && r._synced !== true).length;
+                }
+                lines.push(row(legacy === 0, 'Alt-IDs (nicht UUID)', legacy === 0 ? '' : legacy + ' Datensätze mit alter Nummern-ID – App neu laden, dann werden sie automatisch repariert.'));
+            } catch (e) { /* ignorieren */ }
+
+            // 4) Lokale Warteschlangen
             try {
                 const pending = await getPendingDeletes();
                 lines.push(row(pending.length === 0, 'Offene Lösch-Warteschlange', pending.length === 0 ? '' : pending.length + ' Löschung(en) warten auf Sync.'));
@@ -2415,6 +2506,8 @@ async function reconcileOfferCounter() {
                 this.setupResponsive();
 
                 this.hideSplash();
+
+                try { await repairLegacyIds(); } catch (e) { console.warn('ID-Reparatur fehlgeschlagen:', e); }
 
                 if (navigator.onLine) {
                     initialFullSync().then(initRealtime);
