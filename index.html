@@ -947,6 +947,7 @@ async put(storeName, data) {
         const db = new DatabaseManager();
 
         async function handleRemoteChange(payload) {
+          try {
             const { table, eventType, new: newRec, old: oldRec } = payload;
             console.log("Supabase Live Update:", eventType, table);
 
@@ -955,7 +956,7 @@ async put(storeName, data) {
             } else {
                const localData = toCamel(newRec);
 
-const existing = await db.get(table, localData.id);
+const existing = await db.get(table, localData.id ?? localData.key);
 
 if (
     existing &&
@@ -972,6 +973,9 @@ localData._remote = true;
 await db.putLocalOnly(table, localData);
             }
             app.navigate(app.currentPage, app.currentProjectId);
+          } catch (e) {
+            console.warn('Live-Update konnte nicht verarbeitet werden:', e, payload);
+          }
         }
 
         function initRealtime() {
@@ -2168,11 +2172,22 @@ async function reconcileOfferCounter() {
                         </div>
                     </div>
 
+                    <div class="panel settings-form" style="margin-bottom:18px;">
+                        <div class="panel-title">Sync-Diagnose</div>
+                        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Prüft die Verbindung zu Supabase und jede einzelne Tabelle – zeigt genau, wo es hakt.</div>
+                        <button class="btn btn-outline" id="stgDiagBtn">Diagnose starten</button>
+                        <div id="stgDiagResult" style="margin-top:12px;"></div>
+                    </div>
+
                     <div class="panel settings-form">
                         <div class="panel-title">System</div>
                         <div style="font-size:13.5px;color:var(--text-muted);">Version 3.0 · Supabase-Sync <span id="stgSyncState"></span></div>
                     </div>
                 `;
+
+                document.getElementById('stgDiagBtn').addEventListener('click', () => {
+                    runSyncDiagnosis(document.getElementById('stgDiagResult'));
+                });
 
                 const st = document.getElementById('stgSyncState');
                 if (st) st.textContent = supabaseAvailable ? (navigator.onLine ? '🟢 aktiv' : '🔴 offline') : '⚪ nicht verbunden';
@@ -2191,6 +2206,63 @@ async function reconcileOfferCounter() {
                     showToast('Firmendaten gespeichert.', 'success');
                 });
             })();
+        }
+
+        // ============================================================
+        // ============ SYNC-DIAGNOSE =================================
+        // ============================================================
+        async function runSyncDiagnosis(resultEl) {
+            resultEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Prüfe Verbindung und Tabellen...</div>';
+            const lines = [];
+            const row = (ok, label, detail) => `
+                <div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
+                    <span>${ok ? '✅' : '❌'}</span>
+                    <div><strong>${escapeHtml(label)}</strong>${detail ? `<div style="color:${ok ? 'var(--text-muted)' : 'var(--danger)'};font-size:12px;">${escapeHtml(detail)}</div>` : ''}</div>
+                </div>`;
+
+            // 1) Grundvoraussetzungen
+            lines.push(row(navigator.onLine, 'Internetverbindung', navigator.onLine ? '' : 'Gerät ist offline.'));
+            lines.push(row(supabaseAvailable, 'Supabase-SDK geladen', supabaseAvailable ? '' : 'CDN-Script konnte nicht geladen werden (Netzwerk/Adblocker?).'));
+
+            if (!navigator.onLine || !supabaseAvailable) {
+                resultEl.innerHTML = lines.join('');
+                return;
+            }
+
+            // 2) Jede Tabelle einzeln testen
+            const tables = ['customers','projects','rooms','images','materials','offers','orders','events','settings'];
+            for (const t of tables) {
+                try {
+                    const { error } = await sb.from(t).select(t === 'settings' ? 'key' : 'id').limit(1);
+                    if (error) {
+                        let hint = error.message;
+                        if (/does not exist/i.test(error.message)) hint = 'Tabelle fehlt in Supabase → SQL-Skript im Supabase SQL-Editor ausführen.';
+                        else if (/bigint|invalid input syntax/i.test(error.message)) hint = 'ID-Typ passt nicht (bigint statt text/uuid) → Migrations-SQL nötig. Original: ' + error.message;
+                        else if (/permission|policy|row-level/i.test(error.message)) hint = 'RLS-Policy blockiert Zugriff → Policy für diese Tabelle anlegen. Original: ' + error.message;
+                        lines.push(row(false, 'Tabelle "' + t + '"', hint));
+                    } else {
+                        lines.push(row(true, 'Tabelle "' + t + '"', ''));
+                    }
+                } catch (e) {
+                    lines.push(row(false, 'Tabelle "' + t + '"', e.message || String(e)));
+                }
+            }
+
+            // 3) Lokale Warteschlangen
+            try {
+                const pending = await getPendingDeletes();
+                lines.push(row(pending.length === 0, 'Offene Lösch-Warteschlange', pending.length === 0 ? '' : pending.length + ' Löschung(en) warten auf Sync.'));
+            } catch (e) { /* ignorieren */ }
+            try {
+                let unsynced = 0;
+                for (const t of tables) {
+                    const rows = await db.getAll(t);
+                    unsynced += rows.filter(r => !r._synced && !(t === 'settings' && typeof r.key === 'string' && r.key.startsWith('_'))).length;
+                }
+                lines.push(row(true, 'Noch nicht gepushte Datensätze', unsynced + ' lokal ausstehend' + (unsynced > 0 ? ' (werden beim nächsten Sync übertragen)' : '')));
+            } catch (e) { /* ignorieren */ }
+
+            resultEl.innerHTML = lines.join('');
         }
 
         // ============================================================
