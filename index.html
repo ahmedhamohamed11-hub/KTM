@@ -125,9 +125,10 @@
         .sidebar-logo {
             display: flex; align-items: center; gap: 11px;
             font-family: var(--font-display); font-weight: 700; font-size: 19px;
-            padding: 4px 8px 18px;
+            padding: 4px 8px 18px; line-height: 1.15;
         }
-        .sidebar-logo small { display:block; font-size: 10.5px; font-weight: 600; color: var(--text-muted); letter-spacing: .04em; }
+        .sidebar-logo > span { display: flex; flex-direction: column; min-width: 0; }
+        .sidebar-logo small { font-size: 10.5px; font-weight: 600; color: var(--text-muted); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .logo-icon {
             width: 38px; height: 38px; border-radius: 11px;
             background: linear-gradient(135deg, var(--accent), #0a5f6b);
@@ -532,6 +533,58 @@
         .pipe-col.drag-over { border-color: var(--accent); background: var(--accent-light); }
         .pipe-card { user-select: none; }
         .pipe-card:active { cursor: grabbing; }
+
+        /* ============ FORM-KARTEN (Besichtigung, Raum) ============ */
+        .form-card {
+            background: var(--bg-content); border: 1px solid var(--border);
+            border-radius: var(--radius-md); padding: 16px; margin-bottom: 14px;
+        }
+        .form-card-title { font-weight: 700; font-size: 14px; margin-bottom: 12px; color: var(--text-primary); }
+        .form-card .form-group:last-child { margin-bottom: 2px; }
+
+        /* Schalter (Ja/Nein) */
+        .switch-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            padding: 9px 12px; margin-bottom: 10px;
+            background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 13.5px; font-weight: 500; cursor: pointer;
+        }
+        .switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .switch .slider {
+            position: absolute; inset: 0; border-radius: var(--radius-pill);
+            background: var(--bg-tertiary); border: 1px solid var(--border);
+            transition: background .18s ease;
+        }
+        .switch .slider::before {
+            content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+            border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+            transition: transform .18s ease;
+        }
+        .switch input:checked + .slider { background: var(--accent); border-color: var(--accent); }
+        .switch input:checked + .slider::before { transform: translateX(18px); }
+
+        /* Marken-Chips (Innengerät) */
+        .brand-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+        .brand-chip {
+            border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary);
+            font-size: 12.5px; font-weight: 600; padding: 7px 13px; border-radius: var(--radius-pill);
+            cursor: pointer; transition: all var(--transition);
+        }
+        .brand-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .brand-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        /* Material-Zeilen im Raum-Modal */
+        .pm-row { display: grid; grid-template-columns: 1fr 78px 86px 40px; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .pm-row .btn { justify-content: center; }
+        @media (max-width: 480px) { .pm-row { grid-template-columns: 1fr 64px 72px 38px; } }
+
+        /* Tabellen-Fußzeile (Summen) */
+        tfoot td { padding: 12px 16px; border-top: 2px solid var(--border); background: var(--bg-tertiary); font-size: 13.5px; }
+
+        /* Sanfte Seiten-Animation */
+        @keyframes pageIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        .content-scroll > * { animation: pageIn .22s ease both; }
 
         /* ============ RESPONSIVE ============ */
         /* Tablet */
@@ -1921,7 +1974,7 @@ async function reconcileOfferCounter() {
                                         <h4>📋 Besichtigung</h4>
                                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                                             <button class="btn btn-sm btn-outline" onclick="app.openSurveyModal(${idJS(project.id)})">${icon('edit')} ${surveyFilled ? 'Bearbeiten' : 'Erfassen'}</button>
-                                            ${surveyFilled ? `<button class="btn btn-sm btn-primary" onclick="app.generateMaterialSuggestions(${idJS(project.id)})">${icon('box')} Materialvorschläge erzeugen</button>` : ''}
+                                            ${(surveyFilled || (project.rooms||[]).length > 0) ? `<button class="btn btn-sm btn-primary" onclick="app.generateMaterialSuggestions(${idJS(project.id)})">${icon('box')} Material berechnen</button>` : ''}
                                         </div>
                                     </div>
                                     ${surveyFilled ? `<div class="survey-summary">${SURVEY_FIELDS.filter(f => {
@@ -1949,7 +2002,7 @@ async function reconcileOfferCounter() {
                                                         <td><strong>${escapeHtml(r.name||'Unbenannt')}</strong></td>
                                                         <td>${r.length||0}</td><td>${r.width||0}</td><td>${r.height||2.5}</td>
                                                         <td>${area} m²</td><td>${volume} m³</td><td>${roomKW} kW</td>
-                                                        <td><button class="btn btn-sm btn-danger" onclick="app.deleteRoom(${idJS(r.id)},${idJS(project.id)})">${icon('trash')}</button></td>
+                                                        <td style="white-space:nowrap;"><button class="btn btn-sm btn-outline" onclick="app.openRoomModal(${idJS(project.id)}, ${idJS(r.id)})">${icon('edit')}</button> <button class="btn btn-sm btn-danger" onclick="app.deleteRoom(${idJS(r.id)},${idJS(project.id)})">${icon('trash')}</button></td>
                                                     </tr>`;
                                                 }).join('') || '<tr><td colspan="8" class="empty-note">Keine Räume</td></tr>'}
                                             </tbody>
@@ -1973,22 +2026,33 @@ async function reconcileOfferCounter() {
                                     </div>
                                     <div class="table-container">
                                         <table>
-                                            <thead><tr><th>Material</th><th>Größe</th><th style="width:110px;">Menge</th><th style="width:100px;">Einheit</th><th>Raum</th><th>Bemerkung</th><th></th></tr></thead>
+                                            <thead><tr><th>Material</th><th>Größe</th><th style="width:96px;">Menge</th><th style="width:92px;">Einheit</th><th>Raum</th><th style="width:104px;">Preis/Einh.</th><th style="text-align:right;">Gesamt</th><th>Bemerkung</th><th></th></tr></thead>
                                             <tbody>
                                                 ${pm.map(x => {
                                                     const mat = materials.find(m => String(m.id) === String(x.materialId));
-                                                    const room = (project.rooms||[]).find(r => String(r.id) === String(x.roomId));
+                                                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
+                                                    const lineTotal = (Number(x.quantity) || 0) * price;
                                                     return `<tr>
                                                         <td><strong>${escapeHtml(mat?.name || x.name || 'Material')}</strong></td>
                                                         <td>${escapeHtml(x.size || mat?.size || '-')}</td>
-                                                        <td><input type="number" inputmode="decimal" step="any" min="0" value="${x.quantity ?? 0}" style="padding:6px 9px;text-align:center;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'quantity', this.value)"></td>
-                                                        <td><select style="padding:6px 6px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'unit', this.value)">${UNITS.map(u => `<option value="${u}" ${(x.unit || 'Stk') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></td>
-                                                        <td><select style="padding:6px 6px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'roomId', this.value)"><option value="">–</option>${(project.rooms||[]).map(r => `<option value="${escapeHtml(String(r.id))}" ${String(x.roomId) === String(r.id) ? 'selected' : ''}>${escapeHtml(r.name || 'Raum')}</option>`).join('')}</select></td>
-                                                        <td><input type="text" value="${escapeHtml(x.note || '')}" placeholder="..." style="padding:6px 9px;min-width:110px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'note', this.value)"></td>
+                                                        <td><input type="number" inputmode="decimal" step="any" min="0" value="${x.quantity ?? 0}" style="padding:6px 8px;text-align:center;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'quantity', this.value)"></td>
+                                                        <td><select style="padding:6px 5px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'unit', this.value)">${UNITS.map(u => `<option value="${u}" ${(x.unit || 'Stk') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></td>
+                                                        <td><select style="padding:6px 5px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'roomId', this.value)"><option value="">–</option>${(project.rooms||[]).map(r => `<option value="${escapeHtml(String(r.id))}" ${String(x.roomId) === String(r.id) ? 'selected' : ''}>${escapeHtml(r.name || 'Raum')}</option>`).join('')}</select></td>
+                                                        <td><input type="number" inputmode="decimal" step="any" min="0" value="${price}" style="padding:6px 8px;text-align:right;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'price', this.value)"></td>
+                                                        <td style="text-align:right;font-weight:700;white-space:nowrap;">${formatCurrency(lineTotal)}</td>
+                                                        <td><input type="text" value="${escapeHtml(x.note || '')}" placeholder="..." style="padding:6px 8px;min-width:100px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'note', this.value)"></td>
                                                         <td><button class="btn btn-sm btn-danger" onclick="app.deleteProjectMaterial(${idJS(x.id)}, ${idJS(project.id)})">${icon('trash')}</button></td>
                                                     </tr>`;
-                                                }).join('') || '<tr><td colspan="7" class="empty-note">Noch kein Material zugeordnet. Tipp: erst Besichtigung erfassen, dann „Materialvorschläge erzeugen".</td></tr>'}
+                                                }).join('') || '<tr><td colspan="9" class="empty-note">Noch kein Material – lege Räume mit Material an oder nutze „Material berechnen".</td></tr>'}
                                             </tbody>
+                                            ${pm.length ? `<tfoot><tr>
+                                                <td colspan="6" style="text-align:right;font-weight:700;">Gesamtsumme</td>
+                                                <td style="text-align:right;font-weight:800;color:var(--accent);white-space:nowrap;">${formatCurrency(pm.reduce((s, x) => {
+                                                    const mat = materials.find(m => String(m.id) === String(x.materialId));
+                                                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
+                                                    return s + (Number(x.quantity) || 0) * price;
+                                                }, 0))}</td><td colspan="2"></td>
+                                            </tr></tfoot>` : ''}
                                         </table>
                                     </div>
                                 </div>
@@ -2569,9 +2633,25 @@ async function reconcileOfferCounter() {
             { key: 'coreDrills', label: 'Kernbohrungen', type: 'number', unit: 'Stk', group: 'Montage' },
             { key: 'wallMaterial', label: 'Wandmaterial', type: 'select', options: ['Ziegel', 'Beton', 'Holz', 'Rigips', 'Vollwärmeschutz', 'Sonstiges'], group: 'Montage' },
             { key: 'outdoorMounting', label: 'Außengerät-Aufstellung', type: 'select', options: ['Big Foot', 'Wandkonsole', 'Fundament', 'Balkon', 'Dach', 'Garten', 'Sonstiges'], group: 'Montage' },
-            { key: 'fiProtection', label: 'FI-Schutz vorhanden', type: 'bool', group: 'Elektrik' },
+            { key: 'scaffold', label: 'Gerüst notwendig', type: 'bool', group: 'Montage' },
+            { key: 'liftPlatform', label: 'Hebebühne notwendig', type: 'bool', group: 'Montage' },
+            { key: 'roofMounting', label: 'Dachmontage', type: 'bool', group: 'Montage' },
+            { key: 'climbingAid', label: 'Steighilfe notwendig', type: 'bool', group: 'Montage' },
+            { key: 'fiProtection', label: 'FI vorhanden', type: 'bool', group: 'Elektrik' },
             { key: 'fuse', label: 'Absicherung', type: 'text', placeholder: 'z. B. 16 A', group: 'Elektrik' },
-            { key: 'remarks', label: 'Bemerkungen', type: 'textarea', group: 'Sonstiges' }
+            { key: 'powerSupply', label: 'Spannungsversorgung', type: 'select', options: ['230 V', '400 V'], group: 'Elektrik' },
+            { key: 'socketAvailable', label: 'Steckdose vorhanden', type: 'bool', group: 'Elektrik' },
+            { key: 'supplyLineNeeded', label: 'Zuleitung notwendig', type: 'bool', group: 'Elektrik' },
+            { key: 'remarks', label: 'Bemerkungen', type: 'textarea', group: 'Hinweise' }
+        ];
+        const SURVEY_GROUP_ICONS = { 'Leitungen': '🧵', 'Montage': '🔩', 'Elektrik': '⚡', 'Hinweise': '📝' };
+
+        // Raumnamen-Vorschläge (Autovervollständigung, eigene Namen weiter möglich)
+        const ROOM_NAMES = ['Wohnzimmer','Schlafzimmer','Kinderzimmer','Küche','Esszimmer','Büro','Arbeitszimmer','Wintergarten','Keller','Garage','Dachboden','Flur','Bad','WC','Gästezimmer','Serverraum','Lager','Werkstatt','Geschäft','Restaurant','Praxis','Technikraum','Besprechungsraum','Verkaufsraum','Kühlraum','Tiefkühlraum'];
+        // Innengeräte-Marken
+        const BRANDS = ['Daikin','Mitsubishi','Panasonic','LG','Samsung','Toshiba','Fujitsu','Gree','Midea','Haier','Sonstige'];
+        // Projekttitel-Vorschläge (werden mit Kundennamen kombiniert)
+        const PROJECT_TITLE_TYPES = ['Klimaanlage','Single-Split','Multi-Split','Dual-Split','VRF-Anlage','Wärmepumpe','Lüftungsanlage','Kühlraum','Service','Wartung','Reparatur','Besichtigung','Angebot'
         ];
 
         // ============================================================
@@ -2833,17 +2913,38 @@ async function reconcileOfferCounter() {
 
         function pdfWatermark(doc) {
             try {
+                // Nur 1x pro Seite (Header/autoTable/Manuell rufen mehrfach)
+                const pg = doc.internal.getCurrentPageInfo ? doc.internal.getCurrentPageInfo().pageNumber : doc.internal.getNumberOfPages();
+                doc.__wmPages = doc.__wmPages || new Set();
+                if (doc.__wmPages.has(pg)) return;
+                doc.__wmPages.add(pg);
+
                 const pw = doc.internal.pageSize.getWidth();
                 const ph = doc.internal.pageSize.getHeight();
-                if (doc.GState && doc.setGState) {
-                    doc.saveGraphicsState();
-                    doc.setGState(new doc.GState({ opacity: 0.05 }));
-                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 62, PDF_TEAL, 1.6);
-                    doc.restoreGraphicsState();
-                } else {
-                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 62, [232, 240, 242], 1.6);
+                // WICHTIG: Die Flocke besteht aus LINIEN -> 'stroke-opacity' nötig,
+                // 'opacity' allein wirkt nur auf Füllungen (deshalb war sie vorher deckend).
+                let done = false;
+                try {
+                    if (doc.GState && doc.setGState && doc.saveGraphicsState && doc.restoreGraphicsState) {
+                        doc.saveGraphicsState();
+                        doc.setGState(new doc.GState({ opacity: 0.06, 'stroke-opacity': 0.06 }));
+                        pdfSnowflake(doc, pw / 2, ph / 2 + 8, 58, PDF_TEAL, 1.5);
+                        doc.restoreGraphicsState();
+                        done = true;
+                    }
+                } catch (e) { /* Fallback unten */ }
+                if (!done) {
+                    // Fallback ohne Transparenz: sehr helle Farbe, stört nie
+                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 58, [228, 239, 241], 1.3);
                 }
             } catch (e) { /* Wasserzeichen ist optional */ }
+        }
+        function pdfFooterOnce(doc, co) {
+            const pg = doc.internal.getCurrentPageInfo ? doc.internal.getCurrentPageInfo().pageNumber : doc.internal.getNumberOfPages();
+            doc.__ftPages = doc.__ftPages || new Set();
+            if (doc.__ftPages.has(pg)) return;
+            doc.__ftPages.add(pg);
+            pdfFooter(doc, co);
         }
 
         async function pdfCompany() {
@@ -2897,12 +2998,21 @@ async function reconcileOfferCounter() {
             doc.rect(0, bandY + bandH, pw, 1.2, 'F');
             // dezente Schneeflocken im Band
             try {
-                if (doc.GState && doc.setGState) {
-                    doc.saveGraphicsState();
-                    doc.setGState(new doc.GState({ opacity: 0.18 }));
-                    pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, [255, 255, 255], 0.7);
-                    pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, [255, 255, 255], 0.45);
-                    doc.restoreGraphicsState();
+                let bandDone = false;
+                try {
+                    if (doc.GState && doc.setGState && doc.saveGraphicsState) {
+                        doc.saveGraphicsState();
+                        doc.setGState(new doc.GState({ opacity: 0.2, 'stroke-opacity': 0.2 }));
+                        pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, [255, 255, 255], 0.7);
+                        pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, [255, 255, 255], 0.45);
+                        doc.restoreGraphicsState();
+                        bandDone = true;
+                    }
+                } catch (e) { /* Fallback */ }
+                if (!bandDone) {
+                    // gedeckte, hellere Teal-Töne statt Transparenz
+                    pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, [78, 158, 170], 0.7);
+                    pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, [78, 158, 170], 0.45);
                 }
             } catch (e) { /* optional */ }
 
@@ -3016,9 +3126,9 @@ async function reconcileOfferCounter() {
         function pdfNewPageIfNeeded(doc, y, needed, co) {
             const ph = doc.internal.pageSize.getHeight();
             if (y + needed > ph - 26) {
+                pdfFooterOnce(doc, co);
                 doc.addPage();
                 pdfWatermark(doc);
-                pdfFooter(doc, co);
                 return 18;
             }
             return y;
@@ -3196,15 +3306,17 @@ async function reconcileOfferCounter() {
             async updateProjectMaterial(id, field, value) {
                 const pm = await db.get('projectMaterials', id);
                 if (!pm) return;
-                if (field === 'quantity') {
+                if (field === 'quantity' || field === 'price') {
                     const v = parseFloat(String(value).replace(',', '.'));
-                    pm.quantity = isNaN(v) || v < 0 ? 0 : v;
+                    pm[field] = isNaN(v) || v < 0 ? 0 : v;
                 } else if (field === 'roomId') {
                     pm.roomId = value ? parseId(value) : null;
                 } else {
                     pm[field] = value;
                 }
                 await db.put('projectMaterials', pm);
+                // Zeilensummen/Gesamtsumme aktualisieren
+                if (field === 'quantity' || field === 'price') app.navigate('projects', pm.projectId);
             },
 
             async deleteProjectMaterial(id, projectId) {
@@ -3218,12 +3330,23 @@ async function reconcileOfferCounter() {
                 if (pm.length === 0) { showToast('Kein Material im Projekt.', 'info'); return; }
                 const materials = await db.getAll('materials');
                 const rooms = (await db.getByIndex('rooms', 'projectId', projectId)) || [];
-                const lines = pm.map(x => {
+                // Gleiche Materialien (Material + Größe + Einheit) zu einer Position zusammenfassen
+                const agg = new Map();
+                for (const x of pm) {
                     const mat = materials.find(m => String(m.id) === String(x.materialId));
-                    const room = rooms.find(r => String(r.id) === String(x.roomId));
                     const size = x.size || mat?.size || '';
-                    return `${x.quantity} ${x.unit || mat?.unit || 'Stk'} ${mat?.name || x.name || 'Material'}${size ? ' ' + size : ''}${room ? ' [' + (room.name || 'Raum') + ']' : ''}${x.note ? ' – ' + x.note : ''}`;
-                });
+                    const unit = x.unit || mat?.unit || 'Stk';
+                    const key = `${String(x.materialId)}|${size}|${unit}`;
+                    if (!agg.has(key)) agg.set(key, { name: mat?.name || x.name || 'Material', size, unit, qty: 0, rooms: new Set() });
+                    const a = agg.get(key);
+                    a.qty += Number(x.quantity) || 0;
+                    const room = rooms.find(r => String(r.id) === String(x.roomId));
+                    if (room) a.rooms.add(room.name || 'Raum');
+                }
+                const fmtQty = q => (Math.round(q * 100) / 100).toString().replace('.', ',');
+                const lines = [...agg.values()].map(a =>
+                    `${fmtQty(a.qty)} ${a.unit} ${a.name}${a.size ? ' ' + a.size : ''}${a.rooms.size ? ' [' + [...a.rooms].join(', ') + ']' : ''}`
+                );
                 this.openOrderModal(null, projectId, lines.join('\n'));
             },
 
@@ -3255,47 +3378,51 @@ async function reconcileOfferCounter() {
 
                 const groups = [...new Set(SURVEY_FIELDS.map(f => f.group))];
                 const body = groups.map(g => `
-                    <div style="font-weight:700;font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px;">${g}</div>
-                    <div class="survey-grid">
-                        ${SURVEY_FIELDS.filter(f => f.group === g).map(f => {
-                            const v = survey[f.key];
-                            if (f.type === 'bool') {
-                                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><select id="sv_${f.key}"><option value="">–</option><option value="true" ${v === true ? 'selected' : ''}>Ja</option><option value="false" ${v === false ? 'selected' : ''}>Nein</option></select></div>`;
-                            }
-                            if (f.type === 'select') {
-                                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><select id="sv_${f.key}"><option value="">–</option>${f.options.map(o => `<option value="${escapeHtml(o)}" ${v === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></div>`;
-                            }
-                            if (f.type === 'textarea') {
-                                return `<div class="form-group" style="grid-column:1/-1;"><label>${escapeHtml(f.label)}</label><textarea id="sv_${f.key}" rows="3">${escapeHtml(v || '')}</textarea></div>`;
-                            }
-                            if (f.type === 'number') {
-                                return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' (' + f.unit + ')' : ''}</label><input type="number" inputmode="decimal" step="any" min="0" id="sv_${f.key}" value="${v ?? ''}"></div>`;
-                            }
-                            return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="sv_${f.key}" value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}"></div>`;
-                        }).join('')}
+                    <div class="form-card">
+                        <div class="form-card-title">${SURVEY_GROUP_ICONS[g] || ''} ${g}</div>
+                        <div class="survey-grid">
+                            ${SURVEY_FIELDS.filter(f => f.group === g).map(f => {
+                                const v = survey[f.key];
+                                if (f.type === 'bool') {
+                                    return `<label class="switch-row"><span>${escapeHtml(f.label)}</span><span class="switch"><input type="checkbox" id="sv_${f.key}" ${v === true ? 'checked' : ''}><span class="slider"></span></span></label>`;
+                                }
+                                if (f.type === 'select') {
+                                    return `<div class="form-group"><label>${escapeHtml(f.label)}</label><select id="sv_${f.key}"><option value="">–</option>${f.options.map(o => `<option value="${escapeHtml(o)}" ${v === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></div>`;
+                                }
+                                if (f.type === 'textarea') {
+                                    return `<div class="form-group" style="grid-column:1/-1;"><label>${escapeHtml(f.label)}</label><textarea id="sv_${f.key}" rows="3" placeholder="Besonderheiten, Zugang, Absprachen...">${escapeHtml(v || '')}</textarea></div>`;
+                                }
+                                if (f.type === 'number') {
+                                    return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' <small>(' + f.unit + ')</small>' : ''}</label><input type="number" inputmode="decimal" step="any" min="0" id="sv_${f.key}" value="${v ?? ''}"></div>`;
+                                }
+                                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="sv_${f.key}" value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}"></div>`;
+                            }).join('')}
+                        </div>
                     </div>
                 `).join('');
 
                 showModal(
                     `Besichtigung – ${escapeHtml(project.title || '')}`,
-                    `<div class="modal-scroll-hint">${body}</div>`,
+                    body,
                     async (overlay) => {
                         const data = {};
                         for (const f of SURVEY_FIELDS) {
                             const el = overlay.querySelector(`#sv_${f.key}`);
                             if (!el) continue;
-                            let v = el.value;
-                            if (f.type === 'number') v = v === '' ? '' : parseFloat(String(v).replace(',', '.'));
-                            if (f.type === 'bool') v = v === '' ? '' : v === 'true';
+                            let v;
+                            if (f.type === 'bool') v = el.checked;
+                            else {
+                                v = el.value;
+                                if (f.type === 'number') v = v === '' ? '' : parseFloat(String(v).replace(',', '.'));
+                            }
                             data[f.key] = v;
                         }
                         project.survey = data;
-                        // Status automatisch weiterschalten, wenn noch ganz am Anfang
                         if (!project.status || project.status === 'Neu' || project.status === 'Besichtigung offen') {
                             project.status = 'Besichtigt';
                         }
                         await db.put('projects', project);
-                        showToast('Besichtigung gespeichert – Projektübersicht ist aktuell.', 'success');
+                        showToast('Besichtigung gespeichert.', 'success');
                         app.navigate('projects', projectId);
                     },
                     null,
@@ -3303,53 +3430,326 @@ async function reconcileOfferCounter() {
                 );
             },
 
-            // Materialvorschläge aus Besichtigungsdaten
+            // Materialvorschläge: intelligent aus Räumen + Besichtigung berechnet
             async generateMaterialSuggestions(projectId) {
                 const project = await db.get('projects', projectId);
-                const s = project?.survey || {};
+                if (!project) return;
+                const s = project.survey || {};
+                const rooms = (await db.getByIndex('rooms', 'projectId', projectId)) || [];
                 const materials = await db.getAll('materials');
                 const existing = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
 
-                const wanted = [];
                 const num = v => (typeof v === 'number' && v > 0 ? v : 0);
-                if (num(s.pipeLength)) wanted.push({ name: 'Kupferrohr', size: s.pipeDimension || '', qty: s.pipeLength, unit: 'm', category: 'Kupferrohre' });
-                if (num(s.pipeLength) && s.insulation) wanted.push({ name: 'Isolierung', size: s.insulation, qty: s.pipeLength, unit: 'm', category: 'Isolierung' });
-                if (num(s.cableDuct)) wanted.push({ name: 'Kabelkanal', size: '', qty: s.cableDuct, unit: 'm', category: 'Elektromaterial' });
-                if (num(s.powerCableLength)) wanted.push({ name: 'Stromkabel', size: s.powerCable || '', qty: s.powerCableLength, unit: 'm', category: 'Kabel' });
-                if (num(s.commCableLength)) wanted.push({ name: 'Kommunikationskabel', size: s.commCable || '', qty: s.commCableLength, unit: 'm', category: 'Kabel' });
-                if (num(s.condensateLine)) wanted.push({ name: 'Kondensatleitung', size: '', qty: s.condensateLine, unit: 'm', category: 'Kondensat' });
+                const r1 = v => Math.round(v * 10) / 10;
+
+                // Längen: aus Besichtigung, sonst Schätzung 8 m je Raum (klar gekennzeichnet)
+                const estimated = !num(s.pipeLength) && rooms.length > 0;
+                const L = num(s.pipeLength) || rooms.length * 8;
+                const ductL = num(s.cableDuct) || r1(L * 1.1);
+                const powerL = num(s.powerCableLength) || r1(L + 4);
+                const commL = num(s.commCableLength) || r1(L + 4);
+                const condL = num(s.condensateLine) || L;
+                const estNote = estimated ? 'Automatisch geschätzt (8 m/Raum) – bitte prüfen' : 'Automatisch berechnet';
+
+                const wanted = [];
+                // Geräte: 1 Innengerät je Raum ohne Innengerät, 1 Außengerät je Projekt
+                const hasIndoor = (roomId) => existing.some(x => {
+                    const m = materials.find(mm => String(mm.id) === String(x.materialId));
+                    return String(x.roomId) === String(roomId) && (m?.name || '').toLowerCase().includes('innengerät');
+                });
+                for (const r of rooms) {
+                    if (!hasIndoor(r.id)) {
+                        const kw = r1(((r.length || 0) * (r.width || 0) * 80) / 1000);
+                        wanted.push({ name: 'Innengerät', size: kw > 0 ? `ca. ${kw} kW` : '', qty: 1, unit: 'Stk', category: 'Klimageräte', roomId: r.id, note: `Für ${r.name || 'Raum'}` });
+                    }
+                }
+                const hasOutdoor = existing.some(x => {
+                    const m = materials.find(mm => String(mm.id) === String(x.materialId));
+                    return (m?.name || '').toLowerCase().includes('außengerät');
+                });
+                if (rooms.length > 0 && !hasOutdoor) {
+                    const cooling = calculateCoolingCapacity(rooms);
+                    wanted.push({ name: 'Außengerät', size: cooling.recommendation ? `ca. ${cooling.recommendation} kW` : '', qty: 1, unit: 'Stk', category: 'Außengeräte', note: 'Auslegung prüfen' });
+                }
+
+                if (L > 0) {
+                    wanted.push({ name: 'Kupferrohr', size: s.pipeDimension || '', qty: r1(L), unit: 'm', category: 'Kupferrohre', note: estNote });
+                    wanted.push({ name: 'Rohrisolierung', size: s.insulation || '', qty: r1(L), unit: 'm', category: 'Isolierung', note: estNote });
+                    wanted.push({ name: 'Kondensatschlauch', size: '', qty: r1(condL), unit: 'm', category: 'Kondensat', note: estNote });
+                    wanted.push({ name: 'Kabelkanal', size: '', qty: r1(ductL), unit: 'm', category: 'Elektromaterial', note: estNote });
+                    wanted.push({ name: 'Stromkabel', size: s.powerCable || '5×2,5 mm²', qty: r1(powerL), unit: 'm', category: 'Kabel', note: estNote });
+                    wanted.push({ name: 'Kommunikationskabel', size: s.commCable || '', qty: r1(commL), unit: 'm', category: 'Kabel', note: estNote });
+                    // Kleinmaterial - Faustformeln
+                    wanted.push({ name: 'Kabelbinder', size: '', qty: Math.ceil(L * 3), unit: 'Stk', category: 'Befestigung', note: '3 Stk je Meter Leitung' });
+                    wanted.push({ name: 'Rohrschellen', size: '', qty: Math.ceil(L / 1.5), unit: 'Stk', category: 'Befestigung', note: 'alle 1,5 m' });
+                    wanted.push({ name: 'Dübel', size: '', qty: Math.ceil(ductL * 1.5), unit: 'Stk', category: 'Befestigung', note: '1,5 Stk je Meter Kanal' });
+                    wanted.push({ name: 'Schrauben', size: '', qty: Math.ceil(ductL * 1.5), unit: 'Stk', category: 'Befestigung', note: '1,5 Stk je Meter Kanal' });
+                    wanted.push({ name: 'Kabelkanalbogen', size: '', qty: Math.max(2, Math.ceil(ductL / 4)), unit: 'Stk', category: 'Elektromaterial', note: 'ca. 1 je 4 m' });
+                    wanted.push({ name: 'UV-Band', size: '', qty: 1, unit: 'Rolle', category: 'Isolierung', note: 'Außenbereich' });
+                }
                 if (s.condensatePump === true) wanted.push({ name: 'Kondensatpumpe', size: '', qty: 1, unit: 'Stk', category: 'Kondensat' });
                 if (num(s.coreDrills)) wanted.push({ name: 'Kernbohrung', size: s.wallMaterial ? 'Wand: ' + s.wallMaterial : '', qty: s.coreDrills, unit: 'Stk', category: 'Arbeitszeit' });
-                if (s.outdoorMounting === 'Big Foot') wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
-                if (s.outdoorMounting === 'Wandkonsole') wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
+                if (s.outdoorMounting === 'Big Foot') {
+                    wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
+                    wanted.push({ name: 'Silentblöcke', size: '', qty: 1, unit: 'Set', category: 'Befestigung', note: 'Schwingungsdämpfung' });
+                }
+                if (s.outdoorMounting === 'Wandkonsole') {
+                    wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
+                    wanted.push({ name: 'Silentblöcke', size: '', qty: 1, unit: 'Set', category: 'Befestigung', note: 'Schwingungsdämpfung' });
+                }
 
-                if (wanted.length === 0) { showToast('Keine verwertbaren Besichtigungsdaten gefunden.', 'info'); return; }
+                if (wanted.length === 0) { showToast('Bitte zuerst Räume anlegen oder Besichtigung erfassen.', 'info'); return; }
 
                 let added = 0, skipped = 0, created = 0;
                 for (const w of wanted) {
-                    // Material im Katalog finden (Name + ggf. Größe), sonst anlegen
                     let mat = materials.find(m =>
-                        (m.name || '').toLowerCase().includes(w.name.toLowerCase()) &&
-                        (!w.size || (m.size || '').toLowerCase() === w.size.toLowerCase())
-                    );
+                        (m.name || '').toLowerCase() === w.name.toLowerCase() &&
+                        ((m.size || '') === (w.size || '') || !w.size)
+                    ) || materials.find(m => (m.name || '').toLowerCase().includes(w.name.toLowerCase()));
                     if (!mat) {
                         const newId = await db.add('materials', {
-                            name: w.name, size: w.size, category: w.category, unit: w.unit,
-                            manufacturer: '', articleNumber: '', purchasePrice: 0, sellingPrice: 0, notes: 'Automatisch aus Besichtigung angelegt'
+                            name: w.name, size: w.size || '', category: w.category, unit: w.unit,
+                            manufacturer: '', articleNumber: '', purchasePrice: 0, sellingPrice: 0, notes: 'Automatisch aus Berechnung angelegt'
                         });
                         mat = await db.get('materials', newId);
                         materials.push(mat);
                         created++;
                     }
-                    if (existing.some(x => String(x.materialId) === String(mat.id))) { skipped++; continue; }
+                    const dup = existing.some(x => String(x.materialId) === String(mat.id) && String(x.roomId ?? '') === String(w.roomId ?? ''));
+                    if (dup) { skipped++; continue; }
                     await db.add('projectMaterials', {
-                        projectId, materialId: mat.id, quantity: w.qty, unit: w.unit, size: w.size, roomId: null,
-                        note: 'Aus Besichtigung'
+                        projectId, materialId: mat.id, quantity: w.qty, unit: w.unit, size: w.size || '',
+                        roomId: w.roomId ?? null, price: Number(mat.sellingPrice) || 0,
+                        note: w.note || 'Automatisch berechnet'
                     });
                     added++;
                 }
-                showToast(`${added} Materialposition(en) erzeugt${created ? `, ${created} neu im Katalog` : ''}${skipped ? `, ${skipped} übersprungen (bereits vorhanden)` : ''}.`, 'success');
+                showToast(`${added} Materialposition(en) berechnet${created ? `, ${created} neu im Katalog` : ''}${skipped ? `, ${skipped} bereits vorhanden` : ''}.${estimated ? ' Längen wurden geschätzt – bitte prüfen.' : ''}`, 'success');
                 app.navigate('projects', projectId);
+            },
+
+            // ---------- Raum mit Material anlegen/bearbeiten ----------
+            async openRoomModal(projectId, roomId = null) {
+                const room = roomId ? await db.get('rooms', roomId) : null;
+                const materials = (await db.getAll('materials')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                const existingPm = roomId ? ((await db.getByIndex('projectMaterials', 'projectId', projectId)) || []).filter(x => String(x.roomId) === String(roomId)) : [];
+
+                const matOptions = (sel) => materials.map(m => `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" data-price="${Number(m.sellingPrice) || 0}" ${String(sel) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}</option>`).join('');
+                const pmRow = (x = null) => `
+                    <div class="pm-row" data-pmid="${x ? escapeHtml(String(x.id)) : ''}">
+                        <select class="pmr-mat">${matOptions(x?.materialId)}</select>
+                        <input type="number" class="pmr-qty" inputmode="decimal" step="any" min="0" value="${x?.quantity ?? 1}" title="Menge">
+                        <select class="pmr-unit">${UNITS.map(u => `<option value="${u}" ${(x?.unit || 'Stk') === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
+                        <button type="button" class="btn btn-sm btn-danger pmr-del">${icon('trash')}</button>
+                    </div>`;
+
+                const modal = showModal(
+                    room ? `Raum bearbeiten – ${escapeHtml(room.name || '')}` : 'Neuer Raum',
+                    `
+                        <div class="form-card">
+                            <div class="form-card-title">📐 Raum & Maße</div>
+                            <div class="form-group"><label>Raumname</label>
+                                <input type="text" id="roomName" list="roomNameList" value="${escapeHtml(room?.name || '')}" placeholder="z. B. Wohnzimmer">
+                                <datalist id="roomNameList">${ROOM_NAMES.map(n => `<option value="${n}">`).join('')}</datalist>
+                            </div>
+                            <div class="form-row-3">
+                                <div class="form-group"><label>Länge (m) *</label><input type="number" id="roomLength" inputmode="decimal" step="0.1" min="0" value="${room?.length ?? ''}" placeholder="5.0"></div>
+                                <div class="form-group"><label>Breite (m) *</label><input type="number" id="roomWidth" inputmode="decimal" step="0.1" min="0" value="${room?.width ?? ''}" placeholder="4.0"></div>
+                                <div class="form-group"><label>Höhe (m)</label><input type="number" id="roomHeight" inputmode="decimal" step="0.1" min="0" value="${room?.height ?? 2.5}"></div>
+                            </div>
+                            <div id="roomKwHint" style="font-size:12.5px;color:var(--accent);font-weight:600;"></div>
+                        </div>
+
+                        ${!room ? `
+                        <div class="form-card">
+                            <div class="form-card-title">❄ Innengerät für diesen Raum</div>
+                            <div class="brand-grid" id="brandGrid">
+                                <button type="button" class="brand-chip active" data-brand="">Keins / später</button>
+                                ${BRANDS.map(b => `<button type="button" class="brand-chip" data-brand="${b}">${b}</button>`).join('')}
+                            </div>
+                            <div class="form-group" id="brandModelWrap" style="display:none;margin-top:10px;"><label>Modell (optional)</label><input type="text" id="brandModel" placeholder="z. B. FTXM25R / Perfera 2,5 kW"></div>
+                        </div>` : ''}
+
+                        <div class="form-card">
+                            <div class="form-card-title">📦 Material für diesen Raum</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Auswahl aus der Materialdatenbank – Menge direkt eingeben.</div>
+                            <div id="pmRows">${existingPm.map(x => pmRow(x)).join('')}</div>
+                            <button type="button" class="btn btn-sm btn-outline" id="pmAddRow" style="margin-top:8px;">${icon('plus')} Material-Zeile</button>
+                            ${materials.length === 0 ? '<div style="font-size:12px;color:var(--warning);margin-top:8px;">Materialdatenbank ist leer – Zeilen können erst nach dem Anlegen von Materialien gewählt werden.</div>' : ''}
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const name = overlay.querySelector('#roomName').value.trim() || 'Unbenannt';
+                        const length = parseFloat(String(overlay.querySelector('#roomLength').value).replace(',', '.')) || 0;
+                        const width = parseFloat(String(overlay.querySelector('#roomWidth').value).replace(',', '.')) || 0;
+                        const height = parseFloat(String(overlay.querySelector('#roomHeight').value).replace(',', '.')) || 2.5;
+                        if (length <= 0 || width <= 0) { showToast('Länge und Breite müssen größer als 0 sein.', 'error'); return; }
+
+                        let rid = roomId;
+                        if (room) {
+                            await db.put('rooms', { ...room, name, length, width, height });
+                        } else {
+                            rid = await db.add('rooms', { projectId, name, length, width, height });
+                        }
+
+                        // Innengerät (nur bei neuem Raum)
+                        const brand = overlay.querySelector('.brand-chip.active')?.dataset.brand || '';
+                        if (!room && brand) {
+                            const model = overlay.querySelector('#brandModel')?.value.trim() || '';
+                            const devName = `Innengerät ${brand}`;
+                            let mat = (await db.getAll('materials')).find(m => (m.name || '').toLowerCase() === devName.toLowerCase() && (m.size || '') === model);
+                            if (!mat) {
+                                const mid = await db.add('materials', { name: devName, size: model, category: 'Klimageräte', unit: 'Stk', manufacturer: brand, articleNumber: '', purchasePrice: 0, sellingPrice: 0 });
+                                mat = await db.get('materials', mid);
+                            }
+                            await db.add('projectMaterials', { projectId, materialId: mat.id, roomId: rid, quantity: 1, unit: 'Stk', size: model, price: Number(mat.sellingPrice) || 0, note: `${name}` });
+                        }
+
+                        // Material-Zeilen abgleichen
+                        const rows = [...overlay.querySelectorAll('.pm-row')];
+                        const keptIds = new Set();
+                        for (const r of rows) {
+                            const matId = r.querySelector('.pmr-mat').value;
+                            const qty = parseFloat(String(r.querySelector('.pmr-qty').value).replace(',', '.'));
+                            if (!matId || isNaN(qty) || qty <= 0) continue;
+                            const unit = r.querySelector('.pmr-unit').value;
+                            const mat = materials.find(m => String(m.id) === String(matId));
+                            const pmid = r.dataset.pmid;
+                            if (pmid) {
+                                const rec = await db.get('projectMaterials', pmid);
+                                if (rec) { rec.materialId = parseId(matId); rec.quantity = qty; rec.unit = unit; await db.put('projectMaterials', rec); keptIds.add(String(pmid)); }
+                            } else {
+                                const newId = await db.add('projectMaterials', { projectId, materialId: parseId(matId), roomId: rid, quantity: qty, unit, size: mat?.size || '', price: Number(mat?.sellingPrice) || 0, note: name });
+                                keptIds.add(String(newId));
+                            }
+                        }
+                        // Beim Bearbeiten: entfernte Zeilen löschen
+                        if (room) {
+                            for (const x of existingPm) {
+                                if (!keptIds.has(String(x.id))) await db.delete('projectMaterials', x.id);
+                            }
+                        }
+
+                        overlay.remove();
+                        showToast(room ? 'Raum aktualisiert.' : 'Raum inkl. Material angelegt.', 'success');
+                        app.navigate('projects', projectId);
+                    },
+                    null,
+                    { wide: true }
+                );
+
+                // Live kW-Hinweis
+                const updKw = () => {
+                    const l = parseFloat(String(modal.querySelector('#roomLength').value).replace(',', '.')) || 0;
+                    const w = parseFloat(String(modal.querySelector('#roomWidth').value).replace(',', '.')) || 0;
+                    const el = modal.querySelector('#roomKwHint');
+                    el.textContent = l > 0 && w > 0 ? `≈ ${((l * w * 80) / 1000).toFixed(1)} kW empfohlene Kälteleistung (${(l * w).toFixed(1)} m²)` : '';
+                };
+                modal.querySelector('#roomLength').addEventListener('input', updKw);
+                modal.querySelector('#roomWidth').addEventListener('input', updKw);
+                updKw();
+
+                // Marken-Chips
+                modal.querySelectorAll('.brand-chip').forEach(b => b.addEventListener('click', () => {
+                    modal.querySelectorAll('.brand-chip').forEach(x => x.classList.remove('active'));
+                    b.classList.add('active');
+                    const wrap = modal.querySelector('#brandModelWrap');
+                    if (wrap) wrap.style.display = b.dataset.brand ? 'block' : 'none';
+                }));
+
+                // Material-Zeilen
+                const bindRow = (r) => {
+                    r.querySelector('.pmr-del').addEventListener('click', () => r.remove());
+                    r.querySelector('.pmr-mat').addEventListener('change', (e) => {
+                        r.querySelector('.pmr-unit').value = e.target.selectedOptions[0]?.dataset.unit || 'Stk';
+                    });
+                };
+                modal.querySelectorAll('.pm-row').forEach(bindRow);
+                modal.querySelector('#pmAddRow').addEventListener('click', () => {
+                    if (materials.length === 0) { showToast('Materialdatenbank ist leer.', 'info'); return; }
+                    const wrap = modal.querySelector('#pmRows');
+                    const div = document.createElement('div');
+                    div.innerHTML = pmRow();
+                    const r = div.firstElementChild;
+                    wrap.appendChild(r);
+                    bindRow(r);
+                    r.querySelector('.pmr-unit').value = r.querySelector('.pmr-mat').selectedOptions[0]?.dataset.unit || 'Stk';
+                });
+            },
+
+            // ---------- Projekt-Modal: intelligente Titel + Datenschutz vor Überschreiben ----------
+            async openProjectModal(id = null) {
+                const project = id ? await db.get('projects', id) : null;
+                const customers = await db.getAll('customers');
+                const modal = showModal(
+                    id ? 'Projekt bearbeiten' : 'Neues Projekt',
+                    `
+                        <div class="form-group"><label>Kunde</label>
+                            <select id="projCustomer">
+                                <option value="">-- Kunde auswählen --</option>
+                                ${customers.map(c => `<option value="${escapeHtml(String(c.id))}" ${String(project?.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Projekttitel *</label>
+                            <input type="text" id="projTitle" list="projTitleList" value="${escapeHtml(project?.title || '')}" placeholder="Kunde wählen für Vorschläge...">
+                            <datalist id="projTitleList"></datalist>
+                        </div>
+                        <div class="form-group"><label>Baustellenadresse (falls abweichend)</label><input type="text" id="projSiteAddress" value="${escapeHtml(project?.siteAddress || '')}" placeholder="Straße, PLZ Ort"></div>
+                        <div class="form-group"><label>Status</label>
+                            <select id="projStatus">${PROJECT_STATUSES.map(s => `<option value="${s}" ${(project?.status || 'Neu') === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+                        </div>
+                        <div class="form-group"><label>Notizen</label><textarea id="projNotes" rows="3">${escapeHtml(project?.notes || '')}</textarea></div>
+                    `,
+                    async (overlay) => {
+                        const title = overlay.querySelector('#projTitle').value.trim();
+                        if (!title) { showToast('Titel ist erforderlich.', 'error'); return; }
+                        const data = {
+                            ...(project || {}),   // WICHTIG: survey/customData/Termine-Verknüpfungen bleiben erhalten
+                            title,
+                            customerId: parseId(overlay.querySelector('#projCustomer').value),
+                            siteAddress: overlay.querySelector('#projSiteAddress').value.trim(),
+                            status: overlay.querySelector('#projStatus').value,
+                            notes: overlay.querySelector('#projNotes').value.trim(),
+                        };
+                        let pid = id;
+                        if (id) { await db.put('projects', data); }
+                        else { pid = await db.add('projects', data); }
+                        overlay.remove();
+                        showToast(id ? 'Projekt aktualisiert.' : 'Projekt erstellt.', 'success');
+                        app.navigate('projects', pid);
+                    }
+                );
+
+                // Titel-Vorschläge aus Kundennamen
+                const custSel = modal.querySelector('#projCustomer');
+                const titleList = modal.querySelector('#projTitleList');
+                const updateTitles = () => {
+                    const c = customers.find(x => String(x.id) === String(custSel.value));
+                    const nm = c ? `${c.firstName || ''} ${c.lastName || ''}`.trim() : '';
+                    titleList.innerHTML = nm ? PROJECT_TITLE_TYPES.map(t => `<option value="${escapeHtml(t + ' ' + nm)}">`).join('') : '';
+                    const inp = modal.querySelector('#projTitle');
+                    inp.placeholder = nm ? `z. B. Klimaanlage ${nm}` : 'Kunde wählen für Vorschläge...';
+                };
+                custSel.addEventListener('change', updateTitles);
+                updateTitles();
+            },
+
+            // ---------- Projekt löschen: ALLE zugehörigen Daten mitnehmen ----------
+            async deleteProject(id) {
+                if (!confirm('Projekt und alle zugehörigen Räume, Bilder, Angebote, Materialien, Bestellungen und Termine wirklich löschen?')) return;
+                try {
+                    for (const r of (await db.getByIndex('rooms', 'projectId', id)) || []) await db.delete('rooms', r.id);
+                    for (const i of (await db.getByIndex('images', 'projectId', id)) || []) await db.delete('images', i.id);
+                    for (const o of (await db.getByIndex('offers', 'projectId', id)) || []) await db.delete('offers', o.id);
+                    for (const x of (await db.getByIndex('projectMaterials', 'projectId', id)) || []) await db.delete('projectMaterials', x.id);
+                    for (const b of (await db.getByIndex('orders', 'projectId', id)) || []) await db.delete('orders', b.id);
+                    for (const ev of (await db.getByIndex('events', 'projectId', id)) || []) await db.delete('events', ev.id);
+                    await db.delete('projects', id);
+                    showToast('Projekt vollständig gelöscht.', 'info');
+                    app.navigate('projects');
+                } catch (e) {
+                    showToast('Fehler beim Löschen: ' + e.message, 'error');
+                }
             },
 
             // ---------- Zusatzfelder ----------
@@ -3555,7 +3955,8 @@ async function reconcileOfferCounter() {
                         5: { cellWidth: 25, halign: 'right' },
                         6: { cellWidth: 25, halign: 'right', fontStyle: 'bold' }
                     },
-                    didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                    willDrawPage: () => pdfWatermark(doc),
+                    didDrawPage: () => pdfFooterOnce(doc, co)
                 });
 
                 let fy = doc.lastAutoTable.finalY + 8;
@@ -3613,11 +4014,12 @@ async function reconcileOfferCounter() {
                         head: [['Weitere Angaben', '']],
                         body: cdRows,
                         ...PDF_TABLE_STYLES,
-                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                        willDrawPage: () => pdfWatermark(doc),
+                    didDrawPage: () => pdfFooterOnce(doc, co)
                     });
                 }
 
-                pdfFooter(doc, co);
+                pdfFooterOnce(doc, co);
                 doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
                 showToast('Angebot als PDF exportiert.', 'success');
             },
@@ -3691,7 +4093,8 @@ async function reconcileOfferCounter() {
                         3: { cellWidth: 15, halign: 'center' },
                         4: { cellWidth: 16, halign: 'center' }
                     } : { 0: { cellWidth: 10, halign: 'center' } },
-                    didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                    willDrawPage: () => pdfWatermark(doc),
+                    didDrawPage: () => pdfFooterOnce(doc, co)
                 });
 
                 let fy = doc.lastAutoTable.finalY + 10;
@@ -3702,7 +4105,7 @@ async function reconcileOfferCounter() {
                     fy = pdfRoomSketch(doc, rooms, mx, fy, pw - mx * 2);
                 }
 
-                pdfFooter(doc, co);
+                pdfFooterOnce(doc, co);
                 doc.save(`Bestellung_${(order.supplier || 'Lieferant').replace(/\s+/g, '_')}_${(order.date || '').replaceAll('-', '')}.pdf`);
                 showToast('Bestellung als PDF exportiert.', 'success');
             },
@@ -3717,6 +4120,7 @@ async function reconcileOfferCounter() {
                 const customer = project.customerId ? await db.get('customers', project.customerId) : null;
                 const rooms = (await db.getByIndex('rooms', 'projectId', projectId)) || [];
                 const pm = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+                const images = (await db.getByIndex('images', 'projectId', projectId)) || [];
                 const materials = await db.getAll('materials');
                 const cooling = calculateCoolingCapacity(rooms);
                 const s = project.survey || {};
@@ -3725,28 +4129,89 @@ async function reconcileOfferCounter() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
                 const pw = doc.internal.pageSize.getWidth();
+                const ph = doc.internal.pageSize.getHeight();
                 const mx = 16;
 
-                pdfWatermark(doc);
-                let y = pdfHeader(doc, co, 'PROJEKTÜBERSICHT', [
-                    `${project.title || ''}  ·  Status: ${project.status || 'Neu'}`
-                ]);
+                const sectionTitle = (y, txt) => {
+                    doc.setFillColor(...PDF_TEAL);
+                    doc.roundedRect(mx, y, pw - mx * 2, 8.5, 1.8, 1.8, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(10);
+                    doc.setTextColor(255, 255, 255);
+                    doc.text(txt, mx + 4, y + 5.8);
+                    return y + 12.5;
+                };
 
+                // ===================== DECKBLATT =====================
+                pdfWatermark(doc);
+                // Logo / Firmenname oben links, sauber ausgerichtet
+                let topY = 22;
+                if (co.logo) {
+                    try {
+                        const p = doc.getImageProperties(co.logo);
+                        const h = 16, w = (p.width / p.height) * h;
+                        doc.addImage(co.logo, p.fileType || 'PNG', mx, topY - 8, w, h);
+                    } catch (e) { /* optional */ }
+                } else if (co.name) {
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...PDF_INK);
+                    doc.text(co.name, mx, topY);
+                }
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...PDF_GRAY);
+                [co.address, [co.phone, co.email].filter(Boolean).join('  ·  ')].filter(Boolean).forEach((l, i) => {
+                    doc.text(l, pw - mx, 16 + i * 4.2, { align: 'right' });
+                });
+
+                // Titelblock mittig
+                doc.setDrawColor(...PDF_TEAL); doc.setLineWidth(1);
+                doc.line(mx, 66, pw - mx, 66);
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(26); doc.setTextColor(...PDF_TEAL);
+                doc.text('PROJEKTÜBERSICHT', mx, 80);
+                doc.setFontSize(15); doc.setTextColor(...PDF_INK);
+                doc.text(String(project.title || 'Projekt'), mx, 91, { maxWidth: pw - mx * 2 });
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...PDF_GRAY);
+                doc.text(`Technische Dokumentation  ·  ${formatDate(new Date().toISOString())}  ·  Status: ${project.status || 'Neu'}`, mx, 100);
+                doc.setDrawColor(...PDF_TEAL); doc.setLineWidth(0.4);
+                doc.line(mx, 106, pw - mx, 106);
+
+                // Eckdaten-Boxen
+                let y = 116;
                 const custLines = customer ? [
                     `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
                     customer.company || '',
                     [customer.street, customer.city].filter(Boolean).join(', '),
                     [customer.phone, customer.email].filter(Boolean).join('  ·  ')
                 ].filter(Boolean) : ['–'];
-                const projLines = [
-                    `Räume: ${rooms.length}`,
-                    cooling.details.length ? `Empf. Kälteleistung: ${cooling.recommendation} kW (Last ${cooling.totalKW} kW)` : '',
-                    project.notes || ''
+                const totalMeters = pm.filter(x => (x.unit || '') === 'm').reduce((sum, x) => sum + (Number(x.quantity) || 0), 0);
+                const totalCost = pm.reduce((sum, x) => {
+                    const mat = materials.find(m => String(m.id) === String(x.materialId));
+                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
+                    return sum + (Number(x.quantity) || 0) * price;
+                }, 0);
+                const keyLines = [
+                    `Räume: ${rooms.length}   ·   Materialpositionen: ${pm.length}`,
+                    cooling.details.length ? `Gesamtleistung (empf.): ${cooling.recommendation} kW  (Last ${cooling.totalKW} kW)` : '',
+                    totalMeters > 0 ? `Gesamtlänge Leitungen/Kanäle: ${Math.round(totalMeters * 10) / 10} m` : '',
+                    totalCost > 0 ? `Materialwert: ${formatCurrency(totalCost)}` : ''
                 ].filter(Boolean);
-                y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Projekt', projLines);
+                y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Kennzahlen', keyLines);
+                if (project.siteAddress) {
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...PDF_INK);
+                    doc.text(`Baustelle: ${project.siteAddress}`, mx, y); y += 6;
+                }
+                // Deckblatt-Flocke unten dezent + Fußband
+                doc.setFillColor(...PDF_TEAL);
+                doc.rect(0, ph - 14, pw, 14, 'F');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(255, 255, 255);
+                doc.text((co.name || 'Kältetechnik Manager') + '  ·  Kälte- & Klimatechnik', mx, ph - 5.5);
+
+                // ===================== INHALTSSEITEN =====================
+                doc.addPage();
+                pdfWatermark(doc);
+                y = 18;
 
                 // Räume
                 if (rooms.length) {
+                    y = sectionTitle(y, 'RAUMÜBERSICHT & KÄLTELEISTUNG');
                     doc.autoTable({
                         startY: y,
                         margin: { left: mx, right: mx, bottom: 26 },
@@ -3755,10 +4220,13 @@ async function reconcileOfferCounter() {
                             const area = (r.length || 0) * (r.width || 0);
                             return [r.name || 'Raum', String(r.length || 0), String(r.width || 0), String(r.height || 2.5), area.toFixed(1), (area * (r.height || 2.5)).toFixed(1), ((area * 80) / 1000).toFixed(1)];
                         }),
+                        foot: cooling.details.length ? [['Gesamt', '', '', '', '', '', `${cooling.recommendation} kW`]] : undefined,
+                        footStyles: { fillColor: PDF_LIGHT, textColor: PDF_TEAL, fontStyle: 'bold' },
                         ...PDF_TABLE_STYLES,
-                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                        willDrawPage: () => pdfWatermark(doc),
+                        didDrawPage: () => pdfFooterOnce(doc, co)
                     });
-                    y = doc.lastAutoTable.finalY + 8;
+                    y = doc.lastAutoTable.finalY + 9;
                 }
 
                 // Besichtigung
@@ -3770,35 +4238,42 @@ async function reconcileOfferCounter() {
                     })
                     .filter(Boolean);
                 if (svRows.length) {
-                    y = pdfNewPageIfNeeded(doc, y, 14 + svRows.length * 6.5, co);
+                    y = pdfNewPageIfNeeded(doc, y, 24, co);
+                    y = sectionTitle(y, 'BESICHTIGUNGSDATEN');
                     doc.autoTable({
                         startY: y,
                         margin: { left: mx, right: mx, bottom: 26 },
-                        head: [['Besichtigung', '']],
                         body: svRows,
                         ...PDF_TABLE_STYLES,
-                        columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold' } },
-                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                        columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold', textColor: PDF_TEAL } },
+                        willDrawPage: () => pdfWatermark(doc),
+                        didDrawPage: () => pdfFooterOnce(doc, co)
                     });
-                    y = doc.lastAutoTable.finalY + 8;
+                    y = doc.lastAutoTable.finalY + 9;
                 }
 
-                // Material
+                // Material inkl. Preise + Summe
                 if (pm.length) {
-                    y = pdfNewPageIfNeeded(doc, y, 14 + pm.length * 6.5, co);
+                    y = pdfNewPageIfNeeded(doc, y, 24, co);
+                    y = sectionTitle(y, 'MATERIALLISTE');
                     doc.autoTable({
                         startY: y,
                         margin: { left: mx, right: mx, bottom: 26 },
-                        head: [['Material', 'Größe', 'Menge', 'Einheit', 'Raum', 'Bemerkung']],
+                        head: [['Material', 'Größe', 'Menge', 'Einh.', 'Raum', 'Preis', 'Gesamt']],
                         body: pm.map(x => {
                             const mat = materials.find(m => String(m.id) === String(x.materialId));
                             const room = rooms.find(r => String(r.id) === String(x.roomId));
-                            return [mat?.name || x.name || 'Material', x.size || mat?.size || '–', String(x.quantity ?? ''), x.unit || 'Stk', room?.name || 'Gesamt', x.note || ''];
+                            const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
+                            return [mat?.name || x.name || 'Material', x.size || mat?.size || '–', String(x.quantity ?? ''), x.unit || 'Stk', room?.name || 'Gesamt', formatCurrency(price), formatCurrency((Number(x.quantity) || 0) * price)];
                         }),
+                        foot: [['Gesamtsumme', '', '', '', '', '', formatCurrency(totalCost)]],
+                        footStyles: { fillColor: PDF_TEAL, textColor: 255, fontStyle: 'bold' },
                         ...PDF_TABLE_STYLES,
-                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                        columnStyles: { 2: { halign: 'center', cellWidth: 14 }, 3: { halign: 'center', cellWidth: 13 }, 5: { halign: 'right', cellWidth: 21 }, 6: { halign: 'right', cellWidth: 23, fontStyle: 'bold' } },
+                        willDrawPage: () => pdfWatermark(doc),
+                        didDrawPage: () => pdfFooterOnce(doc, co)
                     });
-                    y = doc.lastAutoTable.finalY + 10;
+                    y = doc.lastAutoTable.finalY + 9;
                 }
 
                 // Zusatzfelder
@@ -3813,26 +4288,50 @@ async function reconcileOfferCounter() {
                     })
                     .filter(Boolean);
                 if (cdRows.length) {
-                    y = pdfNewPageIfNeeded(doc, y, 14 + cdRows.length * 6.5, co);
+                    y = pdfNewPageIfNeeded(doc, y, 24, co);
+                    y = sectionTitle(y, 'ZUSATZFELDER');
                     doc.autoTable({
                         startY: y,
                         margin: { left: mx, right: mx, bottom: 26 },
-                        head: [['Zusatzfelder', '']],
                         body: cdRows,
                         ...PDF_TABLE_STYLES,
-                        columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold' } },
-                        didDrawPage: () => { pdfWatermark(doc); pdfFooter(doc, co); }
+                        columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold', textColor: PDF_TEAL } },
+                        willDrawPage: () => pdfWatermark(doc),
+                        didDrawPage: () => pdfFooterOnce(doc, co)
                     });
-                    y = doc.lastAutoTable.finalY + 10;
+                    y = doc.lastAutoTable.finalY + 9;
                 }
 
                 // Skizze
                 if (rooms.length) {
-                    y = pdfNewPageIfNeeded(doc, y, 70, co);
-                    y = pdfRoomSketch(doc, rooms, mx, y, pw - mx * 2);
+                    y = pdfNewPageIfNeeded(doc, y, 75, co);
+                    y = sectionTitle(y, 'AUFSTELLUNGSPLAN (SCHEMATISCH)');
+                    y = pdfRoomSketch(doc, rooms, mx, y, pw - mx * 2, '');
                 }
 
-                pdfFooter(doc, co);
+                // Bilder (max. 6, 2 pro Zeile)
+                if (images.length) {
+                    y = pdfNewPageIfNeeded(doc, y, 70, co);
+                    y = sectionTitle(y, 'PROJEKTBILDER');
+                    const imgW = (pw - mx * 2 - 6) / 2;
+                    let col = 0;
+                    for (const img of images.slice(0, 6)) {
+                        try {
+                            const p = doc.getImageProperties(img.data);
+                            const h = Math.min((p.height / p.width) * imgW, 70);
+                            y = pdfNewPageIfNeeded(doc, y, h + 10, co);
+                            const x = mx + col * (imgW + 6);
+                            doc.addImage(img.data, p.fileType || 'JPEG', x, y, imgW, h);
+                            doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...PDF_GRAY);
+                            doc.text(`${img.category || 'Bild'}${img.label ? ' – ' + img.label : ''}`, x, y + h + 4);
+                            col = 1 - col;
+                            if (col === 0) y += h + 9;
+                            else if (img === images.slice(0, 6)[images.slice(0, 6).length - 1]) y += h + 9;
+                        } catch (e) { /* Bild überspringen */ }
+                    }
+                }
+
+                pdfFooterOnce(doc, co);
                 doc.save(`Projektuebersicht_${(project.title || 'Projekt').replace(/[^\wäöüÄÖÜß-]+/g, '_')}.pdf`);
                 showToast('Projektübersicht als PDF exportiert.', 'success');
             }
