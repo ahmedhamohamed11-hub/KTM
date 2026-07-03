@@ -710,7 +710,12 @@
         } catch (e) {
             console.warn('Supabase-Initialisierung fehlgeschlagen:', e);
         }
-const FIELD_MAP = {
+// Lokale Store-Namen -> Supabase-Tabellennamen (snake_case)
+        const TABLE_MAP = { projectMaterials: 'project_materials' };
+        const sbTable = (t) => TABLE_MAP[t] || t;
+        const localStore = (t) => Object.keys(TABLE_MAP).find(k => TABLE_MAP[k] === t) || t;
+
+        const FIELD_MAP = {
   firstName: 'first_name',
   lastName: 'last_name',
   houseNumber: 'house_number',
@@ -998,7 +1003,8 @@ async put(storeName, data) {
 
         async function handleRemoteChange(payload) {
           try {
-            const { table, eventType, new: newRec, old: oldRec } = payload;
+            const { eventType, new: newRec, old: oldRec } = payload;
+            const table = localStore(payload.table);
             console.log("Supabase Live Update:", eventType, table);
 
             if (eventType === 'DELETE') {
@@ -1060,7 +1066,7 @@ await db.putLocalOnly(table, localData);
 
                 const failedTables = [];
                 for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','events','settings']) {
-                    const { data, error } = await sb.from(t).select('*');
+                    const { data, error } = await sb.from(sbTable(t)).select('*');
                     if (!error && data) {
                         const remoteIds = new Set(data.map(r => String(t === 'settings' ? r.key : r.id)));
                         for (const row of data) {
@@ -1140,7 +1146,7 @@ async function flushPendingDeletes() {
     const remaining = [];
     for (const item of list) {
         try {
-            const { error } = await sb.from(item.table).delete().eq(item.table === 'settings' ? 'key' : 'id', item.id);
+            const { error } = await sb.from(sbTable(item.table)).delete().eq(item.table === 'settings' ? 'key' : 'id', item.id);
             if (error) {
                 console.warn('Nachgeholte Löschung fehlgeschlagen:', item, error.message);
                 remaining.push(item);
@@ -1213,7 +1219,7 @@ async function backgroundSyncPushInner() {
                 // vergeben (siehe DatabaseManager.add). Ein upsert mit onConflict=id
                 // funktioniert daher sowohl für's erste Einfügen als auch für Updates -
                 // es gibt keinen Fall mehr, in dem die ID nach dem Sync wechselt.
-                const { data, error } = await sb.from(t)
+                const { data, error } = await sb.from(sbTable(t))
                     .upsert(p, { onConflict: t === 'settings' ? 'key' : 'id' })
                     .select();
 
@@ -2474,7 +2480,7 @@ async function reconcileOfferCounter() {
             const tables = ['customers','projects','rooms','images','materials','offers','orders','events','settings'];
             for (const t of tables) {
                 try {
-                    const { error } = await sb.from(t).select(t === 'settings' ? 'key' : 'id').limit(1);
+                    const { error } = await sb.from(sbTable(t)).select(t === 'settings' ? 'key' : 'id').limit(1);
                     if (error) {
                         let hint = error.message;
                         if (/does not exist|Could not find the table|schema cache/i.test(error.message)) hint = 'Tabelle fehlt in Supabase → SQL-Skript im Supabase SQL-Editor ausführen.';
