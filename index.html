@@ -586,6 +586,26 @@
         @keyframes pageIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         .content-scroll > * { animation: pageIn .22s ease both; }
 
+        /* Live-Berechnungen im Raum-Dialog */
+        .room-calc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+        .calc-chip {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 7px 12px; font-size: 12.5px;
+            display: flex; flex-direction: column; gap: 1px;
+        }
+        .calc-chip span { color: var(--text-muted); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+        .calc-chip strong { font-family: var(--font-display); font-size: 15px; }
+        .calc-chip.accent { border-color: var(--accent); background: var(--accent-light); }
+        .calc-chip.accent strong { color: var(--accent); }
+
+        /* Projekt-gesamt Materialzusammenfassung */
+        .agg-panel {
+            background: var(--accent-light); border: 1px solid var(--accent);
+            border-radius: var(--radius-md); padding: 13px 15px; margin-bottom: 14px;
+        }
+        .agg-title { font-weight: 800; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 9px; }
+        .agg-panel .survey-chip { background: var(--bg-secondary); }
+
         /* ============ RESPONSIVE ============ */
         /* Tablet */
         @media (max-width: 1024px) {
@@ -1977,11 +1997,13 @@ async function reconcileOfferCounter() {
                                             ${(surveyFilled || (project.rooms||[]).length > 0) ? `<button class="btn btn-sm btn-primary" onclick="app.generateMaterialSuggestions(${idJS(project.id)})">${icon('box')} Material berechnen</button>` : ''}
                                         </div>
                                     </div>
-                                    ${surveyFilled ? `<div class="survey-summary">${SURVEY_FIELDS.filter(f => {
-                                        const v = survey[f.key];
-                                        return v !== '' && v !== null && v !== undefined && v !== false && v !== 0;
-                                    }).map(f => `<div class="survey-chip"><span>${escapeHtml(f.label)}</span><strong>${survey[f.key] === true ? 'Ja' : escapeHtml(String(survey[f.key]))}${f.unit && survey[f.key] !== true ? ' ' + f.unit : ''}</strong></div>`).join('') || '<span class="empty-note" style="padding:8px;">Keine Angaben</span>'}</div>`
-                                    : '<div class="empty-note" style="padding:14px;">Noch keine Besichtigungsdaten erfasst.</div>'}
+                                    ${surveyFilled ? `<div class="survey-summary">${[
+                                        ...SURVEY_FIELDS.filter(f => { const v = survey[f.key]; return v !== '' && v !== null && v !== undefined && v !== false && v !== 0; })
+                                            .map(f => `<div class="survey-chip"><span>${escapeHtml(f.label)}</span><strong>${survey[f.key] === true ? 'Ja' : escapeHtml(String(survey[f.key]))}${f.unit && survey[f.key] !== true ? ' ' + f.unit : ''}</strong></div>`),
+                                        ...Object.entries(LEGACY_SURVEY_LABELS).filter(([k]) => { const v = survey[k]; return v !== '' && v !== null && v !== undefined && v !== false && v !== 0; })
+                                            .map(([k, label]) => `<div class="survey-chip" style="opacity:.65;"><span>${escapeHtml(label)}</span><strong>${survey[k] === true ? 'Ja' : escapeHtml(String(survey[k]))}</strong></div>`)
+                                    ].join('') || '<span class="empty-note" style="padding:8px;">Keine Angaben</span>'}</div>`
+                                    : '<div class="empty-note" style="padding:14px;">Noch keine Besichtigung erfasst – Termin, Kontakt, Objekt & Zugang. Technische Daten erfasst du je Raum.</div>'}
                                 </div>
 
                                 <!-- ===== Räume ===== -->
@@ -1998,8 +2020,14 @@ async function reconcileOfferCounter() {
                                                     const area = ((r.length||0)*(r.width||0)).toFixed(1);
                                                     const volume = (area*(r.height||2.5)).toFixed(1);
                                                     const roomKW = ((area*80)/1000).toFixed(1);
+                                                    const t = r.tech || {};
+                                                    const techBits = [
+                                                        t.devManufacturer ? `❄ ${t.devManufacturer}${t.devModel ? ' ' + t.devModel : ''}` : '',
+                                                        (typeof t.pipeLength === 'number' && t.pipeLength > 0) ? `🧵 ${t.pipeLength} m` : '',
+                                                        (typeof t.coreDrills === 'number' && t.coreDrills > 0) ? `🔩 ${t.coreDrills}× Bohrung` : ''
+                                                    ].filter(Boolean).join(' · ');
                                                     return `<tr>
-                                                        <td><strong>${escapeHtml(r.name||'Unbenannt')}</strong></td>
+                                                        <td><strong>${escapeHtml(r.name||'Unbenannt')}</strong>${techBits ? `<div style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(techBits)}</div>` : ''}</td>
                                                         <td>${r.length||0}</td><td>${r.width||0}</td><td>${r.height||2.5}</td>
                                                         <td>${area} m²</td><td>${volume} m³</td><td>${roomKW} kW</td>
                                                         <td style="white-space:nowrap;"><button class="btn btn-sm btn-outline" onclick="app.openRoomModal(${idJS(project.id)}, ${idJS(r.id)})">${icon('edit')}</button> <button class="btn btn-sm btn-danger" onclick="app.deleteRoom(${idJS(r.id)},${idJS(project.id)})">${icon('trash')}</button></td>
@@ -2017,8 +2045,19 @@ async function reconcileOfferCounter() {
 
                                 <!-- ===== Material ===== -->
                                 <div class="detail-section">
+                                    ${pm.length > 0 ? (() => {
+                                        const agg = new Map();
+                                        for (const x of pm) {
+                                            const mat = materials.find(m => String(m.id) === String(x.materialId));
+                                            const unit = x.unit || mat?.unit || 'Stk';
+                                            const key = `${(mat?.name || x.name || 'Material')}|${unit}`;
+                                            agg.set(key, (agg.get(key) || 0) + (Number(x.quantity) || 0));
+                                        }
+                                        const fq = q => (Math.round(q * 100) / 100).toString().replace('.', ',');
+                                        return `<div class="agg-panel"><div class="agg-title">Σ Projekt gesamt</div><div class="survey-summary">${[...agg.entries()].map(([k, q]) => { const [n, u] = k.split('|'); return `<div class="survey-chip"><span>${escapeHtml(n)}</span><strong>${fq(q)} ${escapeHtml(u)}</strong></div>`; }).join('')}</div></div>`;
+                                    })() : ''}
                                     <div class="detail-section-head">
-                                        <h4>📦 Material (${pm.length})</h4>
+                                        <h4>📦 Material aller Räume (${pm.length})</h4>
                                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                                             <button class="btn btn-sm btn-primary" onclick="app.openProjectMaterialModal(null, ${idJS(project.id)})">${icon('plus')} Material</button>
                                             ${pm.length > 0 ? `<button class="btn btn-sm btn-outline" onclick="app.createOrderFromProject(${idJS(project.id)})">${icon('cart')} Bestellliste erstellen</button>` : ''}
@@ -2043,7 +2082,7 @@ async function reconcileOfferCounter() {
                                                         <td><input type="text" value="${escapeHtml(x.note || '')}" placeholder="..." style="padding:6px 8px;min-width:100px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'note', this.value)"></td>
                                                         <td><button class="btn btn-sm btn-danger" onclick="app.deleteProjectMaterial(${idJS(x.id)}, ${idJS(project.id)})">${icon('trash')}</button></td>
                                                     </tr>`;
-                                                }).join('') || '<tr><td colspan="9" class="empty-note">Noch kein Material – lege Räume mit Material an oder nutze „Material berechnen".</td></tr>'}
+                                                }).join('') || '<tr><td colspan="9" class="empty-note">Die Materialliste entsteht automatisch aus den Räumen – lege Räume mit Leitungsdaten an oder klicke „Material berechnen".</td></tr>'}
                                             </tbody>
                                             ${pm.length ? `<tfoot><tr>
                                                 <td colspan="6" style="text-align:right;font-weight:700;">Gesamtsumme</td>
@@ -2619,32 +2658,93 @@ async function reconcileOfferCounter() {
         // ============================================================
         const UNITS = ['Stk', 'm', 'm²', 'lfm', 'Rolle', 'Karton', 'Paket', 'l', 'kg', 'Paar', 'Set', 'Std', 'Pauschal'];
 
+        // Besichtigung: NUR allgemeine Projektdaten (raumbezogene Technik ist beim Raum!)
         const SURVEY_FIELDS = [
+            { key: 'appointment', label: 'Termin', type: 'date', group: 'Termin & Kontakt' },
+            { key: 'contactPerson', label: 'Ansprechpartner', type: 'text', placeholder: 'Name vor Ort', group: 'Termin & Kontakt' },
+            { key: 'contactPhone', label: 'Telefonnummer', type: 'text', placeholder: '+43 ...', group: 'Termin & Kontakt' },
+            { key: 'objectType', label: 'Objektart', type: 'select', options: ['Einfamilienhaus', 'Wohnung', 'Mehrfamilienhaus', 'Büro', 'Geschäft', 'Restaurant', 'Praxis', 'Halle / Gewerbe', 'Serverraum', 'Sonstiges'], group: 'Objekt & Zugang' },
+            { key: 'arrival', label: 'Anfahrt', type: 'text', placeholder: 'z. B. 25 min, Innenhof', group: 'Objekt & Zugang' },
+            { key: 'parking', label: 'Parkmöglichkeit', type: 'text', placeholder: 'z. B. Kurzparkzone, Hof', group: 'Objekt & Zugang' },
+            { key: 'access', label: 'Zugang', type: 'text', placeholder: 'z. B. Schlüssel bei Hausmeister, Lift vorhanden', group: 'Objekt & Zugang' },
+            { key: 'specialFeatures', label: 'Besonderheiten', type: 'textarea', group: 'Hinweise' },
+            { key: 'remarks', label: 'Allgemeine Notizen', type: 'textarea', group: 'Hinweise' }
+        ];
+        const SURVEY_GROUP_ICONS = { 'Termin & Kontakt': '📅', 'Objekt & Zugang': '🏠', 'Hinweise': '📝' };
+
+        // Technische Daten JE RAUM - der Raum ist die vollständige technische Einheit
+        const ROOM_TECH_FIELDS = [
+            // Innengerät
+            { key: 'devManufacturer', label: 'Hersteller', type: 'select', options: ['Daikin', 'Mitsubishi', 'Panasonic', 'LG', 'Samsung', 'Toshiba', 'Fujitsu', 'Gree', 'Midea', 'Haier', 'Sonstige'], group: 'Innengerät' },
+            { key: 'devModel', label: 'Modell', type: 'text', placeholder: 'z. B. FTXM25R', group: 'Innengerät' },
+            { key: 'devCapacity', label: 'Leistung', type: 'number', unit: 'kW', group: 'Innengerät' },
+            { key: 'devWallMount', label: 'Wandmontage', type: 'bool', group: 'Innengerät' },
+            { key: 'devCeilingMount', label: 'Deckenmontage', type: 'bool', group: 'Innengerät' },
+            { key: 'devPosition', label: 'Position', type: 'text', placeholder: 'z. B. über Tür, Südwand', group: 'Innengerät' },
+            // Leitungen
             { key: 'pipeLength', label: 'Rohrlänge', type: 'number', unit: 'm', group: 'Leitungen' },
-            { key: 'pipeDimension', label: 'Rohrdimension', type: 'text', placeholder: 'z. B. 1/4"+1/2", 22 mm', group: 'Leitungen' },
-            { key: 'insulation', label: 'Isolierung', type: 'text', placeholder: 'z. B. 9 mm, 13 mm', group: 'Leitungen' },
+            { key: 'pipeDimension', label: 'Rohrdimension', type: 'text', placeholder: 'z. B. 1/4"+1/2"', group: 'Leitungen' },
+            { key: 'insulation', label: 'Isolierung', type: 'text', placeholder: 'z. B. 9 mm', group: 'Leitungen' },
             { key: 'cableDuct', label: 'Kabelkanal', type: 'number', unit: 'm', group: 'Leitungen' },
-            { key: 'powerCable', label: 'Stromkabel (Typ)', type: 'text', placeholder: 'z. B. 5×2,5 mm²', group: 'Leitungen' },
-            { key: 'powerCableLength', label: 'Stromkabel Länge', type: 'number', unit: 'm', group: 'Leitungen' },
-            { key: 'commCable', label: 'Kommunikationskabel (Typ)', type: 'text', placeholder: 'z. B. 4×0,75 mm²', group: 'Leitungen' },
-            { key: 'commCableLength', label: 'Kommunikationskabel Länge', type: 'number', unit: 'm', group: 'Leitungen' },
+            { key: 'powerCable', label: 'Stromkabel Typ', type: 'text', placeholder: 'z. B. NYM 5×2,5', group: 'Leitungen' },
+            { key: 'powerCableLength', label: 'Stromkabellänge', type: 'number', unit: 'm', group: 'Leitungen' },
+            { key: 'commCable', label: 'Kommunikationskabel Typ', type: 'text', placeholder: 'z. B. 4×0,75 mm²', group: 'Leitungen' },
+            { key: 'commCableLength', label: 'Kommunikationskabellänge', type: 'number', unit: 'm', group: 'Leitungen' },
             { key: 'condensateLine', label: 'Kondensatleitung', type: 'number', unit: 'm', group: 'Leitungen' },
             { key: 'condensatePump', label: 'Kondensatpumpe', type: 'bool', group: 'Leitungen' },
+            // Montage
             { key: 'coreDrills', label: 'Kernbohrungen', type: 'number', unit: 'Stk', group: 'Montage' },
             { key: 'wallMaterial', label: 'Wandmaterial', type: 'select', options: ['Ziegel', 'Beton', 'Holz', 'Rigips', 'Vollwärmeschutz', 'Sonstiges'], group: 'Montage' },
             { key: 'outdoorMounting', label: 'Außengerät-Aufstellung', type: 'select', options: ['Big Foot', 'Wandkonsole', 'Fundament', 'Balkon', 'Dach', 'Garten', 'Sonstiges'], group: 'Montage' },
             { key: 'scaffold', label: 'Gerüst notwendig', type: 'bool', group: 'Montage' },
             { key: 'liftPlatform', label: 'Hebebühne notwendig', type: 'bool', group: 'Montage' },
             { key: 'roofMounting', label: 'Dachmontage', type: 'bool', group: 'Montage' },
-            { key: 'climbingAid', label: 'Steighilfe notwendig', type: 'bool', group: 'Montage' },
+            { key: 'climbingAid', label: 'Steighilfe', type: 'bool', group: 'Montage' },
+            { key: 'wallBracket', label: 'Wandkonsole', type: 'bool', group: 'Montage' },
+            { key: 'bigFoot', label: 'Big Foot', type: 'bool', group: 'Montage' },
+            { key: 'vibrationDampers', label: 'Schwingungsdämpfer', type: 'bool', group: 'Montage' },
+            // Elektrik
             { key: 'fiProtection', label: 'FI vorhanden', type: 'bool', group: 'Elektrik' },
             { key: 'fuse', label: 'Absicherung', type: 'text', placeholder: 'z. B. 16 A', group: 'Elektrik' },
             { key: 'powerSupply', label: 'Spannungsversorgung', type: 'select', options: ['230 V', '400 V'], group: 'Elektrik' },
             { key: 'socketAvailable', label: 'Steckdose vorhanden', type: 'bool', group: 'Elektrik' },
             { key: 'supplyLineNeeded', label: 'Zuleitung notwendig', type: 'bool', group: 'Elektrik' },
-            { key: 'remarks', label: 'Bemerkungen', type: 'textarea', group: 'Hinweise' }
+            // Hinweise
+            { key: 'remarks', label: 'Bemerkungen zu diesem Raum', type: 'textarea', group: 'Hinweise' }
         ];
-        const SURVEY_GROUP_ICONS = { 'Leitungen': '🧵', 'Montage': '🔩', 'Elektrik': '⚡', 'Hinweise': '📝' };
+        const ROOM_GROUP_ICONS = { 'Innengerät': '❄', 'Leitungen': '🧵', 'Montage': '🔩', 'Elektrik': '⚡', 'Hinweise': '📝' };
+
+        // Anzeige alter Projekt-Besichtigungsdaten (vor der Umstellung erfasst)
+        const LEGACY_SURVEY_LABELS = { pipeLength: 'Rohrlänge (alt)', pipeDimension: 'Rohrdimension (alt)', insulation: 'Isolierung (alt)', cableDuct: 'Kabelkanal (alt)', powerCable: 'Stromkabel (alt)', powerCableLength: 'Stromkabellänge (alt)', commCable: 'Komm.-Kabel (alt)', commCableLength: 'Komm.-Kabellänge (alt)', condensateLine: 'Kondensatleitung (alt)', condensatePump: 'Kondensatpumpe (alt)', coreDrills: 'Kernbohrungen (alt)', wallMaterial: 'Wandmaterial (alt)', outdoorMounting: 'Außengerät (alt)', fiProtection: 'FI (alt)', fuse: 'Absicherung (alt)', scaffold: 'Gerüst (alt)', liftPlatform: 'Hebebühne (alt)', roofMounting: 'Dachmontage (alt)', climbingAid: 'Steighilfe (alt)', powerSupply: 'Spannung (alt)', socketAvailable: 'Steckdose (alt)', supplyLineNeeded: 'Zuleitung (alt)' };
+
+        // Generischer Feld-Renderer für Technik-/Besichtigungsfelder
+        function techFieldInput(f, v, prefix) {
+            const id = prefix + f.key;
+            if (f.type === 'bool') {
+                return `<label class="switch-row"><span>${escapeHtml(f.label)}</span><span class="switch"><input type="checkbox" id="${id}" ${v === true ? 'checked' : ''}><span class="slider"></span></span></label>`;
+            }
+            if (f.type === 'select') {
+                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><select id="${id}"><option value="">–</option>${f.options.map(o => `<option value="${escapeHtml(o)}" ${v === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></div>`;
+            }
+            if (f.type === 'textarea') {
+                return `<div class="form-group" style="grid-column:1/-1;"><label>${escapeHtml(f.label)}</label><textarea id="${id}" rows="3">${escapeHtml(v || '')}</textarea></div>`;
+            }
+            if (f.type === 'number') {
+                return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' <small>(' + f.unit + ')</small>' : ''}</label><input type="number" inputmode="decimal" step="any" min="0" id="${id}" value="${v ?? ''}"></div>`;
+            }
+            if (f.type === 'date') {
+                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="date" id="${id}" value="${escapeHtml(v || '')}"></div>`;
+            }
+            return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="${id}" value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}"></div>`;
+        }
+        function techFieldRead(f, overlay, prefix) {
+            const el = overlay.querySelector('#' + prefix + f.key);
+            if (!el) return undefined;
+            if (f.type === 'bool') return el.checked;
+            let v = el.value;
+            if (f.type === 'number') v = v === '' ? '' : parseFloat(String(v).replace(',', '.'));
+            return v;
+        }
 
         // Raumnamen-Vorschläge (Autovervollständigung, eigene Namen weiter möglich)
         const ROOM_NAMES = ['Wohnzimmer','Schlafzimmer','Kinderzimmer','Küche','Esszimmer','Büro','Arbeitszimmer','Wintergarten','Keller','Garage','Dachboden','Flur','Bad','WC','Gästezimmer','Serverraum','Lager','Werkstatt','Geschäft','Restaurant','Praxis','Technikraum','Besprechungsraum','Verkaufsraum','Kühlraum','Tiefkühlraum'];
@@ -3381,41 +3481,24 @@ async function reconcileOfferCounter() {
                     <div class="form-card">
                         <div class="form-card-title">${SURVEY_GROUP_ICONS[g] || ''} ${g}</div>
                         <div class="survey-grid">
-                            ${SURVEY_FIELDS.filter(f => f.group === g).map(f => {
-                                const v = survey[f.key];
-                                if (f.type === 'bool') {
-                                    return `<label class="switch-row"><span>${escapeHtml(f.label)}</span><span class="switch"><input type="checkbox" id="sv_${f.key}" ${v === true ? 'checked' : ''}><span class="slider"></span></span></label>`;
-                                }
-                                if (f.type === 'select') {
-                                    return `<div class="form-group"><label>${escapeHtml(f.label)}</label><select id="sv_${f.key}"><option value="">–</option>${f.options.map(o => `<option value="${escapeHtml(o)}" ${v === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></div>`;
-                                }
-                                if (f.type === 'textarea') {
-                                    return `<div class="form-group" style="grid-column:1/-1;"><label>${escapeHtml(f.label)}</label><textarea id="sv_${f.key}" rows="3" placeholder="Besonderheiten, Zugang, Absprachen...">${escapeHtml(v || '')}</textarea></div>`;
-                                }
-                                if (f.type === 'number') {
-                                    return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' <small>(' + f.unit + ')</small>' : ''}</label><input type="number" inputmode="decimal" step="any" min="0" id="sv_${f.key}" value="${v ?? ''}"></div>`;
-                                }
-                                return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="sv_${f.key}" value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}"></div>`;
-                            }).join('')}
+                            ${SURVEY_FIELDS.filter(f => f.group === g).map(f => techFieldInput(f, survey[f.key], 'sv_')).join('')}
                         </div>
                     </div>
-                `).join('');
+                `).join('') + `
+                    <div class="form-card" style="border-style:dashed;">
+                        <div class="form-card-title">📷 Fotos</div>
+                        <div style="font-size:13px;color:var(--text-muted);">Fotos der Besichtigung fügst du im Projekt unter <strong>Bilder</strong> hinzu – sie erscheinen automatisch in der Projektübersicht-PDF.</div>
+                        <div style="font-size:12.5px;color:var(--accent);margin-top:8px;font-weight:600;">Technische Daten (Leitungen, Montage, Elektrik) erfasst du direkt beim jeweiligen Raum.</div>
+                    </div>`;
 
                 showModal(
                     `Besichtigung – ${escapeHtml(project.title || '')}`,
                     body,
                     async (overlay) => {
-                        const data = {};
+                        const data = { ...(project.survey || {}) }; // alte Werte nicht verlieren
                         for (const f of SURVEY_FIELDS) {
-                            const el = overlay.querySelector(`#sv_${f.key}`);
-                            if (!el) continue;
-                            let v;
-                            if (f.type === 'bool') v = el.checked;
-                            else {
-                                v = el.value;
-                                if (f.type === 'number') v = v === '' ? '' : parseFloat(String(v).replace(',', '.'));
-                            }
-                            data[f.key] = v;
+                            const v = techFieldRead(f, overlay, 'sv_');
+                            if (v !== undefined) data[f.key] = v;
                         }
                         project.survey = data;
                         if (!project.status || project.status === 'Neu' || project.status === 'Besichtigung offen') {
@@ -3430,111 +3513,82 @@ async function reconcileOfferCounter() {
                 );
             },
 
-            // Materialvorschläge: intelligent aus Räumen + Besichtigung berechnet
+            // Material berechnen: führt die Technikdaten ALLER Räume zusammen
             async generateMaterialSuggestions(projectId) {
                 const project = await db.get('projects', projectId);
                 if (!project) return;
-                const s = project.survey || {};
                 const rooms = (await db.getByIndex('rooms', 'projectId', projectId)) || [];
+                if (rooms.length === 0) { showToast('Bitte zuerst Räume anlegen – die Technik wird je Raum erfasst.', 'info'); return; }
                 const materials = await db.getAll('materials');
-                const existing = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
 
                 const num = v => (typeof v === 'number' && v > 0 ? v : 0);
-                const r1 = v => Math.round(v * 10) / 10;
 
-                // Längen: aus Besichtigung, sonst Schätzung 8 m je Raum (klar gekennzeichnet)
-                const estimated = !num(s.pipeLength) && rooms.length > 0;
-                const L = num(s.pipeLength) || rooms.length * 8;
-                const ductL = num(s.cableDuct) || r1(L * 1.1);
-                const powerL = num(s.powerCableLength) || r1(L + 4);
-                const commL = num(s.commCableLength) || r1(L + 4);
-                const condL = num(s.condensateLine) || L;
-                const estNote = estimated ? 'Automatisch geschätzt (8 m/Raum) – bitte prüfen' : 'Automatisch berechnet';
+                // 1) Je Raum: fehlende Positionen aus dessen Leitungsdaten ergänzen
+                let addedRooms = 0;
+                for (const r of rooms) {
+                    addedRooms += await this._applyRoomAutoMaterials(projectId, r.id, r.name || 'Raum', r.tech || {}, new Set());
+                }
+
+                // 2) Projektweite Positionen aus den Summen aller Räume
+                const totals = rooms.reduce((t, r) => {
+                    const x = r.tech || {};
+                    t.pipe += num(x.pipeLength);
+                    t.duct += num(x.cableDuct) || num(x.pipeLength);
+                    t.drills += num(x.coreDrills);
+                    if (x.outdoorMounting === 'Big Foot' || x.bigFoot === true) t.bigFoot = true;
+                    if (x.outdoorMounting === 'Wandkonsole' || x.wallBracket === true) t.bracket = true;
+                    return t;
+                }, { pipe: 0, duct: 0, drills: 0, bigFoot: false, bracket: false });
+
+                const existing = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+                const hasByName = (n) => existing.some(x => {
+                    const m = materials.find(mm => String(mm.id) === String(x.materialId));
+                    return (m?.name || '').toLowerCase().includes(n.toLowerCase());
+                });
 
                 const wanted = [];
-                // Geräte: 1 Innengerät je Raum ohne Innengerät, 1 Außengerät je Projekt
-                const hasIndoor = (roomId) => existing.some(x => {
-                    const m = materials.find(mm => String(mm.id) === String(x.materialId));
-                    return String(x.roomId) === String(roomId) && (m?.name || '').toLowerCase().includes('innengerät');
-                });
-                for (const r of rooms) {
-                    if (!hasIndoor(r.id)) {
-                        const kw = r1(((r.length || 0) * (r.width || 0) * 80) / 1000);
-                        wanted.push({ name: 'Innengerät', size: kw > 0 ? `ca. ${kw} kW` : '', qty: 1, unit: 'Stk', category: 'Klimageräte', roomId: r.id, note: `Für ${r.name || 'Raum'}` });
-                    }
-                }
-                const hasOutdoor = existing.some(x => {
-                    const m = materials.find(mm => String(mm.id) === String(x.materialId));
-                    return (m?.name || '').toLowerCase().includes('außengerät');
-                });
-                if (rooms.length > 0 && !hasOutdoor) {
+                if (!hasByName('Außengerät')) {
                     const cooling = calculateCoolingCapacity(rooms);
                     wanted.push({ name: 'Außengerät', size: cooling.recommendation ? `ca. ${cooling.recommendation} kW` : '', qty: 1, unit: 'Stk', category: 'Außengeräte', note: 'Auslegung prüfen' });
                 }
-
-                if (L > 0) {
-                    wanted.push({ name: 'Kupferrohr', size: s.pipeDimension || '', qty: r1(L), unit: 'm', category: 'Kupferrohre', note: estNote });
-                    wanted.push({ name: 'Rohrisolierung', size: s.insulation || '', qty: r1(L), unit: 'm', category: 'Isolierung', note: estNote });
-                    wanted.push({ name: 'Kondensatschlauch', size: '', qty: r1(condL), unit: 'm', category: 'Kondensat', note: estNote });
-                    wanted.push({ name: 'Kabelkanal', size: '', qty: r1(ductL), unit: 'm', category: 'Elektromaterial', note: estNote });
-                    wanted.push({ name: 'Stromkabel', size: s.powerCable || '5×2,5 mm²', qty: r1(powerL), unit: 'm', category: 'Kabel', note: estNote });
-                    wanted.push({ name: 'Kommunikationskabel', size: s.commCable || '', qty: r1(commL), unit: 'm', category: 'Kabel', note: estNote });
-                    // Kleinmaterial - Faustformeln
-                    wanted.push({ name: 'Kabelbinder', size: '', qty: Math.ceil(L * 3), unit: 'Stk', category: 'Befestigung', note: '3 Stk je Meter Leitung' });
-                    wanted.push({ name: 'Rohrschellen', size: '', qty: Math.ceil(L / 1.5), unit: 'Stk', category: 'Befestigung', note: 'alle 1,5 m' });
-                    wanted.push({ name: 'Dübel', size: '', qty: Math.ceil(ductL * 1.5), unit: 'Stk', category: 'Befestigung', note: '1,5 Stk je Meter Kanal' });
-                    wanted.push({ name: 'Schrauben', size: '', qty: Math.ceil(ductL * 1.5), unit: 'Stk', category: 'Befestigung', note: '1,5 Stk je Meter Kanal' });
-                    wanted.push({ name: 'Kabelkanalbogen', size: '', qty: Math.max(2, Math.ceil(ductL / 4)), unit: 'Stk', category: 'Elektromaterial', note: 'ca. 1 je 4 m' });
-                    wanted.push({ name: 'UV-Band', size: '', qty: 1, unit: 'Rolle', category: 'Isolierung', note: 'Außenbereich' });
+                if (totals.pipe > 0) {
+                    if (!hasByName('Kabelbinder')) wanted.push({ name: 'Kabelbinder', size: '', qty: Math.ceil(totals.pipe * 3), unit: 'Stk', category: 'Befestigung', note: '3 Stk je Meter Leitung' });
+                    if (!hasByName('Rohrschellen')) wanted.push({ name: 'Rohrschellen', size: '', qty: Math.ceil(totals.pipe / 1.5), unit: 'Stk', category: 'Befestigung', note: 'alle 1,5 m' });
+                    if (!hasByName('Dübel')) wanted.push({ name: 'Dübel', size: '', qty: Math.ceil(totals.duct * 1.5), unit: 'Stk', category: 'Befestigung', note: '1,5 Stk je Meter Kanal' });
+                    if (!hasByName('Schrauben')) wanted.push({ name: 'Schrauben', size: '', qty: Math.ceil(totals.duct * 1.5), unit: 'Stk', category: 'Befestigung', note: '1,5 Stk je Meter Kanal' });
+                    if (!hasByName('Kabelkanalbogen')) wanted.push({ name: 'Kabelkanalbogen', size: '', qty: Math.max(2, Math.ceil(totals.duct / 4)), unit: 'Stk', category: 'Elektromaterial', note: 'ca. 1 je 4 m' });
+                    if (!hasByName('UV-Band')) wanted.push({ name: 'UV-Band', size: '', qty: 1, unit: 'Rolle', category: 'Isolierung', note: 'Außenbereich' });
                 }
-                if (s.condensatePump === true) wanted.push({ name: 'Kondensatpumpe', size: '', qty: 1, unit: 'Stk', category: 'Kondensat' });
-                if (num(s.coreDrills)) wanted.push({ name: 'Kernbohrung', size: s.wallMaterial ? 'Wand: ' + s.wallMaterial : '', qty: s.coreDrills, unit: 'Stk', category: 'Arbeitszeit' });
-                if (s.outdoorMounting === 'Big Foot') {
-                    wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
-                    wanted.push({ name: 'Silentblöcke', size: '', qty: 1, unit: 'Set', category: 'Befestigung', note: 'Schwingungsdämpfung' });
+                if (totals.drills > 0 && !hasByName('Kernbohrung')) {
+                    wanted.push({ name: 'Kernbohrung', size: '', qty: totals.drills, unit: 'Stk', category: 'Arbeitszeit' });
                 }
-                if (s.outdoorMounting === 'Wandkonsole') {
-                    wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
-                    wanted.push({ name: 'Silentblöcke', size: '', qty: 1, unit: 'Set', category: 'Befestigung', note: 'Schwingungsdämpfung' });
+                if (totals.bigFoot && !hasByName('Big Foot')) wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
+                if (totals.bracket && !hasByName('Wandkonsole')) wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
+                if ((totals.bigFoot || totals.bracket) && !hasByName('Schwingungsdämpfer') && !hasByName('Silentbl')) {
+                    wanted.push({ name: 'Schwingungsdämpfer', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
                 }
 
-                if (wanted.length === 0) { showToast('Bitte zuerst Räume anlegen oder Besichtigung erfassen.', 'info'); return; }
-
-                let added = 0, skipped = 0, created = 0;
+                let added = 0;
                 for (const w of wanted) {
-                    let mat = materials.find(m =>
-                        (m.name || '').toLowerCase() === w.name.toLowerCase() &&
-                        ((m.size || '') === (w.size || '') || !w.size)
-                    ) || materials.find(m => (m.name || '').toLowerCase().includes(w.name.toLowerCase()));
-                    if (!mat) {
-                        const newId = await db.add('materials', {
-                            name: w.name, size: w.size || '', category: w.category, unit: w.unit,
-                            manufacturer: '', articleNumber: '', purchasePrice: 0, sellingPrice: 0, notes: 'Automatisch aus Berechnung angelegt'
-                        });
-                        mat = await db.get('materials', newId);
-                        materials.push(mat);
-                        created++;
-                    }
-                    const dup = existing.some(x => String(x.materialId) === String(mat.id) && String(x.roomId ?? '') === String(w.roomId ?? ''));
-                    if (dup) { skipped++; continue; }
-                    await db.add('projectMaterials', {
-                        projectId, materialId: mat.id, quantity: w.qty, unit: w.unit, size: w.size || '',
-                        roomId: w.roomId ?? null, price: Number(mat.sellingPrice) || 0,
-                        note: w.note || 'Automatisch berechnet'
-                    });
+                    const mat = await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
+                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId: null, quantity: w.qty, unit: w.unit, size: w.size || '', price: Number(mat.sellingPrice) || 0, note: w.note || 'Automatisch berechnet' });
                     added++;
                 }
-                showToast(`${added} Materialposition(en) berechnet${created ? `, ${created} neu im Katalog` : ''}${skipped ? `, ${skipped} bereits vorhanden` : ''}.${estimated ? ' Längen wurden geschätzt – bitte prüfen.' : ''}`, 'success');
+
+                const total = addedRooms + added;
+                if (total === 0) showToast('Materialliste ist bereits vollständig.', 'info');
+                else showToast(`${total} Materialposition(en) automatisch berechnet (${addedRooms} raumbezogen, ${added} projektweit).`, 'success');
                 app.navigate('projects', projectId);
             },
 
             // ---------- Raum mit Material anlegen/bearbeiten ----------
             async openRoomModal(projectId, roomId = null) {
                 const room = roomId ? await db.get('rooms', roomId) : null;
+                const tech = room?.tech || {};
                 const materials = (await db.getAll('materials')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
                 const existingPm = roomId ? ((await db.getByIndex('projectMaterials', 'projectId', projectId)) || []).filter(x => String(x.roomId) === String(roomId)) : [];
 
-                const matOptions = (sel) => materials.map(m => `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" data-price="${Number(m.sellingPrice) || 0}" ${String(sel) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}</option>`).join('');
+                const matOptions = (sel) => materials.map(m => `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" ${String(sel) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}</option>`).join('');
                 const pmRow = (x = null) => `
                     <div class="pm-row" data-pmid="${x ? escapeHtml(String(x.id)) : ''}">
                         <select class="pmr-mat">${matOptions(x?.materialId)}</select>
@@ -3543,11 +3597,22 @@ async function reconcileOfferCounter() {
                         <button type="button" class="btn btn-sm btn-danger pmr-del">${icon('trash')}</button>
                     </div>`;
 
+                const techGroups = [...new Set(ROOM_TECH_FIELDS.map(f => f.group))];
+                const techCards = techGroups.map(g => `
+                    <div class="form-card">
+                        <div class="form-card-title">${ROOM_GROUP_ICONS[g] || ''} ${g}</div>
+                        <div class="survey-grid">
+                            ${ROOM_TECH_FIELDS.filter(f => f.group === g).map(f => techFieldInput(f, tech[f.key], 'rt_')).join('')}
+                        </div>
+                        ${g === 'Leitungen' ? '<div style="font-size:12px;color:var(--accent);font-weight:600;margin-top:6px;">💡 Aus der Rohrlänge wird beim Speichern automatisch passendes Material für diesen Raum vorgeschlagen.</div>' : ''}
+                    </div>
+                `).join('');
+
                 const modal = showModal(
                     room ? `Raum bearbeiten – ${escapeHtml(room.name || '')}` : 'Neuer Raum',
                     `
                         <div class="form-card">
-                            <div class="form-card-title">📐 Raum & Maße</div>
+                            <div class="form-card-title">📐 Raumdaten</div>
                             <div class="form-group"><label>Raumname</label>
                                 <input type="text" id="roomName" list="roomNameList" value="${escapeHtml(room?.name || '')}" placeholder="z. B. Wohnzimmer">
                                 <datalist id="roomNameList">${ROOM_NAMES.map(n => `<option value="${n}">`).join('')}</datalist>
@@ -3557,25 +3622,17 @@ async function reconcileOfferCounter() {
                                 <div class="form-group"><label>Breite (m) *</label><input type="number" id="roomWidth" inputmode="decimal" step="0.1" min="0" value="${room?.width ?? ''}" placeholder="4.0"></div>
                                 <div class="form-group"><label>Höhe (m)</label><input type="number" id="roomHeight" inputmode="decimal" step="0.1" min="0" value="${room?.height ?? 2.5}"></div>
                             </div>
-                            <div id="roomKwHint" style="font-size:12.5px;color:var(--accent);font-weight:600;"></div>
+                            <div class="room-calc" id="roomCalc"></div>
                         </div>
 
-                        ${!room ? `
-                        <div class="form-card">
-                            <div class="form-card-title">❄ Innengerät für diesen Raum</div>
-                            <div class="brand-grid" id="brandGrid">
-                                <button type="button" class="brand-chip active" data-brand="">Keins / später</button>
-                                ${BRANDS.map(b => `<button type="button" class="brand-chip" data-brand="${b}">${b}</button>`).join('')}
-                            </div>
-                            <div class="form-group" id="brandModelWrap" style="display:none;margin-top:10px;"><label>Modell (optional)</label><input type="text" id="brandModel" placeholder="z. B. FTXM25R / Perfera 2,5 kW"></div>
-                        </div>` : ''}
+                        ${techCards}
 
                         <div class="form-card">
                             <div class="form-card-title">📦 Material für diesen Raum</div>
-                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Auswahl aus der Materialdatenbank – Menge direkt eingeben.</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Auswahl aus der Materialdatenbank – Menge und Einheit direkt eingeben.</div>
                             <div id="pmRows">${existingPm.map(x => pmRow(x)).join('')}</div>
                             <button type="button" class="btn btn-sm btn-outline" id="pmAddRow" style="margin-top:8px;">${icon('plus')} Material-Zeile</button>
-                            ${materials.length === 0 ? '<div style="font-size:12px;color:var(--warning);margin-top:8px;">Materialdatenbank ist leer – Zeilen können erst nach dem Anlegen von Materialien gewählt werden.</div>' : ''}
+                            ${materials.length === 0 ? '<div style="font-size:12px;color:var(--warning);margin-top:8px;">Materialdatenbank ist leer – beim Speichern werden vorgeschlagene Materialien automatisch angelegt.</div>' : ''}
                         </div>
                     `,
                     async (overlay) => {
@@ -3585,33 +3642,29 @@ async function reconcileOfferCounter() {
                         const height = parseFloat(String(overlay.querySelector('#roomHeight').value).replace(',', '.')) || 2.5;
                         if (length <= 0 || width <= 0) { showToast('Länge und Breite müssen größer als 0 sein.', 'error'); return; }
 
+                        // Technische Daten einsammeln
+                        const techData = { ...(room?.tech || {}) };
+                        for (const f of ROOM_TECH_FIELDS) {
+                            const v = techFieldRead(f, overlay, 'rt_');
+                            if (v !== undefined) techData[f.key] = v;
+                        }
+
                         let rid = roomId;
                         if (room) {
-                            await db.put('rooms', { ...room, name, length, width, height });
+                            await db.put('rooms', { ...room, name, length, width, height, tech: techData });
                         } else {
-                            rid = await db.add('rooms', { projectId, name, length, width, height });
+                            rid = await db.add('rooms', { projectId, name, length, width, height, tech: techData });
                         }
 
-                        // Innengerät (nur bei neuem Raum)
-                        const brand = overlay.querySelector('.brand-chip.active')?.dataset.brand || '';
-                        if (!room && brand) {
-                            const model = overlay.querySelector('#brandModel')?.value.trim() || '';
-                            const devName = `Innengerät ${brand}`;
-                            let mat = (await db.getAll('materials')).find(m => (m.name || '').toLowerCase() === devName.toLowerCase() && (m.size || '') === model);
-                            if (!mat) {
-                                const mid = await db.add('materials', { name: devName, size: model, category: 'Klimageräte', unit: 'Stk', manufacturer: brand, articleNumber: '', purchasePrice: 0, sellingPrice: 0 });
-                                mat = await db.get('materials', mid);
-                            }
-                            await db.add('projectMaterials', { projectId, materialId: mat.id, roomId: rid, quantity: 1, unit: 'Stk', size: model, price: Number(mat.sellingPrice) || 0, note: `${name}` });
-                        }
-
-                        // Material-Zeilen abgleichen
+                        // Manuelle Material-Zeilen abgleichen
                         const rows = [...overlay.querySelectorAll('.pm-row')];
                         const keptIds = new Set();
+                        const manualMatIds = new Set();
                         for (const r of rows) {
                             const matId = r.querySelector('.pmr-mat').value;
                             const qty = parseFloat(String(r.querySelector('.pmr-qty').value).replace(',', '.'));
                             if (!matId || isNaN(qty) || qty <= 0) continue;
+                            manualMatIds.add(String(matId));
                             const unit = r.querySelector('.pmr-unit').value;
                             const mat = materials.find(m => String(m.id) === String(matId));
                             const pmid = r.dataset.pmid;
@@ -3623,39 +3676,39 @@ async function reconcileOfferCounter() {
                                 keptIds.add(String(newId));
                             }
                         }
-                        // Beim Bearbeiten: entfernte Zeilen löschen
                         if (room) {
                             for (const x of existingPm) {
                                 if (!keptIds.has(String(x.id))) await db.delete('projectMaterials', x.id);
                             }
                         }
 
+                        // AUTOMATISCHE VORSCHLÄGE aus den Leitungsdaten dieses Raums
+                        const auto = await app._applyRoomAutoMaterials(projectId, rid, name, techData, manualMatIds);
+
                         overlay.remove();
-                        showToast(room ? 'Raum aktualisiert.' : 'Raum inkl. Material angelegt.', 'success');
+                        showToast(`${room ? 'Raum aktualisiert' : 'Raum angelegt'}${auto > 0 ? ` – ${auto} Materialposition(en) automatisch ergänzt` : ''}.`, 'success');
                         app.navigate('projects', projectId);
                     },
                     null,
                     { wide: true }
                 );
 
-                // Live kW-Hinweis
-                const updKw = () => {
+                // Live: Fläche, Volumen, empfohlene Kälteleistung
+                const updCalc = () => {
                     const l = parseFloat(String(modal.querySelector('#roomLength').value).replace(',', '.')) || 0;
                     const w = parseFloat(String(modal.querySelector('#roomWidth').value).replace(',', '.')) || 0;
-                    const el = modal.querySelector('#roomKwHint');
-                    el.textContent = l > 0 && w > 0 ? `≈ ${((l * w * 80) / 1000).toFixed(1)} kW empfohlene Kälteleistung (${(l * w).toFixed(1)} m²)` : '';
+                    const h = parseFloat(String(modal.querySelector('#roomHeight').value).replace(',', '.')) || 2.5;
+                    const el = modal.querySelector('#roomCalc');
+                    if (l > 0 && w > 0) {
+                        const area = l * w;
+                        el.innerHTML = `
+                            <div class="calc-chip"><span>Fläche</span><strong>${area.toFixed(1)} m²</strong></div>
+                            <div class="calc-chip"><span>Volumen</span><strong>${(area * h).toFixed(1)} m³</strong></div>
+                            <div class="calc-chip accent"><span>Empf. Kälteleistung</span><strong>${((area * 80) / 1000).toFixed(1)} kW</strong></div>`;
+                    } else { el.innerHTML = ''; }
                 };
-                modal.querySelector('#roomLength').addEventListener('input', updKw);
-                modal.querySelector('#roomWidth').addEventListener('input', updKw);
-                updKw();
-
-                // Marken-Chips
-                modal.querySelectorAll('.brand-chip').forEach(b => b.addEventListener('click', () => {
-                    modal.querySelectorAll('.brand-chip').forEach(x => x.classList.remove('active'));
-                    b.classList.add('active');
-                    const wrap = modal.querySelector('#brandModelWrap');
-                    if (wrap) wrap.style.display = b.dataset.brand ? 'block' : 'none';
-                }));
+                ['#roomLength', '#roomWidth', '#roomHeight'].forEach(s => modal.querySelector(s).addEventListener('input', updCalc));
+                updCalc();
 
                 // Material-Zeilen
                 const bindRow = (r) => {
@@ -3666,7 +3719,7 @@ async function reconcileOfferCounter() {
                 };
                 modal.querySelectorAll('.pm-row').forEach(bindRow);
                 modal.querySelector('#pmAddRow').addEventListener('click', () => {
-                    if (materials.length === 0) { showToast('Materialdatenbank ist leer.', 'info'); return; }
+                    if (materials.length === 0) { showToast('Materialdatenbank ist leer – nutze die automatischen Vorschläge beim Speichern.', 'info'); return; }
                     const wrap = modal.querySelector('#pmRows');
                     const div = document.createElement('div');
                     div.innerHTML = pmRow();
@@ -3675,6 +3728,55 @@ async function reconcileOfferCounter() {
                     bindRow(r);
                     r.querySelector('.pmr-unit').value = r.querySelector('.pmr-mat').selectedOptions[0]?.dataset.unit || 'Stk';
                 });
+            },
+
+            // Material im Katalog sicherstellen (legt fehlende automatisch an)
+            async _ensureCatalogMaterial(name, size, category, unit) {
+                const all = await db.getAll('materials');
+                let mat = all.find(m => (m.name || '').toLowerCase() === name.toLowerCase() && ((m.size || '') === (size || '') || !size))
+                    || all.find(m => (m.name || '').toLowerCase() === name.toLowerCase());
+                if (!mat) {
+                    const id = await db.add('materials', { name, size: size || '', category, unit, manufacturer: '', articleNumber: '', purchasePrice: 0, sellingPrice: 0, notes: 'Automatisch angelegt' });
+                    mat = await db.get('materials', id);
+                }
+                return mat;
+            },
+
+            // Automatische Raum-Materialvorschläge aus den Leitungsdaten (Rohrlänge 6 m ->
+            // 6 m Kupferrohr, 6 m Isolierung, 6 m Kondensatschlauch, 7 m Strom-/Komm.-Kabel, 6 m Kanal)
+            async _applyRoomAutoMaterials(projectId, roomId, roomName, tech, manualMatIds = new Set()) {
+                const num = v => (typeof v === 'number' && v > 0 ? v : 0);
+                const L = num(tech.pipeLength);
+                const wanted = [];
+                if (L > 0) {
+                    wanted.push({ name: 'Kupferrohr', size: tech.pipeDimension || '', qty: L, unit: 'm', category: 'Kupferrohre' });
+                    wanted.push({ name: 'Rohrisolierung', size: tech.insulation || '', qty: L, unit: 'm', category: 'Isolierung' });
+                    wanted.push({ name: 'Kondensatschlauch', size: '', qty: num(tech.condensateLine) || L, unit: 'm', category: 'Kondensat' });
+                    wanted.push({ name: 'Stromkabel', size: tech.powerCable || '', qty: num(tech.powerCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
+                    wanted.push({ name: 'Kommunikationskabel', size: tech.commCable || '', qty: num(tech.commCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
+                    wanted.push({ name: 'Kabelkanal', size: '', qty: num(tech.cableDuct) || L, unit: 'm', category: 'Elektromaterial' });
+                }
+                if (tech.condensatePump === true) wanted.push({ name: 'Kondensatpumpe', size: '', qty: 1, unit: 'Stk', category: 'Kondensat' });
+                if (tech.devManufacturer) {
+                    wanted.push({ name: `Innengerät ${tech.devManufacturer}`, size: tech.devModel || (num(tech.devCapacity) ? `${tech.devCapacity} kW` : ''), qty: 1, unit: 'Stk', category: 'Klimageräte' });
+                }
+                if (tech.bigFoot === true) wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
+                if (tech.wallBracket === true) wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
+                if (tech.vibrationDampers === true) wanted.push({ name: 'Schwingungsdämpfer', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
+                if (wanted.length === 0) return 0;
+
+                const existing = ((await db.getByIndex('projectMaterials', 'projectId', projectId)) || []).filter(x => String(x.roomId) === String(roomId));
+                const allMats = await db.getAll('materials');
+                let added = 0;
+                for (const w of wanted) {
+                    const mat = await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
+                    if (manualMatIds.has(String(mat.id))) continue; // vom Benutzer bereits manuell erfasst
+                    const dup = existing.some(x => String(x.materialId) === String(mat.id));
+                    if (dup) continue;
+                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || '', price: Number(mat.sellingPrice) || 0, note: `${roomName} – automatisch` });
+                    added++;
+                }
+                return added;
             },
 
             // ---------- Projekt-Modal: intelligente Titel + Datenschutz vor Überschreiben ----------
@@ -4229,7 +4331,32 @@ async function reconcileOfferCounter() {
                     y = doc.lastAutoTable.finalY + 9;
                 }
 
-                // Besichtigung
+                // Technische Daten je Raum (der Raum ist die technische Einheit)
+                for (const r of rooms) {
+                    const t = r.tech || {};
+                    const rows = ROOM_TECH_FIELDS
+                        .map(f => {
+                            const v = t[f.key];
+                            if (v === '' || v === null || v === undefined || v === false || v === 0) return null;
+                            return [f.label, (v === true ? 'Ja' : String(v)) + (f.unit && v !== true ? ' ' + f.unit : '')];
+                        })
+                        .filter(Boolean);
+                    if (!rows.length) continue;
+                    y = pdfNewPageIfNeeded(doc, y, 26, co);
+                    y = sectionTitle(y, `RAUM: ${String(r.name || 'RAUM').toUpperCase()}  ·  ${r.length}×${r.width}×${r.height || 2.5} m`);
+                    doc.autoTable({
+                        startY: y,
+                        margin: { left: mx, right: mx, bottom: 26 },
+                        body: rows,
+                        ...PDF_TABLE_STYLES,
+                        columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold', textColor: PDF_TEAL } },
+                        willDrawPage: () => pdfWatermark(doc),
+                        didDrawPage: () => pdfFooterOnce(doc, co)
+                    });
+                    y = doc.lastAutoTable.finalY + 7;
+                }
+
+                // Besichtigung (allgemeine Projektdaten)
                 const svRows = SURVEY_FIELDS
                     .map(f => {
                         const v = s[f.key];
@@ -4239,7 +4366,7 @@ async function reconcileOfferCounter() {
                     .filter(Boolean);
                 if (svRows.length) {
                     y = pdfNewPageIfNeeded(doc, y, 24, co);
-                    y = sectionTitle(y, 'BESICHTIGUNGSDATEN');
+                    y = sectionTitle(y, 'BESICHTIGUNG – ALLGEMEIN');
                     doc.autoTable({
                         startY: y,
                         margin: { left: mx, right: mx, bottom: 26 },
