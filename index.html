@@ -17,6 +17,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <link rel="icon" type="image/png" sizes="192x192" href="logo-192.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
     <style>
         :root {
@@ -598,6 +601,29 @@
         .calc-chip.accent { border-color: var(--accent); background: var(--accent-light); }
         .calc-chip.accent strong { color: var(--accent); }
 
+        /* Kontakt-Aktionen (Anruf, Mail, Navigation) */
+        .contact-link { color: var(--accent); text-decoration: none; font-weight: 600; }
+        .contact-link:hover { text-decoration: underline; }
+
+        /* Projekt-Fortschritt */
+        .pc-progress { height: 5px; background: var(--bg-tertiary); border-radius: var(--radius-pill); overflow: hidden; margin-top: 8px; }
+        .pc-progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); border-radius: var(--radius-pill); transition: width .3s ease; }
+
+        /* Logo-Bild */
+        .logo-img { width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0; box-shadow: var(--shadow-sm); }
+        .splash-logo-img { width: 86px; height: 86px; border-radius: 22px; animation: pulse 1.4s ease infinite; box-shadow: var(--shadow-md); }
+
+        /* Lager-Warnung */
+        .warn-banner {
+            background: var(--danger-light); border: 1px solid var(--danger); color: var(--danger);
+            border-radius: var(--radius-md); padding: 11px 15px; font-size: 13px;
+            margin: -8px 0 20px; cursor: pointer;
+        }
+        .warn-banner:hover { filter: brightness(0.97); }
+
+        /* Serviceabstand-Beschriftung im Plan */
+        .pl-clearance { font-size: 6.5px; fill: var(--warning); font-weight: 700; text-anchor: middle; }
+
         /* Projekt-gesamt Materialzusammenfassung */
         .agg-panel {
             background: var(--accent-light); border: 1px solid var(--accent);
@@ -714,7 +740,7 @@
 <body data-theme="light">
 
     <div class="splash-screen" id="splash">
-        <div class="splash-logo">❄️</div>
+        <img src="logo-192.png" alt="" class="splash-logo-img" onerror="this.style.display='none'">
         <div style="font-weight:700;font-size:20px;font-family:var(--font-display);">KTM</div>
         <div style="color:var(--text-muted);font-size:13px;" id="splashStatus">Wird geladen...</div>
     </div>
@@ -726,7 +752,7 @@
 
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-logo">
-                <div class="logo-icon">❄</div>
+                <img src="logo-192.png" alt="KTM" class="logo-img" onerror="this.outerHTML='<div class=\'logo-icon\'>❄</div>'">
                 <span>KTM<small>Kältetechnik Manager</small></span>
             </div>
             <div class="nav-section-label">Menü</div>
@@ -756,6 +782,10 @@
                 <div class="nav-item" data-page="offers">
                     <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
                     Angebote
+                </div>
+                <div class="nav-item" data-page="invoices">
+                    <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v2m0 8v2"/></svg></span>
+                    Rechnungen
                 </div>
                 <div class="nav-item" data-page="orders">
                     <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span>
@@ -863,6 +893,12 @@
   materialId: 'material_id',
   roomId: 'room_id',
   customData: 'custom_data',
+  invoiceNumber: 'invoice_number',
+  offerId: 'offer_id',
+  dueDate: 'due_date',
+  skontoRate: 'skonto_rate',
+  skontoDays: 'skonto_days',
+  minStock: 'min_stock',
 
   offerNumber: 'offer_number',
   offerDate: 'offer_date',
@@ -928,10 +964,10 @@ function toSnake(o) {
                         reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
                         return;
                     }
-                    const req = indexedDB.open('KTM_DB', 6);
+                    const req = indexedDB.open('KTM_DB', 7);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
-                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'settings', 'events'].forEach(s => {
+                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'invoices', 'settings', 'events'].forEach(s => {
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
                     };
@@ -1036,9 +1072,7 @@ function toSnake(o) {
 
                 const result = await this.addLocalOnly(storeName, data);
 
-                if (!isSyncing) {
-                    backgroundSyncPush();
-                }
+                backgroundSyncPush(); // queued automatisch nach, falls gerade ein Push läuft
 
                 return storeName === 'settings' ? result : data.id;
             }
@@ -1049,9 +1083,7 @@ async put(storeName, data) {
 
     const result = await this.putLocalOnly(storeName, data);
 
-    if (!isSyncing) {
-        backgroundSyncPush();
-    }
+    backgroundSyncPush(); // queued automatisch nach, falls gerade ein Push läuft
 
     return result;
 }
@@ -1113,6 +1145,7 @@ async put(storeName, data) {
                     events: await this.getAll('events'),
                     orders: await this.getAll('orders'),
                     projectMaterials: await this.getAll('projectMaterials'),
+                    invoices: await this.getAll('invoices'),
                     settings: await this.getAll('settings'),
                     exportDate: new Date().toISOString(),
                     version: '2.0'
@@ -1120,7 +1153,7 @@ async put(storeName, data) {
             }
 
             async importAllData(data) {
-                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','settings','events']) await this.clear(s);
+                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','settings','events']) await this.clear(s);
                 for (const c of data.customers || []) await this.addLocalOnly('customers', c);
                 for (const p of data.projects || []) await this.addLocalOnly('projects', p);
                 for (const r of data.rooms || []) await this.addLocalOnly('rooms', r);
@@ -1130,6 +1163,7 @@ async put(storeName, data) {
                 for (const ev of data.events || []) await this.addLocalOnly('events', ev);
                 for (const o of data.orders || []) await this.addLocalOnly('orders', o);
                 for (const pm of data.projectMaterials || []) await this.addLocalOnly('projectMaterials', pm);
+                for (const iv of data.invoices || []) await this.addLocalOnly('invoices', iv);
                 for (const s of data.settings || []) await this.putLocalOnly('settings', s);
                 backgroundSyncPush();
             }
@@ -1201,7 +1235,7 @@ await db.putLocalOnly(table, localData);
                 await backgroundSyncPush();
 
                 const failedTables = [];
-                for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','events','settings']) {
+                for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','settings']) {
                     const { data, error } = await sb.from(sbTable(t)).select('*');
                     if (!error && data) {
                         const remoteIds = new Set(data.map(r => String(t === 'settings' ? r.key : r.id)));
@@ -1298,9 +1332,10 @@ const _pushErrorsWarned = new Set();
 
 let isSyncing = false;
 
+let syncQueued = false;
 async function backgroundSyncPush() {
 
-    if (isSyncing) return;
+    if (isSyncing) { syncQueued = true; return; }
     if (!navigator.onLine || !supabaseAvailable) return;
 
     isSyncing = true;
@@ -1317,6 +1352,7 @@ async function backgroundSyncPush() {
         // stillschweigend übersprungen). Das war vermutlich die Hauptursache dafür,
         // dass Räume, Angebote und Materialien nach einer Weile nicht mehr synchronisierten.
         isSyncing = false;
+        if (syncQueued) { syncQueued = false; setTimeout(() => backgroundSyncPush(), 60); }
     }
 }
 
@@ -1326,7 +1362,7 @@ async function backgroundSyncPushInner() {
         // einen späteren Push versehentlich wieder auftauchen).
         await flushPendingDeletes();
 
-        for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','events','settings']) {
+        for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','settings']) {
 
             const unsynced = (await db.getAll(t)).filter(r => {
                 if (r._synced) return false;
@@ -1663,7 +1699,7 @@ async function reconcileOfferCounter() {
         const PAGE_TITLES = {
             dashboard: 'Dashboard', customers: 'Kunden', projects: 'Projekte',
             calendar: 'Kalender', materials: 'Materialien', offers: 'Angebote',
-            orders: 'Bestellungen', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien'
+            orders: 'Bestellungen', invoices: 'Rechnungen', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien'
         };
         function setPageTitle(page) {
             const el = document.getElementById('pageTitle');
@@ -1709,7 +1745,8 @@ async function reconcileOfferCounter() {
             customers: { q: '' },
             materials: { q: '' },
             offers: { q: '', status: '' },
-            orders: { q: '', status: '' }
+            orders: { q: '', status: '' },
+            invoices: { q: '', status: '' }
         };
 
         // ============================================================
@@ -1820,6 +1857,8 @@ async function reconcileOfferCounter() {
                 const offers = await db.getAll('offers');
                 const orders = await db.getAll('orders');
                 const events = await db.getAll('events');
+                const invoices = await db.getAll('invoices');
+                const materialsAll = await db.getAll('materials');
 
                 const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
                 const offeneAngebote = offers.filter(o => !['Auftrag erhalten', 'Abgelehnt'].includes(o.status)).length;
@@ -1882,7 +1921,16 @@ async function reconcileOfferCounter() {
                             <div class="stat-label">Gesamtumsatz</div>
                             <div class="stat-value" style="font-size:20px;">${formatCurrency(umsatz)}</div>
                         </div>
+                        <div class="stat-card" onclick="app.navigate('invoices')" style="cursor:pointer;">
+                            <div class="stat-ico ico-amber">🧾</div>
+                            <div class="stat-label">Offene Rechnungen</div>
+                            <div class="stat-value" style="font-size:20px;">${formatCurrency(invoices.reduce((s, inv) => invoiceStatus(inv) === 'Storniert' ? s : s + invoiceOpen(inv), 0))}</div>
+                        </div>
                     </div>
+                    ${(() => {
+                        const low = materialsAll.filter(m => m.minStock > 0 && (Number(m.stock) || 0) < Number(m.minStock));
+                        return low.length ? `<div class="warn-banner" onclick="app.navigate('materials')">⚠ <strong>${low.length} Material${low.length > 1 ? 'ien' : ''} unter Mindestbestand:</strong> ${low.slice(0, 4).map(m => escapeHtml(m.name)).join(', ')}${low.length > 4 ? ' …' : ''} – jetzt nachbestellen</div>` : '';
+                    })()}
 
                     <div class="panel-title">${icon('activity')} Schnellzugriff</div>
                     <div class="quick-grid">
@@ -1902,6 +1950,37 @@ async function reconcileOfferCounter() {
                             <div class="qc-title">Material bestellen</div>
                             <div class="qc-sub">Teile ordern</div>
                         </div>
+                    </div>
+
+                    <div class="panel" style="margin-top:22px;">
+                        <div class="panel-title">📊 Umsatz – letzte 6 Monate <span style="font-weight:500;color:var(--text-muted);font-size:12px;margin-left:6px;">bezahlte Rechnungen + erhaltene Aufträge</span></div>
+                        ${(() => {
+                            const now = new Date();
+                            const months = [];
+                            for (let i = 5; i >= 0; i--) {
+                                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                                months.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleDateString('de-DE', { month: 'short' }), sum: 0 });
+                            }
+                            const bucket = (dateStr, amount) => {
+                                if (!dateStr || !amount) return;
+                                const k = String(dateStr).slice(0, 7);
+                                const m = months.find(x => x.key === k);
+                                if (m) m.sum += Number(amount) || 0;
+                            };
+                            for (const inv of invoices) for (const p of (inv.payments || [])) bucket(p.date, p.amount);
+                            for (const o of offers) if (o.status === 'Auftrag erhalten') bucket(o.createdAt, o.totalPrice);
+                            const max = Math.max(...months.map(m => m.sum), 1);
+                            const bw = 100 / 6;
+                            return `<svg viewBox="0 0 100 46" style="width:100%;max-width:560px;height:auto;display:block;">
+                                ${months.map((m, i) => {
+                                    const h = Math.max((m.sum / max) * 32, m.sum > 0 ? 2 : 0.8);
+                                    const x = i * bw + bw * 0.18;
+                                    return `<rect x="${x.toFixed(1)}" y="${(38 - h).toFixed(1)}" width="${(bw * 0.64).toFixed(1)}" height="${h.toFixed(1)}" rx="1.4" fill="${m.sum > 0 ? 'var(--accent)' : 'var(--border)'}"></rect>
+                                        <text x="${(i * bw + bw / 2).toFixed(1)}" y="43.5" text-anchor="middle" style="font-size:3.4px;fill:var(--text-muted);font-weight:600;">${m.label}</text>
+                                        ${m.sum > 0 ? `<text x="${(i * bw + bw / 2).toFixed(1)}" y="${(36 - h).toFixed(1)}" text-anchor="middle" style="font-size:2.9px;fill:var(--text-secondary);font-weight:700;">${Math.round(m.sum) >= 1000 ? (m.sum / 1000).toFixed(1).replace('.', ',') + 'k' : Math.round(m.sum)}</text>` : ''}`;
+                                }).join('')}
+                            </svg>`;
+                        })()}
                     </div>
 
                     <div class="dash-cols">
@@ -1978,8 +2057,8 @@ async function reconcileOfferCounter() {
                                 ${filtered.map(c => `
                                     <tr>
                                         <td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong>${c.company ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(c.company)}</div>` : ''}</td>
-                                        <td>${escapeHtml(c.phone || '-')}${c.email ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(c.email)}</div>` : ''}</td>
-                                        <td>${escapeHtml([c.street, c.city].filter(Boolean).join(', ') || '-')}</td>
+                                        <td>${c.phone ? `<a href="tel:${escapeHtml(String(c.phone).replace(/\s+/g, ''))}" class="contact-link">📞 ${escapeHtml(c.phone)}</a>` : '-'}${c.email ? `<div><a href="mailto:${escapeHtml(c.email)}" class="contact-link" style="font-size:12px;">✉️ ${escapeHtml(c.email)}</a></div>` : ''}</td>
+                                        <td>${[c.street, c.city].filter(Boolean).length ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([c.street, c.city].filter(Boolean).join(', '))}" target="_blank" rel="noopener" class="contact-link" title="Navigation starten">🧭 ${escapeHtml([c.street, c.city].filter(Boolean).join(', '))}</a>` : '-'}</td>
                                         <td>${projCountByCust[String(c.id)] || 0}</td>
                                         <td><span class="status-badge ${getStatusClass(c.status || 'Neu')}">${escapeHtml(c.status || 'Neu')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
@@ -2006,14 +2085,30 @@ async function reconcileOfferCounter() {
         // ============================================================
         // ============ PROJEKTE (PIPELINE) ===========================
         // ============================================================
+        // Professionelle Status inkl. Abrechnung (alte Status bleiben kompatibel)
         const PIPELINE_COLS = [
-            { key: 'Neu', label: 'Neu', statuses: ['Neu'] },
-            { key: 'Besichtigung', label: 'Besichtigung', statuses: ['Besichtigung offen', 'Besichtigt'] },
-            { key: 'Angebot', label: 'Angebot', statuses: ['Angebot offen', 'Angebot gesendet'] },
-            { key: 'Montage', label: 'Montage', statuses: ['Auftrag erhalten', 'Material bestellt', 'Montage geplant', 'Montage läuft'] },
-            { key: 'Fertig', label: 'Fertig', statuses: ['Fertig', 'Archiv'] }
+            { key: 'Besichtigung', label: 'Besichtigung', statuses: ['Besichtigung', 'Neu', 'Besichtigung offen', 'Besichtigt'] },
+            { key: 'Angebot', label: 'Angebot', statuses: ['Angebot', 'Angebot offen', 'Angebot gesendet'] },
+            { key: 'Vorbereitung', label: 'Vorbereitung', statuses: ['Geplant', 'Material bestellt', 'Wartet auf Material', 'Auftrag erhalten', 'Montage geplant'] },
+            { key: 'InArbeit', label: 'In Arbeit', statuses: ['In Arbeit', 'Regiearbeit', 'Wartet auf Kunde', 'Montage läuft'] },
+            { key: 'Abschluss', label: 'Abschluss', statuses: ['Fertig', 'Rechnung erstellt'] },
+            { key: 'Bezahlt', label: 'Bezahlt / Archiv', statuses: ['Bezahlt', 'Archiviert', 'Archiv'] }
         ];
-        const PROJECT_STATUSES = PIPELINE_COLS.flatMap(c => c.statuses);
+        // Auswahlliste: die 12 Profi-Status
+        const PROJECT_STATUSES = ['Besichtigung', 'Angebot', 'Geplant', 'Material bestellt', 'Wartet auf Material', 'In Arbeit', 'Regiearbeit', 'Wartet auf Kunde', 'Fertig', 'Rechnung erstellt', 'Bezahlt', 'Archiviert'];
+        const STATUS_PROGRESS = {
+            'Neu': 5, 'Besichtigung offen': 5, 'Besichtigung': 10, 'Besichtigt': 15,
+            'Angebot offen': 20, 'Angebot': 25, 'Angebot gesendet': 30,
+            'Auftrag erhalten': 35, 'Geplant': 40, 'Material bestellt': 50, 'Wartet auf Material': 55, 'Montage geplant': 55,
+            'In Arbeit': 70, 'Montage läuft': 70, 'Regiearbeit': 70, 'Wartet auf Kunde': 75,
+            'Fertig': 85, 'Rechnung erstellt': 92, 'Bezahlt': 100, 'Archiviert': 100, 'Archiv': 100
+        };
+        function statusProgress(s) { return STATUS_PROGRESS[s] ?? 5; }
+        function statusOptions(current) {
+            const list = [...PROJECT_STATUSES];
+            if (current && !list.includes(current)) list.unshift(current);
+            return list;
+        }
 
         function renderProjects(selectedProjectId = null) {
             (async () => {
@@ -2048,11 +2143,13 @@ async function reconcileOfferCounter() {
                                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px;">
                                     <div>
                                         <h3 style="margin:0;">${escapeHtml(project.title || 'Unbenannt')}</h3>
-                                        <div style="color:var(--text-muted);font-size:13px;">${escapeHtml(customer ? `${customer.firstName} ${customer.lastName}` : 'Kein Kunde zugewiesen')}</div>
+                                        <div style="color:var(--text-muted);font-size:13px;">${customer ? `${escapeHtml(customer.firstName)} ${escapeHtml(customer.lastName)}${customer.phone ? ` · <a href="tel:${escapeHtml(String(customer.phone).replace(/\s+/g, ''))}" class="contact-link">📞 ${escapeHtml(customer.phone)}</a>` : ''}${[customer.street, customer.city].filter(Boolean).length ? ` · <a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([customer.street, customer.city].filter(Boolean).join(', '))}" target="_blank" rel="noopener" class="contact-link">🧭 Route</a>` : ''}` : 'Kein Kunde zugewiesen'}</div>
+                                        <div class="pc-progress" style="max-width:260px;margin-top:7px;"><div class="pc-progress-bar" style="width:${statusProgress(project.status || 'Besichtigung')}%;"></div></div>
+                                        <div style="font-size:11.5px;color:var(--accent);font-weight:700;">${statusProgress(project.status || 'Besichtigung')} % · ${escapeHtml(project.status || 'Besichtigung')}</div>
                                     </div>
                                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                                         <select class="filter-select" onchange="app.setProjectStatus(${idJS(project.id)}, this.value)">
-                                            ${PROJECT_STATUSES.map(s => `<option value="${s}" ${project.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                            ${statusOptions(project.status).map(s => `<option value="${s}" ${project.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                                         </select>
                                         <button class="btn btn-sm btn-outline" onclick="app.openProjectModal(${idJS(project.id)})">${icon('edit')} Bearbeiten</button>
                                         <button class="btn btn-sm btn-primary" onclick="app.createOffer(${idJS(project.id)})">${icon('file')} Angebot</button>
@@ -2273,9 +2370,10 @@ async function reconcileOfferCounter() {
                                          onclick="app.navigate('projects', ${idJS(p.id)})">
                                         <div class="pc-title">${escapeHtml(p.title || 'Unbenannt')}</div>
                                         <div class="pc-sub">${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : 'Kein Kunde')}</div>
+                                        <div class="pc-progress"><div class="pc-progress-bar" style="width:${statusProgress(p.status || 'Besichtigung')}%;"></div></div>
                                         <div class="pc-sub" style="margin-top:7px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
                                             <select class="pc-status" onclick="event.stopPropagation()" onchange="event.stopPropagation(); app.setProjectStatus(${idJS(p.id)}, this.value)">
-                                                ${PROJECT_STATUSES.map(s => `<option value="${s}" ${(p.status || 'Neu') === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                                ${statusOptions(p.status || 'Besichtigung').map(s => `<option value="${s}" ${(p.status || 'Besichtigung') === s ? 'selected' : ''}>${s}</option>`).join('')}
                                             </select>
                                             <span style="white-space:nowrap;">${roomCountByProject[String(p.id)] || 0} 🚪</span>
                                         </div>
@@ -2346,7 +2444,8 @@ async function reconcileOfferCounter() {
                                         <td>${formatCurrency(m.purchasePrice || 0)}</td>
                                         <td>${formatCurrency(m.sellingPrice || 0)}</td>
                                         <td style="white-space:nowrap;">
-                                            <input type="number" inputmode="decimal" step="any" min="0" value="${m.stock ?? 0}" style="width:84px;padding:6px 9px;text-align:center;font-weight:700;" onchange="app.setStock(${idJS(m.id)}, this.value)" title="Bestand direkt eingeben">
+                                            <input type="number" inputmode="decimal" step="any" min="0" value="${m.stock ?? 0}" style="width:84px;padding:6px 9px;text-align:center;font-weight:700;${(m.minStock > 0 && (Number(m.stock) || 0) < Number(m.minStock)) ? 'border-color:var(--danger);color:var(--danger);' : ''}" onchange="app.setStock(${idJS(m.id)}, this.value)" title="Bestand direkt eingeben${m.minStock > 0 ? ' · Mindestbestand: ' + m.minStock : ''}">
+                                            ${(m.minStock > 0 && (Number(m.stock) || 0) < Number(m.minStock)) ? '<div style="font-size:10.5px;color:var(--danger);font-weight:700;">⚠ unter Minimum (' + m.minStock + ')</div>' : ''}
                                         </td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             <button class="btn btn-sm btn-outline" onclick="app.openMaterialModal(${idJS(m.id)})">${icon('edit')}</button>
@@ -2419,6 +2518,7 @@ async function reconcileOfferCounter() {
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             <button class="btn btn-sm btn-primary" onclick="app.exportOfferPDF(${idJS(o.id)})">${icon('pdf')} PDF</button>
+                                            <button class="btn btn-sm btn-outline" title="Rechnung aus diesem Angebot erzeugen" onclick="app.createInvoiceFromOffer(${idJS(o.id)})">🧾 Rechnung</button>
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteOffer(${idJS(o.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>`;
@@ -2806,19 +2906,19 @@ async function reconcileOfferCounter() {
         const ROOM_TECH_FIELDS = [
             // Innengerät
             { key: 'devManufacturer', label: 'Hersteller', type: 'select', options: ['Daikin', 'Mitsubishi', 'Panasonic', 'LG', 'Samsung', 'Toshiba', 'Fujitsu', 'Gree', 'Midea', 'Haier', 'Sonstige'], group: 'Innengerät' },
-            { key: 'devModel', label: 'Modell', type: 'text', placeholder: 'z. B. FTXM25R', group: 'Innengerät' },
+            { key: 'devModel', label: 'Modell', type: 'text', learn: 'devModel', placeholder: 'z. B. FTXM25R', group: 'Innengerät' },
             { key: 'devCapacity', label: 'Leistung', type: 'number', unit: 'kW', group: 'Innengerät' },
             { key: 'devWallMount', label: 'Wandmontage', type: 'bool', group: 'Innengerät' },
             { key: 'devCeilingMount', label: 'Deckenmontage', type: 'bool', group: 'Innengerät' },
-            { key: 'devPosition', label: 'Position', type: 'text', placeholder: 'z. B. über Tür, Südwand', group: 'Innengerät' },
+            { key: 'devPosition', label: 'Position', type: 'text', learn: 'devPosition', placeholder: 'z. B. über Tür, Südwand', group: 'Innengerät' },
             // Leitungen
             { key: 'pipeLength', label: 'Rohrlänge', type: 'number', unit: 'm', group: 'Leitungen' },
-            { key: 'pipeDimension', label: 'Rohrdimension', type: 'text', placeholder: 'z. B. 1/4"+1/2"', group: 'Leitungen' },
-            { key: 'insulation', label: 'Isolierung', type: 'text', placeholder: 'z. B. 9 mm', group: 'Leitungen' },
+            { key: 'pipeDimension', label: 'Rohrdimension', type: 'text', learn: 'pipeDimension', placeholder: 'z. B. 1/4"+1/2"', group: 'Leitungen' },
+            { key: 'insulation', label: 'Isolierung', type: 'text', learn: 'insulation', placeholder: 'z. B. 9 mm', group: 'Leitungen' },
             { key: 'cableDuct', label: 'Kabelkanal', type: 'number', unit: 'm', group: 'Leitungen' },
-            { key: 'powerCable', label: 'Stromkabel Typ', type: 'text', placeholder: 'z. B. NYM 5×2,5', group: 'Leitungen' },
+            { key: 'powerCable', label: 'Stromkabel Typ', type: 'text', learn: 'powerCable', placeholder: 'z. B. NYM 5×2,5', group: 'Leitungen' },
             { key: 'powerCableLength', label: 'Stromkabellänge', type: 'number', unit: 'm', group: 'Leitungen' },
-            { key: 'commCable', label: 'Kommunikationskabel Typ', type: 'text', placeholder: 'z. B. 4×0,75 mm²', group: 'Leitungen' },
+            { key: 'commCable', label: 'Kommunikationskabel Typ', type: 'text', learn: 'commCable', placeholder: 'z. B. 4×0,75 mm²', group: 'Leitungen' },
             { key: 'commCableLength', label: 'Kommunikationskabellänge', type: 'number', unit: 'm', group: 'Leitungen' },
             { key: 'condensateLine', label: 'Kondensatleitung', type: 'number', unit: 'm', group: 'Leitungen' },
             { key: 'condensatePump', label: 'Kondensatpumpe', type: 'bool', group: 'Leitungen' },
@@ -2865,7 +2965,9 @@ async function reconcileOfferCounter() {
             if (f.type === 'date') {
                 return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="date" id="${id}" value="${escapeHtml(v || '')}"></div>`;
             }
-            return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="${id}" value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}"></div>`;
+            const listAttr = f.learn ? ` list="dl_${f.learn}"` : '';
+            const dl = f.learn ? learnedDatalist(f.learn, 'dl_' + f.learn) : '';
+            return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="${id}"${listAttr} value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}">${dl}</div>`;
         }
         function techFieldRead(f, overlay, prefix) {
             const el = overlay.querySelector('#' + prefix + f.key);
@@ -3386,20 +3488,25 @@ async function reconcileOfferCounter() {
             measure:    { label: 'Maßlinie',        emoji: '📏', color: '#8aa0a9', width: 1.2, dash: '5 4', techKey: null }
         };
         const PLAN_SYMBOLS = {
-            door:        { label: 'Tür',            emoji: '🚪' },
-            window:      { label: 'Fenster',        emoji: '🪟' },
-            wallUnit:    { label: 'Wandgerät',      emoji: '❄️' },
-            ceilingUnit: { label: 'Deckenkassette', emoji: '🔲' },
-            ductUnit:    { label: 'Kanalgerät',     emoji: '🌀' },
-            outdoorUnit: { label: 'Außengerät',     emoji: '🧊' },
-            coreDrill:   { label: 'Kernbohrung',    emoji: '⭕' },
-            wallBreak:   { label: 'Mauerdurchbruch',emoji: '📍' },
-            socket:      { label: 'Steckdose',      emoji: '⚡' },
-            fuse:        { label: 'Sicherung',      emoji: '🔌' },
-            photo:       { label: 'Foto-Marker',    emoji: '📷' },
-            note:        { label: 'Notiz',          emoji: '📝' }
+            door:         { label: 'Tür',             emoji: '🚪' },
+            window:       { label: 'Fenster',         emoji: '🪟' },
+            wallUnit:     { label: 'Wandgerät',       emoji: '❄️', indoor: true },
+            ceilingUnit:  { label: 'Deckenkassette',  emoji: '🔲', indoor: true },
+            ductUnit:     { label: 'Kanalgerät',      emoji: '🌀', indoor: true },
+            underCeiling: { label: 'Unterdeckengerät',emoji: '📥', indoor: true },
+            floorUnit:    { label: 'Truhengerät',     emoji: '🗄️', indoor: true },
+            outdoorUnit:  { label: 'Single Split AG', emoji: '🧊', outdoor: true },
+            outdoorMulti: { label: 'Multi Split AG',  emoji: '❆',  outdoor: true },
+            outdoorVRF:   { label: 'VRF-Außengerät',  emoji: '🏢', outdoor: true },
+            coreDrill:    { label: 'Kernbohrung',     emoji: '⭕' },
+            wallBreak:    { label: 'Mauerdurchbruch', emoji: '📍' },
+            socket:       { label: 'Steckdose',       emoji: '⚡' },
+            fuse:         { label: 'Sicherung',       emoji: '🔌' },
+            photo:        { label: 'Foto-Marker',     emoji: '📷' },
+            note:         { label: 'Notiz',           emoji: '📝' }
         };
-        const PLAN_INDOOR_SYMS = ['wallUnit', 'ceilingUnit', 'ductUnit'];
+        const PLAN_INDOOR_SYMS = Object.keys(PLAN_SYMBOLS).filter(k => PLAN_SYMBOLS[k].indoor);
+        const PLAN_OUTDOOR_SYMS = Object.keys(PLAN_SYMBOLS).filter(k => PLAN_SYMBOLS[k].outdoor);
 
         const planState = {
             projectId: null, tool: 'select', lineKind: 'pipe',
@@ -3515,7 +3622,18 @@ async function reconcileOfferCounter() {
             for (const it of plan.items.filter(i => i.type === 'symbol')) {
                 const s = PLAN_SYMBOLS[it.sym] || { emoji: '❓', label: '?' };
                 const sc = it.sc || 1;
+                // Außengeräte: Serviceabstand (seitlich 0,3 m, vorne 0,5 m) gestrichelt anzeigen
+                let clearance = '';
+                if (s.outdoor) {
+                    const side = 0.3 * PLAN_SCALE, front = 0.5 * PLAN_SCALE, bw = 0.9 * PLAN_SCALE, bh = 0.35 * PLAN_SCALE;
+                    clearance = `
+                        <rect x="${-bw / 2 - side}" y="${-bh / 2 - side}" width="${bw + side * 2}" height="${bh + side + front}" rx="3"
+                              fill="none" stroke="var(--warning)" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"></rect>
+                        <rect x="${-bw / 2}" y="${-bh / 2}" width="${bw}" height="${bh}" rx="2" fill="var(--bg-tertiary)" stroke="var(--text-muted)" stroke-width="0.8"></rect>
+                        <text text-anchor="middle" y="${bh / 2 + front - 2}" class="pl-clearance">Service 0,5 m</text>`;
+                }
                 html += `<g class="pl-item pl-sym ${sel === it.id ? 'pl-sel' : ''}" data-id="${it.id}" transform="translate(${it.x},${it.y}) rotate(${it.rot || 0}) scale(${sc})">
+                    ${clearance}
                     <circle r="13" class="pl-sym-bg"></circle>
                     <text text-anchor="middle" dy="5" font-size="14">${s.emoji}</text>
                     ${it.text ? `<text text-anchor="middle" y="24" class="pl-sym-label">${escapeHtml(String(it.text).slice(0, 24))}</text>` : ''}
@@ -3693,6 +3811,16 @@ async function reconcileOfferCounter() {
                 }
 
                 if (planState.tool !== 'select' && PLAN_SYMBOLS[planState.tool]) {
+                    // Klima-Logik: Geräte nur an fachlich passenden Positionen
+                    const inRoom = planRoomAt(planState.plan, planState.rooms, px, py);
+                    if (PLAN_SYMBOLS[planState.tool].indoor && !inRoom) {
+                        showToast('Innengeräte werden IN einem Raum platziert.', 'error');
+                        return;
+                    }
+                    if (PLAN_SYMBOLS[planState.tool].outdoor && inRoom) {
+                        showToast('Außengeräte werden AUSSERHALB der Räume platziert (Fassade, Dach, Garten).', 'error');
+                        return;
+                    }
                     planPushUndo();
                     const it = { id: generateUUID(), type: 'symbol', sym: planState.tool, x: Math.round(px), y: Math.round(py), rot: 0, sc: 1 };
                     if (planState.tool === 'note' || planState.tool === 'photo') {
@@ -3881,7 +4009,7 @@ async function reconcileOfferCounter() {
                 }
             }
             doc.setLineDashPattern([], 0);
-            const SYM_CODE = { door: 'T', window: 'F', wallUnit: 'IG', ceilingUnit: 'DK', ductUnit: 'KG', outdoorUnit: 'AG', coreDrill: 'KB', wallBreak: 'MD', socket: 'SD', fuse: 'SI', photo: 'FO', note: 'N' };
+            const SYM_CODE = { door: 'T', window: 'F', wallUnit: 'IG', ceilingUnit: 'DK', ductUnit: 'KG', underCeiling: 'UD', floorUnit: 'TG', outdoorUnit: 'AG', outdoorMulti: 'AG-M', outdoorVRF: 'VRF', coreDrill: 'KB', wallBreak: 'MD', socket: 'SD', fuse: 'SI', photo: 'FO', note: 'N' };
             for (const it of items.filter(i => i.type === 'symbol')) {
                 doc.setFillColor(255, 255, 255); doc.setDrawColor(...PDF_TEAL); doc.setLineWidth(0.35);
                 doc.circle(tx(it.x), ty(it.y), 3.1, 'FD');
@@ -4003,16 +4131,362 @@ async function reconcileOfferCounter() {
         };
 
 
+        // Firmen-Logo (Standard für PDFs, überschreibbar unter Logo & Bank)
+        const KTM_LOGO_DEFAULT = 'data:image/jpeg;base64,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';
+
+        // ============================================================
+        // ============ LERNENDE VORSCHLÄGE ===========================
+        // ============================================================
+        // Merkt sich häufige Eingaben (Rohrdimensionen, Hersteller, Orte, ...)
+        // und bietet sie beim nächsten Mal an. Synchronisiert über settings.
+        let _learned = null;
+        async function loadLearned() {
+            if (_learned) return _learned;
+            try { _learned = JSON.parse(await getSetting('learnedValues', '{}')) || {}; }
+            catch (e) { _learned = {}; }
+            return _learned;
+        }
+        async function learnValues(pairs) {
+            const data = await loadLearned();
+            let changed = false;
+            for (const [type, value] of pairs) {
+                const v = String(value || '').trim();
+                if (!v || v.length < 2) continue;
+                data[type] = data[type] || {};
+                data[type][v] = (data[type][v] || 0) + 1;
+                const entries = Object.entries(data[type]).sort((a, b) => b[1] - a[1]).slice(0, 40);
+                data[type] = Object.fromEntries(entries);
+                changed = true;
+            }
+            if (changed) await setSetting('learnedValues', JSON.stringify(data));
+        }
+        async function learnValue(type, value) { return learnValues([[type, value]]); }
+        function learnedList(type) {
+            return Object.entries(_learned?.[type] || {}).sort((a, b) => b[1] - a[1]).map(([v]) => v);
+        }
+        function learnedDatalist(type, id) {
+            const list = learnedList(type);
+            return list.length ? `<datalist id="${id}">${list.map(v => `<option value="${escapeHtml(v)}">`).join('')}</datalist>` : `<datalist id="${id}"></datalist>`;
+        }
+
+        // ============================================================
+        // ============ RECHNUNGEN ====================================
+        // ============================================================
+        const INVOICE_STATUSES = ['Offen', 'Teilbezahlt', 'Bezahlt', 'Überfällig', 'Storniert'];
+
+        function invoicePaid(inv) { return (inv.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0); }
+        function invoiceOpen(inv) { return Math.max(0, (Number(inv.totalPrice) || 0) - invoicePaid(inv)); }
+        function invoiceStatus(inv) {
+            if (inv.status === 'Storniert') return 'Storniert';
+            const paid = invoicePaid(inv);
+            const total = Number(inv.totalPrice) || 0;
+            if (total > 0 && paid >= total - 0.005) return 'Bezahlt';
+            if (paid > 0) return 'Teilbezahlt';
+            if (inv.dueDate && inv.dueDate < toLocalDateString(new Date())) return 'Überfällig';
+            return 'Offen';
+        }
+        function invoiceStatusClass(s) {
+            return { 'Offen': 'status-offen', 'Teilbezahlt': 'status-aktiv', 'Bezahlt': 'status-fertig', 'Überfällig': 'status-danger', 'Storniert': 'status-danger' }[s] || 'status-offen';
+        }
+        async function nextInvoiceNumber() {
+            const year = new Date().getFullYear();
+            const invoices = await db.getAll('invoices');
+            let max = 0;
+            for (const inv of invoices) {
+                const m = String(inv.invoiceNumber || '').match(new RegExp(`^R-${year}-(\\d+)$`));
+                if (m) max = Math.max(max, parseInt(m[1], 10));
+            }
+            return `R-${year}-${String(max + 1).padStart(4, '0')}`;
+        }
+        // IBAN aus den Bank-Einstellungen ziehen (für EPC-QR)
+        function extractIban(bankText) {
+            const m = String(bankText || '').replace(/\s+/g, '').toUpperCase().match(/[A-Z]{2}\d{2}[A-Z0-9]{10,30}/);
+            return m ? m[0] : '';
+        }
+
+        function renderInvoices() {
+            (async () => {
+                const invoices = await db.getAll('invoices');
+                const customers = await db.getAll('customers');
+                const projects = await db.getAll('projects');
+                const q = (listFilters.invoices?.q || '').toLowerCase();
+                const statusFilter = listFilters.invoices?.status || '';
+                if (!listFilters.invoices) listFilters.invoices = { q: '', status: '' };
+
+                const rows = invoices.map(inv => ({ inv, st: invoiceStatus(inv) }))
+                    .filter(({ inv, st }) => {
+                        const cust = customers.find(c => String(c.id) === String(inv.customerId));
+                        const hay = `${inv.invoiceNumber || ''} ${cust ? cust.firstName + ' ' + cust.lastName : ''}`.toLowerCase();
+                        if (q && !hay.includes(q)) return false;
+                        if (statusFilter && st !== statusFilter) return false;
+                        return true;
+                    })
+                    .sort((a, b) => (b.inv.date || '').localeCompare(a.inv.date || ''));
+
+                const openSum = invoices.reduce((s, inv) => invoiceStatus(inv) === 'Storniert' ? s : s + invoiceOpen(inv), 0);
+
+                contentArea.innerHTML = `
+                    <div class="toolbar">
+                        <div class="search-inline">
+                            <span class="search-icon">${icon('search')}</span>
+                            <input type="text" id="invSearch" placeholder="Suchen..." value="${escapeHtml(listFilters.invoices.q)}">
+                        </div>
+                        <select class="filter-select" id="invStatusFilter">
+                            <option value="">Alle Status</option>
+                            ${INVOICE_STATUSES.map(s => `<option value="${s}" ${statusFilter === s ? 'selected' : ''}>${s}</option>`).join('')}
+                        </select>
+                        <div class="toolbar-spacer"></div>
+                        <div class="survey-chip" style="border-color:var(--warning);"><span>Offen gesamt</span><strong style="color:var(--warning);">${formatCurrency(openSum)}</strong></div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Nummer</th><th>Kunde</th><th>Datum</th><th>Fällig</th><th style="text-align:right;">Betrag</th><th style="text-align:right;">Offen</th><th>Status</th><th style="text-align:right;">Aktionen</th></tr></thead>
+                            <tbody>
+                                ${rows.map(({ inv, st }) => {
+                                    const cust = customers.find(c => String(c.id) === String(inv.customerId));
+                                    const proj = projects.find(p => String(p.id) === String(inv.projectId));
+                                    const open = invoiceOpen(inv);
+                                    return `<tr>
+                                        <td><strong>${escapeHtml(inv.invoiceNumber || '')}</strong>${proj ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(proj.title || '')}</div>` : ''}</td>
+                                        <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}</td>
+                                        <td>${formatDate(inv.date)}</td>
+                                        <td>${inv.dueDate ? formatDate(inv.dueDate) : '-'}</td>
+                                        <td style="text-align:right;"><strong>${formatCurrency(inv.totalPrice || 0)}</strong></td>
+                                        <td style="text-align:right;color:${open > 0 ? 'var(--danger)' : 'var(--success)'};font-weight:700;">${formatCurrency(open)}</td>
+                                        <td><span class="status-badge ${invoiceStatusClass(st)}">${st}</span></td>
+                                        <td style="text-align:right;white-space:nowrap;">
+                                            ${st !== 'Bezahlt' && st !== 'Storniert' ? `<button class="btn btn-sm btn-primary" onclick="app.openPaymentModal(${idJS(inv.id)})">€ Zahlung</button>` : ''}
+                                            <button class="btn btn-sm btn-outline" onclick="app.exportInvoicePDF(${idJS(inv.id)})">${icon('pdf')} PDF</button>
+                                            <button class="btn btn-sm btn-danger" onclick="app.deleteInvoice(${idJS(inv.id)})">${icon('trash')}</button>
+                                        </td>
+                                    </tr>`;
+                                }).join('') || '<tr><td colspan="8" class="empty-note">Noch keine Rechnungen – erzeuge eine direkt aus einem Angebot (Angebote → „Rechnung").</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                const inp = document.getElementById('invSearch');
+                inp.addEventListener('input', () => {
+                    listFilters.invoices.q = inp.value;
+                    clearTimeout(inp._t);
+                    inp._t = setTimeout(() => { renderInvoices(); setTimeout(() => { const el = document.getElementById('invSearch'); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }, 0); }, 250);
+                });
+                document.getElementById('invStatusFilter').addEventListener('change', (e) => {
+                    listFilters.invoices.status = e.target.value;
+                    renderInvoices();
+                });
+            })();
+        }
+
+        const invoiceExtensions = {
+            // Rechnung automatisch aus Angebot erzeugen
+            async createInvoiceFromOffer(offerId) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) return;
+                const existing = (await db.getAll('invoices')).find(i => String(i.offerId) === String(offerId) && invoiceStatus(i) !== 'Storniert');
+                if (existing && !confirm(`Zu diesem Angebot existiert bereits ${existing.invoiceNumber}. Trotzdem eine weitere Rechnung erzeugen?`)) {
+                    app.navigate('invoices');
+                    return;
+                }
+                const today = toLocalDateString(new Date());
+                const payDays = parseInt(await getSetting('paymentDays', '14'), 10) || 14;
+                const due = new Date(); due.setDate(due.getDate() + payDays);
+                const inv = {
+                    invoiceNumber: await nextInvoiceNumber(),
+                    offerId: offer.id,
+                    projectId: offer.projectId ?? null,
+                    customerId: offer.customerId ?? null,
+                    date: today,
+                    dueDate: toLocalDateString(due),
+                    skontoRate: parseFloat(await getSetting('skontoRate', '0')) || 0,
+                    skontoDays: parseInt(await getSetting('skontoDays', '7'), 10) || 7,
+                    subtotal: offer.subtotal || 0,
+                    vatRate: offer.vatRate || 0,
+                    vatAmount: offer.vatAmount || 0,
+                    totalPrice: offer.totalPrice || 0,
+                    status: 'Offen',
+                    payments: [],
+                    notes: ''
+                };
+                await db.add('invoices', inv);
+                // Projekt-Status automatisch weiterschalten
+                if (inv.projectId) {
+                    const p = await db.get('projects', inv.projectId);
+                    if (p && !['Bezahlt', 'Archiviert', 'Archiv'].includes(p.status)) {
+                        p.status = 'Rechnung erstellt';
+                        await db.put('projects', p);
+                    }
+                }
+                showToast(`Rechnung ${inv.invoiceNumber} erstellt (fällig ${formatDate(inv.dueDate)}).`, 'success');
+                app.navigate('invoices');
+            },
+
+            async openPaymentModal(invoiceId) {
+                const inv = await db.get('invoices', invoiceId);
+                if (!inv) return;
+                const open = invoiceOpen(inv);
+                const today = toLocalDateString(new Date());
+                showModal(
+                    `Zahlung erfassen – ${escapeHtml(inv.invoiceNumber || '')}`,
+                    `
+                        <div class="survey-summary" style="margin-bottom:14px;">
+                            <div class="survey-chip"><span>Rechnungsbetrag</span><strong>${formatCurrency(inv.totalPrice || 0)}</strong></div>
+                            <div class="survey-chip"><span>Bereits bezahlt</span><strong>${formatCurrency(invoicePaid(inv))}</strong></div>
+                            <div class="survey-chip" style="border-color:var(--warning);"><span>Offen</span><strong style="color:var(--warning);">${formatCurrency(open)}</strong></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Datum</label><input type="date" id="payDate" value="${today}"></div>
+                            <div class="form-group"><label>Betrag (€) *</label><input type="number" inputmode="decimal" step="0.01" min="0" id="payAmount" value="${open.toFixed(2)}"></div>
+                        </div>
+                        ${(inv.payments || []).length ? `<div style="font-size:12.5px;color:var(--text-muted);">Bisherige Zahlungen:<br>${inv.payments.map(p => `• ${formatDate(p.date)} – ${formatCurrency(p.amount)}`).join('<br>')}</div>` : ''}
+                    `,
+                    async (overlay) => {
+                        const amount = parseFloat(String(overlay.querySelector('#payAmount').value).replace(',', '.'));
+                        if (isNaN(amount) || amount <= 0) { showToast('Bitte gültigen Betrag eingeben.', 'error'); return; }
+                        inv.payments = [...(inv.payments || []), { date: overlay.querySelector('#payDate').value || today, amount }];
+                        inv.status = invoiceStatus(inv);
+                        await db.put('invoices', inv);
+                        // Projekt auf Bezahlt schalten, wenn voll bezahlt
+                        if (invoiceStatus(inv) === 'Bezahlt' && inv.projectId) {
+                            const p = await db.get('projects', inv.projectId);
+                            if (p && !['Archiviert', 'Archiv'].includes(p.status)) { p.status = 'Bezahlt'; await db.put('projects', p); }
+                        }
+                        overlay.remove();
+                        showToast(invoiceStatus(inv) === 'Bezahlt' ? '✅ Rechnung vollständig bezahlt.' : 'Teilzahlung erfasst.', 'success');
+                        app.navigate('invoices');
+                    }
+                );
+            },
+
+            async deleteInvoice(id) {
+                if (!confirm('Diese Rechnung wirklich löschen?')) return;
+                await db.delete('invoices', id);
+                showToast('Rechnung gelöscht.', 'success');
+                app.navigate('invoices');
+            },
+
+            // ============ RECHNUNGS-PDF mit EPC-QR-Code ============
+            async exportInvoicePDF(invoiceId) {
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
+                const inv = await db.get('invoices', invoiceId);
+                if (!inv) return;
+                const offer = inv.offerId ? await db.get('offers', inv.offerId) : null;
+                const project = inv.projectId ? await db.get('projects', inv.projectId) : null;
+                const customer = inv.customerId ? await db.get('customers', inv.customerId) : null;
+                const co = await pdfCompany();
+                const st = invoiceStatus(inv);
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pw = doc.internal.pageSize.getWidth();
+                const mx = 16;
+
+                pdfWatermark(doc);
+                let y = pdfHeader(doc, co, 'RECHNUNG', [
+                    `Nr. ${inv.invoiceNumber}  ·  ${formatDate(inv.date)}`,
+                    `Zahlbar bis ${formatDate(inv.dueDate)}${inv.skontoRate > 0 ? `  ·  ${(inv.skontoRate * 100).toFixed(0)} % Skonto binnen ${inv.skontoDays} Tagen` : ''}`
+                ]);
+
+                const custLines = customer ? [
+                    `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+                    customer.company || '',
+                    [customer.street, customer.city].filter(Boolean).join(', ')
+                ].filter(Boolean) : ['–'];
+                const infoLines = [
+                    project ? `Projekt: ${project.title || ''}` : '',
+                    offer ? `Angebot: ${offer.offerNumber || ''}` : '',
+                    st !== 'Offen' ? `Status: ${st}` : ''
+                ].filter(Boolean);
+                y = pdfInfoBoxes(doc, y, 'Rechnungsempfänger', custLines, 'Zuordnung', infoLines.length ? infoLines : ['–']);
+
+                // Positionen (aus verknüpftem Angebot) oder Pauschalzeile
+                const rows = (offer?.positions || []).map((p, i) => [
+                    String(i + 1), p.name || '', String(p.quantity), p.unit || 'Stk', formatCurrency(p.price), formatCurrency(p.price * p.quantity)
+                ]);
+                if (rows.length === 0) rows.push(['1', project?.title ? `Leistungen lt. Auftrag – ${project.title}` : 'Leistungen lt. Auftrag', '1', 'Psch', formatCurrency(inv.subtotal || 0), formatCurrency(inv.subtotal || 0)]);
+
+                doc.autoTable({
+                    startY: y,
+                    margin: { left: mx, right: mx, bottom: 26 },
+                    head: [['Pos', 'Leistung / Artikel', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
+                    body: rows,
+                    ...PDF_TABLE_STYLES,
+                    columnStyles: { 0: { cellWidth: 9, halign: 'center' }, 2: { cellWidth: 14, halign: 'center' }, 3: { cellWidth: 13, halign: 'center' }, 4: { cellWidth: 25, halign: 'right' }, 5: { cellWidth: 25, halign: 'right', fontStyle: 'bold' } },
+                    willDrawPage: () => pdfWatermark(doc),
+                    didDrawPage: () => pdfFooterOnce(doc, co)
+                });
+
+                let fy = doc.lastAutoTable.finalY + 8;
+                fy = pdfNewPageIfNeeded(doc, fy, 70, co);
+
+                // Summenblock rechts
+                const boxW = 80, boxX = pw - mx - boxW;
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9.2); doc.setTextColor(...PDF_INK);
+                const sums = [['Nettobetrag', formatCurrency(inv.subtotal || 0)]];
+                if (inv.vatAmount > 0) sums.push([`MwSt. (${((inv.vatRate || 0) * 100).toFixed(0)}%)`, formatCurrency(inv.vatAmount || 0)]);
+                const paid = invoicePaid(inv);
+                sums.forEach(([l, v]) => { doc.text(l, boxX, fy); doc.text(v, pw - mx, fy, { align: 'right' }); fy += 5.8; });
+                fy += 1.5;
+                doc.setFillColor(...PDF_TEAL);
+                doc.roundedRect(boxX, fy - 5.5, boxW, 12.5, 2.5, 2.5, 'F');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(255, 255, 255);
+                doc.text('Rechnungsbetrag', boxX + 4, fy + 2.3);
+                doc.text(formatCurrency(inv.totalPrice || 0), pw - mx - 4, fy + 2.3, { align: 'right' });
+                fy += 13;
+                if (paid > 0) {
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...PDF_INK);
+                    doc.text('Bereits bezahlt', boxX, fy); doc.text(`- ${formatCurrency(paid)}`, pw - mx, fy, { align: 'right' }); fy += 5.5;
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Restbetrag', boxX, fy); doc.text(formatCurrency(invoiceOpen(inv)), pw - mx, fy, { align: 'right' }); fy += 7;
+                }
+
+                // EPC-QR-Code (Zahlung mit Banking-App scannen) – links neben dem Summenblock
+                const iban = extractIban(co.bank);
+                let qrY = doc.lastAutoTable.finalY + 8;
+                if (iban && typeof window.qrcode === 'function' && invoiceOpen(inv) > 0) {
+                    try {
+                        const epc = ['BCD', '002', '1', 'SCT', '', (co.name || 'Firma').slice(0, 70), iban,
+                            'EUR' + invoiceOpen(inv).toFixed(2), '', '', ('Rechnung ' + inv.invoiceNumber).slice(0, 140), ''].join('\n');
+                        const qr = window.qrcode(0, 'M');
+                        qr.addData(epc);
+                        qr.make();
+                        const qrUrl = qr.createDataURL(6, 2);
+                        doc.addImage(qrUrl, 'GIF', mx, qrY, 32, 32);
+                        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...PDF_TEAL);
+                        doc.text('Bequem zahlen:', mx + 36, qrY + 7);
+                        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...PDF_GRAY);
+                        doc.text('QR-Code mit Ihrer Banking-App scannen –\nEmpfänger, IBAN und Betrag werden\nautomatisch übernommen.', mx + 36, qrY + 12);
+                    } catch (e) { console.warn('QR-Code:', e); }
+                }
+
+                // Zahlungsbedingungen
+                let ty = Math.max(fy, qrY + 38);
+                ty = pdfNewPageIfNeeded(doc, ty, 20, co);
+                doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor(...PDF_GRAY);
+                const terms = [
+                    `Zahlbar bis ${formatDate(inv.dueDate)} ohne Abzug auf das unten angeführte Konto.`,
+                    inv.skontoRate > 0 ? `Bei Zahlung binnen ${inv.skontoDays} Tagen gewähren wir ${(inv.skontoRate * 100).toFixed(0)} % Skonto (${formatCurrency((inv.totalPrice || 0) * (1 - inv.skontoRate))}).` : '',
+                    inv.notes || ''
+                ].filter(Boolean).join('\n');
+                doc.text(terms, mx, ty, { maxWidth: pw - mx * 2 });
+
+                pdfFooterOnce(doc, co);
+                doc.save(`${inv.invoiceNumber}_${customer?.lastName || 'Kunde'}.pdf`);
+                showToast('Rechnung als PDF exportiert.', 'success');
+            }
+        };
+
         // ============================================================
         // ============ APP-ERWEITERUNGEN =============================
         // ============================================================
-        const ktmV2Extensions = Object.assign({}, planApplyExtensions, {
+        const ktmV2Extensions = Object.assign({}, planApplyExtensions, invoiceExtensions, {
             // ---------- Bestellungen ----------
             async openOrderModal(id = null, presetProjectId = null, presetItems = '') {
                 const order = id ? await db.get('orders', id) : null;
                 const projects = await db.getAll('projects');
                 const materials = await db.getAll('materials');
-                const suppliers = [...new Set((await db.getAll('orders')).map(o => o.supplier).filter(Boolean))];
+                await loadLearned();
+                const suppliers = [...new Set([...learnedList('supplier'), ...(await db.getAll('orders')).map(o => o.supplier).filter(Boolean)])];
                 const todayStr = toLocalDateString(new Date());
                 const selProj = order?.projectId ?? presetProjectId ?? '';
 
@@ -4059,6 +4533,7 @@ async function reconcileOfferCounter() {
                             notes: overlay.querySelector('#ordNotes').value.trim()
                         };
                         if (id) { await db.put('orders', data); } else { await db.add('orders', data); }
+                        learnValue('supplier', supplier).catch(() => {});
                         overlay.remove();
                         showToast(id ? 'Bestellung aktualisiert.' : 'Bestellung angelegt.', 'success');
                         if (app.currentPage === 'orders' || app.currentPage === 'dashboard' || app.currentPage === 'projects') app.navigate(app.currentPage, app.currentProjectId);
@@ -4265,8 +4740,8 @@ async function reconcileOfferCounter() {
                             if (v !== undefined) data[f.key] = v;
                         }
                         project.survey = data;
-                        if (!project.status || project.status === 'Neu' || project.status === 'Besichtigung offen') {
-                            project.status = 'Besichtigt';
+                        if (!project.status || ['Neu', 'Besichtigung offen', 'Besichtigung'].includes(project.status)) {
+                            project.status = 'Angebot';
                         }
                         await db.put('projects', project);
                         showToast('Besichtigung gespeichert.', 'success');
@@ -4347,6 +4822,7 @@ async function reconcileOfferCounter() {
 
             // ---------- Raum mit Material anlegen/bearbeiten ----------
             async openRoomModal(projectId, roomId = null) {
+                await loadLearned();
                 const room = roomId ? await db.get('rooms', roomId) : null;
                 const tech = room?.tech || {};
                 const materials = (await db.getAll('materials')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -4379,7 +4855,7 @@ async function reconcileOfferCounter() {
                             <div class="form-card-title">📐 Raumdaten</div>
                             <div class="form-group"><label>Raumname</label>
                                 <input type="text" id="roomName" list="roomNameList" value="${escapeHtml(room?.name || '')}" placeholder="z. B. Wohnzimmer">
-                                <datalist id="roomNameList">${ROOM_NAMES.map(n => `<option value="${n}">`).join('')}</datalist>
+                                <datalist id="roomNameList">${[...new Set([...learnedList('roomName'), ...ROOM_NAMES])].map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
                             </div>
                             <div class="form-row-3">
                                 <div class="form-group"><label>Länge (m) *</label><input type="number" id="roomLength" inputmode="decimal" step="0.1" min="0" value="${room?.length ?? ''}" placeholder="5.0"></div>
@@ -4419,6 +4895,8 @@ async function reconcileOfferCounter() {
                         } else {
                             rid = await db.add('rooms', { projectId, name, length, width, height, tech: techData });
                         }
+                        // Häufige Eingaben lernen – ein einziger Settings-Write
+                        learnValues([['pipeDimension', techData.pipeDimension], ['insulation', techData.insulation], ['powerCable', techData.powerCable], ['commCable', techData.commCable], ['devModel', techData.devModel], ['devPosition', techData.devPosition], ['roomName', name]]).catch(() => {});
 
                         // Manuelle Material-Zeilen abgleichen
                         const rows = [...overlay.querySelectorAll('.pm-row')];
@@ -4562,7 +5040,7 @@ async function reconcileOfferCounter() {
                         </div>
                         <div class="form-group"><label>Baustellenadresse (falls abweichend)</label><input type="text" id="projSiteAddress" value="${escapeHtml(project?.siteAddress || '')}" placeholder="Straße, PLZ Ort"></div>
                         <div class="form-group"><label>Status</label>
-                            <select id="projStatus">${PROJECT_STATUSES.map(s => `<option value="${s}" ${(project?.status || 'Neu') === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+                            <select id="projStatus">${statusOptions(project?.status || 'Besichtigung').map(s => `<option value="${s}" ${(project?.status || 'Besichtigung') === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
                         </div>
                         <div class="form-group"><label>Notizen</label><textarea id="projNotes" rows="3">${escapeHtml(project?.notes || '')}</textarea></div>
                     `,
@@ -5247,6 +5725,7 @@ async function reconcileOfferCounter() {
 
                 try { await repairLegacyIds(); } catch (e) { console.warn('ID-Reparatur fehlgeschlagen:', e); }
                 try { await loadCustomization(); } catch (e) { console.warn('Anpassungen konnten nicht geladen werden:', e); }
+                try { await loadLearned(); if (typeof KTM_LOGO_DEFAULT !== 'undefined' && !(await getSetting('companyLogo', ''))) { await setSetting('companyLogo', KTM_LOGO_DEFAULT); } } catch (e) { /* optional */ }
 
                 if (navigator.onLine) {
                     initialFullSync().then(initRealtime);
@@ -5324,6 +5803,7 @@ async function reconcileOfferCounter() {
                     case 'materials': renderMaterials(); break;
                     case 'offers': renderOffers(); break;
                     case 'orders': renderOrders(); break;
+                    case 'invoices': renderInvoices(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
@@ -5441,7 +5921,7 @@ async function reconcileOfferCounter() {
                         </div>
                         <div class="form-row">
                             <div class="form-group"><label>PLZ</label><input type="text" id="custZip" value="${escapeHtml(customer?.zip || '')}"></div>
-                            <div class="form-group"><label>Ort</label><input type="text" id="custCity" value="${escapeHtml(customer?.city || '')}"></div>
+                            <div class="form-group"><label>Ort</label><input type="text" id="custCity" list="dl_city" value="${escapeHtml(customer?.city || '')}">${typeof learnedDatalist === 'function' ? learnedDatalist('city', 'dl_city') : ''}</div>
                         </div>
                         <div class="form-row">
                             <div class="form-group"><label>Telefon</label><input type="text" id="custPhone" value="${escapeHtml(customer?.phone || '')}"></div>
@@ -5462,7 +5942,7 @@ async function reconcileOfferCounter() {
                             street: overlay.querySelector('#custStreet').value.trim(),
                             houseNumber: overlay.querySelector('#custHouseNumber').value.trim(),
                             zip: overlay.querySelector('#custZip').value.trim(),
-                            city: overlay.querySelector('#custCity').value.trim(),
+                            city: (() => { const v = overlay.querySelector('#custCity').value.trim(); if (v && typeof learnValue === 'function') learnValue('city', v).catch(() => {}); return v; })(),
                             phone: overlay.querySelector('#custPhone').value.trim(),
                             email: overlay.querySelector('#custEmail').value.trim(),
                             notes: overlay.querySelector('#custNotes').value.trim(),
@@ -5663,6 +6143,10 @@ async function reconcileOfferCounter() {
                         </div>
                         <div class="form-group"><label>Größe / Durchmesser (optional)</label><input type="text" id="matSize" value="${escapeHtml(mat?.size || '')}" placeholder="z. B. 22 mm, 5×2,5 mm², 1/2 Zoll"></div>
                         <div class="form-row">
+                            <div class="form-group"><label>Bestand</label><input type="number" inputmode="decimal" step="any" min="0" id="matStock" value="${mat?.stock ?? 0}"></div>
+                            <div class="form-group"><label>Mindestbestand (Warnung bei Unterschreitung)</label><input type="number" inputmode="decimal" step="any" min="0" id="matMinStock" value="${mat?.minStock ?? ''}" placeholder="z. B. 10"></div>
+                        </div>
+                        <div class="form-row">
                             <div class="form-group"><label>Kategorie</label>
                                 <select id="matCategory">
                                     ${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}" ${mat?.category === c.name ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
@@ -5684,6 +6168,8 @@ async function reconcileOfferCounter() {
                             manufacturer: overlay.querySelector('#matManufacturer').value.trim(),
                             articleNumber: overlay.querySelector('#matArticleNumber').value.trim(),
                             size: overlay.querySelector('#matSize').value.trim(),
+                            stock: parseFloat(String(overlay.querySelector('#matStock').value).replace(',', '.')) || 0,
+                            minStock: parseFloat(String(overlay.querySelector('#matMinStock').value).replace(',', '.')) || 0,
                             category: overlay.querySelector('#matCategory').value,
                             unit: overlay.querySelector('#matUnit').value.trim() || 'Stk',
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
@@ -6658,7 +7144,7 @@ async exportOfferPDF(offerId) {
             async resetAllData() {
                 if (!confirm('ALLE DATEN UNWIDERRUFLICH LÖSCHEN? Dies kann nicht rückgängig gemacht werden!')) return;
                 if (!confirm('Wirklich ALLES löschen?')) return;
-                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'events', 'settings'];
+                const stores = ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'invoices', 'events', 'settings'];
                 for (const store of stores) await db.clear(store);
                 showToast('Alle Daten gelöscht.', 'info');
                 this.navigate('dashboard');
