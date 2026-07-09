@@ -624,6 +624,27 @@
         /* Serviceabstand-Beschriftung im Plan */
         .pl-clearance { font-size: 6.5px; fill: var(--warning); font-weight: 700; text-anchor: middle; }
 
+        /* Material-Gruppen (Kategorie-Chips) */
+        .cat-chips {
+            display: flex; flex-wrap: wrap; gap: 8px;
+            margin: -6px 0 16px;
+        }
+        .cat-chip {
+            display: inline-flex; align-items: center; gap: 7px;
+            border: 1.5px solid var(--border); background: var(--bg-content);
+            color: var(--text-secondary); font-size: 12.5px; font-weight: 600;
+            padding: 7px 13px; border-radius: var(--radius-pill);
+            cursor: pointer; transition: all var(--transition);
+        }
+        .cat-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .cat-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .cat-chip span:last-child {
+            background: var(--bg-tertiary); color: var(--text-secondary);
+            border-radius: var(--radius-pill); padding: 1px 8px; font-size: 11px; font-weight: 800;
+        }
+        .cat-chip.active span:last-child { background: rgba(255,255,255,.22); color: #fff; }
+        .cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
         /* Projekt-gesamt Materialzusammenfassung */
         .agg-panel {
             background: var(--accent-light); border: 1px solid var(--accent);
@@ -2412,10 +2433,30 @@ async function reconcileOfferCounter() {
             (async () => {
                 const materials = await db.getAll('materials');
                 const q = listFilters.materials.q.toLowerCase();
-                const filtered = materials.filter(m => {
-                    if (!q) return true;
-                    return `${m.name || ''} ${m.articleNumber || ''} ${m.category || ''} ${m.manufacturer || ''} ${m.size || ''}`.toLowerCase().includes(q);
+                if (listFilters.materials.cat === undefined) listFilters.materials.cat = '';
+                if (listFilters.materials.hersteller === undefined) listFilters.materials.hersteller = '';
+                const activeCat = listFilters.materials.cat;
+                const activeHersteller = listFilters.materials.hersteller;
+
+                // Gruppen mit Anzahl (Reihenfolge: Geräte zuerst, dann Material)
+                const CAT_ORDER = ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Kupferrohre', 'Kupferrohr', 'Isolierung', 'Kabel', 'Elektromaterial', 'Kondensat', 'Befestigung', 'Montagematerial', 'Steuerungen', 'Werkzeug', 'Zubehör'];
+                const counts = {};
+                for (const m of materials) {
+                    const c = m.category || 'Ohne Kategorie';
+                    counts[c] = (counts[c] || 0) + 1;
+                }
+                const cats = Object.keys(counts).sort((a, b) => {
+                    const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+                    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
                 });
+                const herstellerListe = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))].sort();
+
+                const filtered = materials.filter(m => {
+                    if (activeCat && (m.category || 'Ohne Kategorie') !== activeCat) return false;
+                    if (activeHersteller && m.manufacturer !== activeHersteller) return false;
+                    if (!q) return true;
+                    return `${m.name || ''} ${m.articleNumber || ''} ${m.category || ''} ${m.manufacturer || ''} ${m.size || ''} ${m.notes || ''}`.toLowerCase().includes(q);
+                }).sort((a, b) => (a.name || '').localeCompare(b.name || '') || (a.size || '').localeCompare(b.size || ''));
 
                 contentArea.innerHTML = `
                     <div class="toolbar">
@@ -2423,10 +2464,18 @@ async function reconcileOfferCounter() {
                             <span class="search-icon">${icon('search')}</span>
                             <input type="text" id="matSearch" placeholder="Material suchen (Name, Art.-Nr.)..." value="${escapeHtml(listFilters.materials.q)}">
                         </div>
+                        ${herstellerListe.length ? `<select class="filter-select" id="matHersteller">
+                            <option value="">Alle Hersteller</option>
+                            ${herstellerListe.map(h => `<option value="${escapeHtml(h)}" ${activeHersteller === h ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}
+                        </select>` : ''}
                         <div class="toolbar-spacer"></div>
                         <button class="btn btn-outline btn-sm" onclick="app.exportMaterialsExcel()">Excel Export</button>
                         <button class="btn btn-outline btn-sm" onclick="app.importMaterialsExcel()">Excel Import</button>
                         <button class="btn btn-primary" onclick="app.openMaterialModal()">${icon('plus')} Neues Material</button>
+                    </div>
+                    <div class="cat-chips">
+                        <button class="cat-chip ${!activeCat ? 'active' : ''}" data-cat="">Alle <span>${materials.length}</span></button>
+                        ${cats.map(c => `<button class="cat-chip ${activeCat === c ? 'active' : ''}" data-cat="${escapeHtml(c)}" style="${activeCat === c ? '' : `border-color:${catColor(c)}55;`}"><span class="cat-dot" style="background:${catColor(c)};"></span>${escapeHtml(c)} <span>${counts[c]}</span></button>`).join('')}
                     </div>
                     <div class="table-container">
                         <table>
@@ -2458,6 +2507,14 @@ async function reconcileOfferCounter() {
                         </table>
                     </div>
                 `;
+                document.querySelectorAll('.cat-chip').forEach(b => b.addEventListener('click', () => {
+                    listFilters.materials.cat = b.dataset.cat;
+                    renderMaterials();
+                }));
+                document.getElementById('matHersteller')?.addEventListener('change', (e) => {
+                    listFilters.materials.hersteller = e.target.value;
+                    renderMaterials();
+                });
                 const inp = document.getElementById('matSearch');
                 inp.addEventListener('input', () => {
                     listFilters.materials.q = inp.value;
