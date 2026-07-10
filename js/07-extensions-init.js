@@ -2063,6 +2063,39 @@
     let selected = [];
     let activeFilter = 'Alle';
 
+    // --- Projekt-Materialien als Angebotspositionen (aktuelle Preise) ---
+    async function buildPositionsFromProject() {
+        const pms = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+        const freshMats = await db.getAll('materials');   // immer AKTUELLE Katalogpreise ziehen
+        const rooms = project.rooms || [];
+        const roomName = (rid) => rooms.find(r => String(r.id) === String(rid))?.name || '';
+        // Gleiches Material + Einheit + Preis über Räume hinweg zusammenfassen,
+        // Räume in der Bemerkung sammeln
+        const agg = new Map();
+        for (const x of pms) {
+            const mat = freshMats.find(m => String(m.id) === String(x.materialId));
+            const unit = x.unit || mat?.unit || 'Stk';
+            const price = (x.price !== undefined && x.price !== null) ? Number(x.price) : matUnitPrice(mat, unit);
+            const key = `${String(x.materialId)}|${unit}|${price}`;
+            if (!agg.has(key)) agg.set(key, {
+                materialId: mat?.id, name: mat?.name || x.name || 'Material',
+                unit, price, quantity: 0, manufacturer: mat?.manufacturer || '',
+                articleNumber: mat?.articleNumber || '', category: mat?.category || '',
+                size: x.size || mat?.size || '', rooms: new Set()
+            });
+            const a = agg.get(key);
+            a.quantity += Number(x.quantity) || 0;
+            const rn = roomName(x.roomId); if (rn) a.rooms.add(rn);
+        }
+        return [...agg.values()].map(a => ({
+            materialId: a.materialId, name: a.name, unit: a.unit, price: a.price,
+            quantity: Math.round(a.quantity * 100) / 100 || 1,
+            manufacturer: a.manufacturer, articleNumber: a.articleNumber, category: a.category,
+            description: (a.size ? a.size + (a.rooms.size ? ' · ' : '') : '') + [...a.rooms].join(', '),
+            image: ''
+        }));
+    }
+
     let offerSettings = {
         offerNumber: defaults.autoNumber ? await getNextAutoNumber() : '',
         autoNumber: defaults.autoNumber,
@@ -2154,7 +2187,10 @@
                 </div>
             </div>
             <div>
-                <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Ausgewählte Positionen</label>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Ausgewählte Positionen</label>
+                    <button type="button" class="btn btn-sm btn-outline" id="offerReloadProject" title="Alle Projekt-Materialien mit aktuellen Preisen laden">↻ Projekt-Material</button>
+                </div>
                 <div class="offer-pos-list" id="offerPosList"></div>
                 <div class="offer-summary-box" id="offerSummaryBox"></div>
             </div>
@@ -2471,6 +2507,25 @@
         });
     });
 
+    modal.querySelector('#offerReloadProject')?.addEventListener('click', async () => {
+        const pos = await buildPositionsFromProject();
+        if (!pos.length) { showToast('Keine Materialien im Projekt gefunden.', 'info'); return; }
+        selected = pos;
+        renderPosList();
+        updateSettingsFromUI();
+        renderSummary();
+        showToast(`${pos.length} Position(en) mit aktuellen Preisen neu geladen.`, 'success');
+    });
+    // Positionen aus dem Projekt automatisch vorladen (aktuelle Preise)
+    buildPositionsFromProject().then(pos => {
+        if (pos.length && selected.length === 0) {
+            selected = pos;
+            renderPosList();
+            updateSettingsFromUI();
+            renderSummary();
+            showToast(`${pos.length} Position(en) aus dem Projekt mit aktuellen Preisen geladen.`, 'success');
+        }
+    });
     renderQuickResults();
     renderPosList();
     renderSummary();
