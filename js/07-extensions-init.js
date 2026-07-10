@@ -344,6 +344,137 @@
                 app.navigate('projects', projectId);
             },
 
+            // ---------- Material-Katalog: Navigation ----------
+            matNav(level) {
+                const F = listFilters.materials;
+                if (level === 'cats') { F.cat = ''; F.hersteller = ''; F.serie = ''; }
+                if (level === 'hersteller') { F.hersteller = ''; F.serie = ''; }
+                if (level === 'serien') { F.serie = ''; }
+                F.level = level; F.q = '';
+                renderMaterials();
+            },
+            matOpenCat(c) { const F = listFilters.materials; F.cat = c; F.hersteller = ''; F.serie = ''; F.level = 'hersteller'; renderMaterials(); },
+            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.serie = ''; F.level = 'serien'; renderMaterials(); },
+            matOpenSerie(s) { const F = listFilters.materials; F.serie = s === 'Ohne Serie' ? '' : s; F.level = 'produkte'; renderMaterials(); },
+
+            async toggleFavorite(id) {
+                const m = await db.get('materials', id);
+                if (!m) return;
+                m.favorite = m.favorite !== true;
+                await db.put('materials', m);
+                renderMaterials();
+            },
+
+            async duplicateMaterial(id) {
+                const m = await db.get('materials', id);
+                if (!m) return;
+                const copy = { ...m };
+                delete copy.id; delete copy._synced; delete copy.createdAt; delete copy.updatedAt;
+                copy.name = (m.name || '') + ' (Kopie)';
+                const newId = await db.add('materials', copy);
+                showToast('Material dupliziert.', 'success');
+                app.openMaterialModal(newId);
+            },
+
+            // ---------- Produktdetailseite ----------
+            async openMaterialDetail(id) {
+                const m = await db.get('materials', id);
+                if (!m) return;
+                const st = matStockStatus(m);
+                const marge = (Number(m.sellingPrice) || 0) - (Number(m.purchasePrice) || 0);
+
+                // QR-Code (Artikelnummer bzw. Modellname) für Lager-Etiketten
+                let qrHtml = '';
+                try {
+                    if (typeof window.qrcode === 'function') {
+                        const qr = window.qrcode(0, 'M');
+                        qr.addData('KTM|' + (m.articleNumber || m.name || String(m.id)));
+                        qr.make();
+                        qrHtml = `<img src="${qr.createDataURL(4, 2)}" style="width:92px;height:92px;border-radius:8px;border:1px solid var(--border);" alt="QR">`;
+                    }
+                } catch (e) { /* optional */ }
+
+                showModal(
+                    escapeHtml(m.name || 'Material'),
+                    `
+                        <div class="mat-detail">
+                            <div class="mat-detail-img">${m.image ? `<img src="${m.image}">` : `<span>${matCatIcon(m.category)}</span>`}</div>
+                            <div class="mat-detail-info">
+                                <div class="survey-summary">
+                                    ${m.manufacturer ? `<div class="survey-chip"><span>Hersteller</span><strong>${escapeHtml(m.manufacturer)}</strong></div>` : ''}
+                                    ${m.series ? `<div class="survey-chip"><span>Serie</span><strong>${escapeHtml(m.series)}</strong></div>` : ''}
+                                    ${m.size ? `<div class="survey-chip"><span>Leistung / Größe</span><strong>${escapeHtml(m.size)}</strong></div>` : ''}
+                                    ${m.articleNumber ? `<div class="survey-chip"><span>Artikelnummer</span><strong>${escapeHtml(m.articleNumber)}</strong></div>` : ''}
+                                    <div class="survey-chip"><span>Kategorie</span><strong>${escapeHtml(m.category || '-')}</strong></div>
+                                    <div class="survey-chip"><span>Einheit</span><strong>${escapeHtml(m.unit || 'Stk')}</strong></div>
+                                    <div class="survey-chip"><span>EK-Preis</span><strong>${formatCurrency(m.purchasePrice || 0)}</strong></div>
+                                    <div class="survey-chip" style="border-color:var(--accent);"><span>VK-Preis</span><strong style="color:var(--accent);">${formatCurrency(m.sellingPrice || 0)}</strong></div>
+                                    ${marge > 0 ? `<div class="survey-chip"><span>Marge</span><strong style="color:var(--success);">${formatCurrency(marge)}</strong></div>` : ''}
+                                    <div class="survey-chip"><span>Lagerbestand</span><strong class="${st.cls === 'st-low' ? 'text-danger' : ''}">${m.stock ?? 0} ${escapeHtml(m.unit || 'Stk')}${m.minStock > 0 ? ' (min. ' + m.minStock + ')' : ''}</strong></div>
+                                </div>
+                                ${m.notes ? `<div style="margin-top:12px;font-size:13px;color:var(--text-secondary);"><strong>Technische Daten:</strong><br>${escapeHtml(m.notes)}</div>` : ''}
+                            </div>
+                            <div class="mat-detail-side">
+                                ${qrHtml}
+                                <span class="mat-stock ${st.cls}" style="margin-top:8px;">${st.label}</span>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;">
+                            <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove(); app.addMaterialToProject(${idJS(m.id)})">${icon('plus')} Zum Projekt hinzufügen</button>
+                            <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove(); app.openMaterialModal(${idJS(m.id)})">${icon('edit')} Bearbeiten</button>
+                            <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove(); app.duplicateMaterial(${idJS(m.id)})">⧉ Duplizieren</button>
+                            <button class="btn btn-danger" onclick="this.closest('.modal-overlay').remove(); app.deleteMaterial(${idJS(m.id)})">${icon('trash')} Löschen</button>
+                        </div>
+                    `,
+                    null, null, { wide: true }
+                );
+            },
+
+            // ---------- "Zum Projekt hinzufügen" ----------
+            async addMaterialToProject(materialId) {
+                const m = await db.get('materials', materialId);
+                if (!m) return;
+                const projects = (await db.getAll('projects')).filter(p => !['Bezahlt', 'Archiviert', 'Archiv'].includes(p.status))
+                    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                if (projects.length === 0) { showToast('Kein offenes Projekt vorhanden – lege zuerst ein Projekt an.', 'info'); return; }
+
+                const modal = showModal(
+                    `${escapeHtml(m.name)} zum Projekt hinzufügen`,
+                    `
+                        <div class="form-group"><label>Projekt *</label>
+                            <select id="amp_project">${projects.map(p => `<option value="${escapeHtml(String(p.id))}">${escapeHtml(p.title || 'Projekt')}</option>`).join('')}</select>
+                        </div>
+                        <div class="form-group"><label>Raum (optional)</label><select id="amp_room"><option value="">Projekt gesamt</option></select></div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Menge *</label><input type="number" id="amp_qty" inputmode="decimal" step="any" min="0" value="1"></div>
+                            <div class="form-group"><label>Einheit</label><select id="amp_unit">${UNITS.map(u => `<option value="${u}" ${(m.unit || 'Stk') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const projectId = parseId(overlay.querySelector('#amp_project').value);
+                        const roomId = overlay.querySelector('#amp_room').value || null;
+                        const qty = parseFloat(String(overlay.querySelector('#amp_qty').value).replace(',', '.'));
+                        if (!projectId || isNaN(qty) || qty <= 0) { showToast('Bitte Projekt und Menge angeben.', 'error'); return; }
+                        await db.add('projectMaterials', {
+                            projectId, materialId: m.id, roomId: roomId ? parseId(roomId) : null,
+                            quantity: qty, unit: overlay.querySelector('#amp_unit').value,
+                            size: m.size || '', price: Number(m.sellingPrice) || 0, note: 'Aus Katalog'
+                        });
+                        overlay.remove();
+                        showToast(`${qty} ${overlay.querySelector('#amp_unit')?.value || ''} ${m.name} zum Projekt hinzugefügt.`.trim(), 'success');
+                    }
+                );
+                // Räume des gewählten Projekts nachladen
+                const loadRooms = async () => {
+                    const pid = modal.querySelector('#amp_project').value;
+                    const rooms = (await db.getByIndex('rooms', 'projectId', pid)) || [];
+                    modal.querySelector('#amp_room').innerHTML = '<option value="">Projekt gesamt</option>' +
+                        rooms.map(r => `<option value="${escapeHtml(String(r.id))}">${escapeHtml(r.name || 'Raum')}</option>`).join('');
+                };
+                modal.querySelector('#amp_project').addEventListener('change', loadRooms);
+                loadRooms();
+            },
+
             // ---------- Raum mit Material anlegen/bearbeiten ----------
             async openRoomModal(projectId, roomId = null) {
                 await loadLearned();
@@ -1249,6 +1380,15 @@
 
                 try { await repairLegacyIds(); } catch (e) { console.warn('ID-Reparatur fehlgeschlagen:', e); }
                 try { await loadCustomization(); } catch (e) { console.warn('Anpassungen konnten nicht geladen werden:', e); }
+                try {
+                    const mats = await db.getAll('materials');
+                    for (const m of mats) {
+                        if (!m.series && m.notes) {
+                            const sm = String(m.notes).match(/Serie ([^·]+)/);
+                            if (sm) { m.series = sm[1].trim(); await db.put('materials', m); }
+                        }
+                    }
+                } catch (e) { /* Migration optional */ }
                 try { await loadLearned(); if (typeof KTM_LOGO_DEFAULT !== 'undefined') { const curLogo = await getSetting('companyLogo', ''); if (!curLogo || (typeof KTM_LOGO_OLD_PREFIX !== 'undefined' && curLogo.startsWith(KTM_LOGO_OLD_PREFIX))) { await setSetting('companyLogo', KTM_LOGO_DEFAULT); } } } catch (e) { /* optional */ }
 
                 if (navigator.onLine) {
@@ -1662,7 +1802,8 @@
                     `
                         <div class="form-group"><label>Artikelname *</label><input type="text" id="matName" value="${escapeHtml(mat?.name || '')}"></div>
                         <div class="form-row">
-                            <div class="form-group"><label>Hersteller</label><input type="text" id="matManufacturer" value="${escapeHtml(mat?.manufacturer || '')}" placeholder="z.B. Mitsubishi Electric"></div>
+                            <div class="form-group"><label>Hersteller</label><input type="text" id="matManufacturer" list="dl_matHersteller" value="${escapeHtml(mat?.manufacturer || '')}" placeholder="z.B. Mitsubishi Electric">${typeof learnedDatalist === 'function' ? learnedDatalist('matHersteller', 'dl_matHersteller') : ''}</div>
+                        <div class="form-group"><label>Serie / Baureihe</label><input type="text" id="matSeries" list="dl_matSerie" value="${escapeHtml(mat?.series || '')}" placeholder="z. B. Perfera, WindFree, Standard Plus">${typeof learnedDatalist === 'function' ? learnedDatalist('matSerie', 'dl_matSerie') : ''}</div>
                             <div class="form-group"><label>Artikelnummer</label><input type="text" id="matArticleNumber" value="${escapeHtml(mat?.articleNumber || '')}"></div>
                         </div>
                         <div class="form-group"><label>Größe / Durchmesser (optional)</label><input type="text" id="matSize" value="${escapeHtml(mat?.size || '')}" placeholder="z. B. 22 mm, 5×2,5 mm², 1/2 Zoll"></div>
@@ -1689,7 +1830,8 @@
                     async (overlay) => {
                         const data = {
                             name: overlay.querySelector('#matName').value.trim(),
-                            manufacturer: overlay.querySelector('#matManufacturer').value.trim(),
+                            manufacturer: (() => { const v = overlay.querySelector('#matManufacturer').value.trim(); if (v && typeof learnValue === 'function') learnValue('matHersteller', v).catch(() => {}); return v; })(),
+                            series: (() => { const v = overlay.querySelector('#matSeries').value.trim(); if (v && typeof learnValue === 'function') learnValue('matSerie', v).catch(() => {}); return v; })(),
                             articleNumber: overlay.querySelector('#matArticleNumber').value.trim(),
                             size: overlay.querySelector('#matSize').value.trim(),
                             stock: parseFloat(String(overlay.querySelector('#matStock').value).replace(',', '.')) || 0,

@@ -562,104 +562,177 @@
         // ============================================================
         // ============ MATERIALIEN ===================================
         // ============================================================
+        // Material-Katalog: Icons je Kategorie
+        const MAT_CAT_ICONS = {
+            'Außengeräte': '🧊', 'Innengeräte': '❄️', 'Klimageräte': '❄️', 'Multisplit-Systeme': '🔀',
+            'VRF-Systeme': '🏢', 'Kupferrohr': '🟠', 'Kupferrohre': '🟠', 'Isolierung': '🧵',
+            'Elektromaterial': '⚡', 'Kabel': '🔌', 'Kondensat': '💧', 'Befestigung': '🔩',
+            'Montagematerial': '🧰', 'Montagezubehör': '🧰', 'Werkzeug': '🛠️', 'Werkzeuge': '🛠️',
+            'Kältemittel': '🧪', 'Arbeitszeit': '⏱️', 'Ersatzteile': '⚙️', 'Steuerungen': '🎛️', 'Zubehör': '📦'
+        };
+        const matCatIcon = c => MAT_CAT_ICONS[c] || '📦';
+
+        function matStockStatus(m) {
+            const s = Number(m.stock) || 0;
+            if (m.minStock > 0 && s < Number(m.minStock)) return { label: 'Nachbestellen', cls: 'st-low' };
+            if (s > 0) return { label: 'Auf Lager (' + s + ')', cls: 'st-ok' };
+            return { label: 'Kein Bestand', cls: 'st-none' };
+        }
+
         function renderMaterials() {
             (async () => {
                 const materials = await db.getAll('materials');
-                const q = listFilters.materials.q.toLowerCase();
-                if (listFilters.materials.cat === undefined) listFilters.materials.cat = '';
-                if (listFilters.materials.hersteller === undefined) listFilters.materials.hersteller = '';
-                const activeCat = listFilters.materials.cat;
-                const activeHersteller = listFilters.materials.hersteller;
+                const F = listFilters.materials;
+                if (F.level === undefined) Object.assign(F, { level: 'cats', cat: '', hersteller: '', serie: '', fav: false, stockF: '' });
+                const q = (F.q || '').toLowerCase().trim();
 
-                // Gruppen mit Anzahl (Reihenfolge: Geräte zuerst, dann Material)
-                const CAT_ORDER = ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Kupferrohre', 'Kupferrohr', 'Isolierung', 'Kabel', 'Elektromaterial', 'Kondensat', 'Befestigung', 'Montagematerial', 'Steuerungen', 'Werkzeug', 'Zubehör'];
-                const counts = {};
-                for (const m of materials) {
-                    const c = m.category || 'Ohne Kategorie';
-                    counts[c] = (counts[c] || 0) + 1;
-                }
-                const cats = Object.keys(counts).sort((a, b) => {
-                    const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
-                    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
+                // --------- Basis-Filter (Favoriten / Bestand) ---------
+                let pool = materials.filter(m => {
+                    if (F.fav && m.favorite !== true) return false;
+                    if (F.stockF === 'lager' && !(Number(m.stock) > 0)) return false;
+                    if (F.stockF === 'min' && !(m.minStock > 0 && (Number(m.stock) || 0) < Number(m.minStock))) return false;
+                    return true;
                 });
-                const herstellerListe = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))].sort();
 
-                const filtered = materials.filter(m => {
-                    if (activeCat && (m.category || 'Ohne Kategorie') !== activeCat) return false;
-                    if (activeHersteller && m.manufacturer !== activeHersteller) return false;
-                    if (!q) return true;
-                    return `${m.name || ''} ${m.articleNumber || ''} ${m.category || ''} ${m.manufacturer || ''} ${m.size || ''} ${m.notes || ''}`.toLowerCase().includes(q);
-                }).sort((a, b) => (a.name || '').localeCompare(b.name || '') || (a.size || '').localeCompare(b.size || ''));
+                // --------- Intelligente Sofort-Suche: springt direkt zu Produkten ---------
+                const searching = q.length >= 2;
+                if (searching) {
+                    pool = pool.filter(m => `${m.name || ''} ${m.manufacturer || ''} ${m.series || ''} ${m.articleNumber || ''} ${m.size || ''} ${m.category || ''} ${m.notes || ''}`.toLowerCase().includes(q));
+                }
+
+                const inScope = pool.filter(m =>
+                    (!F.cat || (m.category || 'Ohne Kategorie') === F.cat) &&
+                    (!F.hersteller || (m.manufacturer || 'Ohne Hersteller') === F.hersteller) &&
+                    (!F.serie || (m.series || 'Ohne Serie') === F.serie)
+                );
+
+                const level = searching ? 'produkte' : F.level;
+
+                // --------- Breadcrumb ---------
+                const crumbs = [`<button class="crumb ${level === 'cats' ? 'active' : ''}" onclick="app.matNav('cats')">${icon('box')} Material</button>`];
+                if (F.cat) crumbs.push(`<button class="crumb ${level === 'hersteller' ? 'active' : ''}" onclick="app.matNav('hersteller')">${matCatIcon(F.cat)} ${escapeHtml(F.cat)}</button>`);
+                if (F.hersteller) crumbs.push(`<button class="crumb ${level === 'serien' ? 'active' : ''}" onclick="app.matNav('serien')">${escapeHtml(F.hersteller)}</button>`);
+                if (F.serie) crumbs.push(`<button class="crumb active">${escapeHtml(F.serie)}</button>`);
+
+                // --------- Ebenen-Inhalt ---------
+                let body = '';
+                if (level === 'cats') {
+                    const groups = {};
+                    for (const m of pool) {
+                        const c = m.category || 'Ohne Kategorie';
+                        (groups[c] = groups[c] || []).push(m);
+                    }
+                    const cats = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+                    body = cats.length ? `<div class="mat-grid">${cats.map(c => {
+                        const list = groups[c];
+                        const img = list.find(m => m.image)?.image;
+                        const upd = Math.max(...list.map(m => new Date(m.updatedAt || m.createdAt || 0).getTime() || 0));
+                        return `<div class="mat-card mat-cat" onclick="app.matOpenCat('${escapeHtml(c).replace(/'/g, "\\'")}')">
+                            <div class="mat-cat-ico">${img ? `<img src="${img}">` : matCatIcon(c)}</div>
+                            <div class="mat-card-body">
+                                <div class="mat-card-title">${escapeHtml(c)}</div>
+                                <div class="mat-card-sub">${list.length} Produkt${list.length !== 1 ? 'e' : ''}${upd > 0 ? ' · Stand ' + formatDate(new Date(upd).toISOString()) : ''}</div>
+                            </div>
+                            <div class="mat-card-arrow">›</div>
+                        </div>`;
+                    }).join('')}</div>` : '<div class="empty-note" style="padding:30px;">Noch keine Materialien – lege welche an oder importiere den Katalog.</div>';
+                } else if (level === 'hersteller') {
+                    const groups = {};
+                    for (const m of inScope) {
+                        const h = m.manufacturer || 'Ohne Hersteller';
+                        (groups[h] = groups[h] || []).push(m);
+                    }
+                    const hs = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+                    if (hs.length <= 1) { F.hersteller = hs[0] || ''; F.level = 'serien'; renderMaterials(); return; }
+                    body = `<div class="mat-grid">${hs.map(h => {
+                        const list = groups[h];
+                        const avail = list.filter(m => Number(m.stock) > 0).length;
+                        return `<div class="mat-card mat-cat" onclick="app.matOpenHersteller('${escapeHtml(h).replace(/'/g, "\\'")}')">
+                            <div class="mat-brand-logo">${escapeHtml((h || '?').slice(0, 2).toUpperCase())}</div>
+                            <div class="mat-card-body">
+                                <div class="mat-card-title">${escapeHtml(h)}</div>
+                                <div class="mat-card-sub">${list.length} Produkte · ${avail} auf Lager</div>
+                            </div>
+                            <div class="mat-card-arrow">›</div>
+                        </div>`;
+                    }).join('')}</div>`;
+                } else if (level === 'serien') {
+                    const groups = {};
+                    for (const m of inScope) {
+                        const s = m.series || 'Ohne Serie';
+                        (groups[s] = groups[s] || []).push(m);
+                    }
+                    const ss = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+                    if (ss.length <= 1) { F.serie = ''; F.level = 'produkte'; renderMaterials(); return; }
+                    body = `<div class="mat-grid">${ss.map(s => {
+                        const list = groups[s];
+                        const kws = list.map(m => parseFloat(String(m.size).replace(',', '.'))).filter(n => !isNaN(n));
+                        const range = kws.length ? `${Math.min(...kws).toFixed(1).replace('.', ',')}–${Math.max(...kws).toFixed(1).replace('.', ',')} kW` : '';
+                        return `<div class="mat-card mat-cat" onclick="app.matOpenSerie('${escapeHtml(s).replace(/'/g, "\\'")}')">
+                            <div class="mat-cat-ico">${matCatIcon(F.cat)}</div>
+                            <div class="mat-card-body">
+                                <div class="mat-card-title">${escapeHtml(s)}</div>
+                                <div class="mat-card-sub">${list.length} Modelle${range ? ' · ' + range : ''}</div>
+                            </div>
+                            <div class="mat-card-arrow">›</div>
+                        </div>`;
+                    }).join('')}</div>`;
+                } else {
+                    // --------- Ebene 4: Produktkarten ---------
+                    const list = inScope.sort((a, b) => (parseFloat(String(a.size).replace(',', '.')) || 0) - (parseFloat(String(b.size).replace(',', '.')) || 0) || (a.name || '').localeCompare(b.name || ''));
+                    body = list.length ? `<div class="mat-grid mat-grid-products">${list.map(m => {
+                        const st = matStockStatus(m);
+                        return `<div class="mat-card mat-product" onclick="app.openMaterialDetail(${idJS(m.id)})">
+                            <button class="mat-fav ${m.favorite ? 'on' : ''}" onclick="event.stopPropagation(); app.toggleFavorite(${idJS(m.id)})" title="Favorit">${m.favorite ? '★' : '☆'}</button>
+                            <div class="mat-product-img">${m.image ? `<img src="${m.image}">` : `<span>${matCatIcon(m.category)}</span>`}</div>
+                            <div class="mat-card-body">
+                                <div class="mat-card-title">${escapeHtml(m.name)}</div>
+                                <div class="mat-card-sub">${[m.manufacturer, m.series, m.size].filter(Boolean).map(escapeHtml).join(' · ') || '&nbsp;'}</div>
+                                ${m.articleNumber ? `<div class="mat-card-art">Art. ${escapeHtml(m.articleNumber)}</div>` : ''}
+                                <div class="mat-card-foot">
+                                    <div class="mat-price">${formatCurrency(m.sellingPrice || 0)}<small> VK</small></div>
+                                    <span class="mat-stock ${st.cls}">${st.label}</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-primary mat-add" onclick="event.stopPropagation(); app.addMaterialToProject(${idJS(m.id)})">${icon('plus')} Zum Projekt</button>
+                        </div>`;
+                    }).join('')}</div>` : `<div class="empty-note" style="padding:30px;">${searching ? 'Keine Treffer für „' + escapeHtml(q) + '".' : 'Keine Produkte in dieser Auswahl.'}</div>`;
+                }
 
                 contentArea.innerHTML = `
                     <div class="toolbar">
-                        <div class="search-inline">
+                        <div class="search-inline" style="flex:1;max-width:460px;">
                             <span class="search-icon">${icon('search')}</span>
-                            <input type="text" id="matSearch" placeholder="Material suchen (Name, Art.-Nr.)..." value="${escapeHtml(listFilters.materials.q)}">
+                            <input type="text" id="matSearch" placeholder="Modell, Hersteller, Serie, Art.-Nr., Leistung..." value="${escapeHtml(F.q || '')}">
                         </div>
-                        ${herstellerListe.length ? `<select class="filter-select" id="matHersteller">
-                            <option value="">Alle Hersteller</option>
-                            ${herstellerListe.map(h => `<option value="${escapeHtml(h)}" ${activeHersteller === h ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}
-                        </select>` : ''}
+                        <button class="btn btn-sm ${F.fav ? 'btn-primary' : 'btn-outline'}" id="matFav">★ Favoriten</button>
+                        <select class="filter-select" id="matStockF">
+                            <option value="">Bestand: alle</option>
+                            <option value="lager" ${F.stockF === 'lager' ? 'selected' : ''}>Auf Lager</option>
+                            <option value="min" ${F.stockF === 'min' ? 'selected' : ''}>Unter Minimum</option>
+                        </select>
                         <div class="toolbar-spacer"></div>
                         <button class="btn btn-outline btn-sm" onclick="app.exportMaterialsExcel()">Excel Export</button>
                         <button class="btn btn-outline btn-sm" onclick="app.importMaterialsExcel()">Excel Import</button>
-                        <button class="btn btn-primary" onclick="app.openMaterialModal()">${icon('plus')} Neues Material</button>
                     </div>
-                    <div class="cat-chips">
-                        <button class="cat-chip ${!activeCat ? 'active' : ''}" data-cat="">Alle <span>${materials.length}</span></button>
-                        ${cats.map(c => `<button class="cat-chip ${activeCat === c ? 'active' : ''}" data-cat="${escapeHtml(c)}" style="${activeCat === c ? '' : `border-color:${catColor(c)}55;`}"><span class="cat-dot" style="background:${catColor(c)};"></span>${escapeHtml(c)} <span>${counts[c]}</span></button>`).join('')}
+                    <div class="mat-crumbs">${crumbs.join('<span class="crumb-sep">›</span>')}
+                        ${searching ? `<span class="crumb-hint">${inScope.length} Treffer</span>` : ''}
                     </div>
-                    <div class="table-container">
-                        <table>
-                            <thead><tr><th>Artikel</th><th>Größe</th><th>Kategorie</th><th>Art.-Nr.</th><th>EK-Preis</th><th>VK-Preis</th><th>Bestand</th><th style="text-align:right;">Aktionen</th></tr></thead>
-                            <tbody>
-                                ${filtered.map(m => `
-                                    <tr>
-                                        <td style="display:flex;align-items:center;gap:10px;">
-                                            ${m.image ? `<img src="${m.image}" style="width:34px;height:34px;object-fit:cover;border-radius:8px;">` : ''}
-                                            <div><strong>${escapeHtml(m.name)}</strong>${m.manufacturer ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(m.manufacturer)}</div>` : ''}</div>
-                                        </td>
-                                        <td>${escapeHtml(m.size || '-')}</td>
-                                        <td>${m.category ? `<span class="status-badge" style="background:${catColor(m.category)}22;color:${catColor(m.category)};">${escapeHtml(m.category)}</span>` : '-'}</td>
-                                        <td>${escapeHtml(m.articleNumber || '-')}</td>
-                                        <td>${formatCurrency(m.purchasePrice || 0)}</td>
-                                        <td>${formatCurrency(m.sellingPrice || 0)}</td>
-                                        <td style="white-space:nowrap;">
-                                            <input type="number" inputmode="decimal" step="any" min="0" value="${m.stock ?? 0}" style="width:84px;padding:6px 9px;text-align:center;font-weight:700;${(m.minStock > 0 && (Number(m.stock) || 0) < Number(m.minStock)) ? 'border-color:var(--danger);color:var(--danger);' : ''}" onchange="app.setStock(${idJS(m.id)}, this.value)" title="Bestand direkt eingeben${m.minStock > 0 ? ' · Mindestbestand: ' + m.minStock : ''}">
-                                            ${(m.minStock > 0 && (Number(m.stock) || 0) < Number(m.minStock)) ? '<div style="font-size:10.5px;color:var(--danger);font-weight:700;">⚠ unter Minimum (' + m.minStock + ')</div>' : ''}
-                                        </td>
-                                        <td style="text-align:right;white-space:nowrap;">
-                                            <button class="btn btn-sm btn-outline" onclick="app.openMaterialModal(${idJS(m.id)})">${icon('edit')}</button>
-                                            ${getCustomFields('materials').length ? `<button class="btn btn-sm btn-outline" title="Zusatzfelder" onclick="app.openCustomDataModal('materials', ${idJS(m.id)})">🔧</button>` : ''}
-                                            <button class="btn btn-sm btn-danger" onclick="app.deleteMaterial(${idJS(m.id)})">${icon('trash')}</button>
-                                        </td>
-                                    </tr>
-                                `).join('') || '<tr><td colspan="8" class="empty-note">Keine Materialien</td></tr>'}
-                            </tbody>
-                        </table>
-                    </div>
+                    ${body}
+                    <button class="fab" onclick="app.openMaterialModal()" title="Neues Material">+</button>
                 `;
-                document.querySelectorAll('.cat-chip').forEach(b => b.addEventListener('click', () => {
-                    listFilters.materials.cat = b.dataset.cat;
-                    renderMaterials();
-                }));
-                document.getElementById('matHersteller')?.addEventListener('change', (e) => {
-                    listFilters.materials.hersteller = e.target.value;
-                    renderMaterials();
-                });
+
                 const inp = document.getElementById('matSearch');
                 inp.addEventListener('input', () => {
-                    listFilters.materials.q = inp.value;
+                    F.q = inp.value;
                     clearTimeout(inp._t);
-                    inp._t = setTimeout(() => { renderMaterials(); setTimeout(() => { const el = document.getElementById('matSearch'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 0); }, 250);
+                    inp._t = setTimeout(() => { renderMaterials(); setTimeout(() => { const el = document.getElementById('matSearch'); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }, 0); }, 220);
                 });
+                document.getElementById('matFav').addEventListener('click', () => { F.fav = !F.fav; renderMaterials(); });
+                document.getElementById('matStockF').addEventListener('change', (e) => { F.stockF = e.target.value; renderMaterials(); });
             })();
         }
 
-        // ============================================================
-        // ============ ANGEBOTE ======================================
-        // ============================================================
         function renderOffers() {
             (async () => {
                 const offers = await db.getAll('offers');
