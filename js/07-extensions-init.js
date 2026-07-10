@@ -1027,7 +1027,8 @@
                 doc.setTextColor(...PDF_INK);
                 const summaryRows = [['Nettobetrag', formatCurrency(offer.subtotal || 0)]];
                 if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
-                    summaryRows.push([`Rabatt (${((offer.discountRate || 0) * 100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
+                    const _dr = (offer.discountRate || 0) > 1 ? (offer.discountRate || 0) / 100 : (offer.discountRate || 0);
+                    summaryRows.push([`Rabatt (${(_dr * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
                 }
                 if (offer.vatEnabled) {
                     summaryRows.push([`MwSt. (${((offer.vatRate || 0) * 100).toFixed(0)}%)`, formatCurrency(offer.vatAmount || 0)]);
@@ -1448,6 +1449,14 @@
                         }
                     }
                 } catch (e) { /* Migration optional */ }
+                try {
+                    for (const o of await db.getAll('offers')) {
+                        if (typeof o.discountRate === 'number' && o.discountRate > 1) {
+                            o.discountRate = Math.min(1, o.discountRate / 100);
+                            await db.put('offers', o);
+                        }
+                    }
+                } catch (e) { /* Reparatur optional */ }
                 try { await loadLearned(); if (typeof KTM_LOGO_DEFAULT !== 'undefined') { const curLogo = await getSetting('companyLogo', ''); if (!curLogo || (typeof KTM_LOGO_OLD_PREFIX !== 'undefined' && curLogo.startsWith(KTM_LOGO_OLD_PREFIX))) { await setSetting('companyLogo', KTM_LOGO_DEFAULT); } } } catch (e) { /* optional */ }
 
                 if (navigator.onLine) {
@@ -2082,7 +2091,7 @@
                 <label style="display:flex;align-items:center;gap:6px;">
                     <input type="checkbox" id="offerDiscountToggle" ${offerSettings.discountEnabled ? 'checked' : ''}> Rabatt
                 </label>
-                <input type="number" id="offerDiscountRate" value="${offerSettings.discountRate}" step="0.5" min="0" max="100" ${offerSettings.discountEnabled ? '' : 'disabled'}>
+                <input type="number" id="offerDiscountRate" value="${Math.min(100, Math.max(0, offerSettings.discountRate))}" step="0.5" min="0" max="100" ${offerSettings.discountEnabled ? '' : 'disabled'}>
             </div>
         </div>
 
@@ -2147,7 +2156,8 @@
             }
 
             const discountEnabled = overlay.querySelector('#offerDiscountToggle').checked;
-            const discountRate = discountEnabled ? (parseFloat(overlay.querySelector('#offerDiscountRate').value) || 0) : 0;
+            // Eingabe ist PROZENT (0-100) - hart begrenzen, damit keine 3000 % entstehen
+            const discountRate = discountEnabled ? Math.min(100, Math.max(0, parseFloat(overlay.querySelector('#offerDiscountRate').value) || 0)) : 0;
 
             await saveOfferDefault('autoNumber', autoNumber);
             await saveOfferDefault('vatEnabled', vatEnabled);
@@ -2167,7 +2177,7 @@
                 vatEnabled,
                 vatRate,
                 discountEnabled,
-                discountRate,
+                discountRate: discountRate / 100,   // am Datensatz IMMER als Bruch (0,30 = 30 %)
                 contactPerson: overlay.querySelector('#offerContact').value.trim(),
                 contactPhone: overlay.querySelector('#offerPhone').value.trim(),
                 contactEmail: overlay.querySelector('#offerEmail').value.trim(),
