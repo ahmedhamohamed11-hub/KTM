@@ -633,6 +633,7 @@
                                 <div class="mat-card-title">${escapeHtml(c)}</div>
                                 <div class="mat-card-sub">${list.length} Produkt${list.length !== 1 ? 'e' : ''}${upd > 0 ? ' · Stand ' + formatDate(new Date(upd).toISOString()) : ''}</div>
                             </div>
+                            <button class="mat-cat-edit" title="Kategorie verwalten" onclick="event.stopPropagation(); app.openCategoryManageModal('${escapeHtml(c).replace(/'/g, "\\'")}')">${icon('edit')}</button>
                             <div class="mat-card-arrow">›</div>
                         </div>`;
                     }).join('')}</div>` : '<div class="empty-note" style="padding:30px;">Noch keine Materialien – lege welche an oder importiere den Katalog.</div>';

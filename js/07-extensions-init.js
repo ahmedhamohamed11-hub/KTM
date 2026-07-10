@@ -344,6 +344,65 @@
                 app.navigate('projects', projectId);
             },
 
+            // ---------- Kategorie verwalten: umbenennen, verschieben, löschen ----------
+            async openCategoryManageModal(cat) {
+                const materials = await db.getAll('materials');
+                const inCat = materials.filter(m => (m.category || 'Ohne Kategorie') === cat);
+                const otherCats = [...new Set(materials.map(m => m.category || 'Ohne Kategorie'))].filter(c => c !== cat).sort();
+                const known = ['Außengeräte', 'Innengeräte', 'Multisplit-Systeme', 'VRF-Systeme', 'Kupferrohr', 'Isolierung', 'Elektromaterial', 'Kabel', 'Kondensat', 'Befestigung', 'Montagematerial', 'Werkzeug', 'Kältemittel', 'Arbeitszeit', 'Ersatzteile', 'Steuerungen', 'Zubehör'];
+                const targets = [...new Set([...otherCats, ...known.filter(k => k !== cat)])];
+
+                const modal = showModal(
+                    `Kategorie verwalten – ${escapeHtml(cat)}`,
+                    `
+                        <div class="form-card">
+                            <div class="form-card-title">✏️ Umbenennen</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Alle ${inCat.length} Produkte dieser Kategorie erhalten den neuen Namen.</div>
+                            <div class="form-group"><label>Neuer Name</label><input type="text" id="catNewName" value="${escapeHtml(cat)}" list="dl_catNames"><datalist id="dl_catNames">${known.map(k => `<option value="${escapeHtml(k)}">`).join('')}</datalist></div>
+                            <button class="btn btn-primary btn-sm" id="catRenameBtn">Umbenennen</button>
+                        </div>
+                        <div class="form-card">
+                            <div class="form-card-title">📦 Alle Produkte verschieben</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Falsch einsortiert? Verschiebe alle ${inCat.length} Produkte in eine andere Kategorie – diese Kategorie verschwindet danach.</div>
+                            <div class="form-group"><label>Ziel-Kategorie</label>
+                                <input type="text" id="catMoveTarget" list="dl_catTargets" placeholder="Bestehende wählen oder neue eintippen...">
+                                <datalist id="dl_catTargets">${targets.map(t => `<option value="${escapeHtml(t)}">`).join('')}</datalist>
+                            </div>
+                            <button class="btn btn-outline btn-sm" id="catMoveBtn">Alle verschieben</button>
+                        </div>
+                        <div class="form-card" style="border-color:var(--danger);">
+                            <div class="form-card-title">🗑 Kategorie löschen</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Die ${inCat.length} Produkte werden dabei NICHT gelöscht, sondern nach „Zubehör" verschoben. Zum Löschen einzelner Produkte: Produkt öffnen → Löschen.</div>
+                            <button class="btn btn-danger btn-sm" id="catDeleteBtn">Kategorie auflösen</button>
+                        </div>
+                    `,
+                    null, null, { wide: true }
+                );
+
+                const bulkMove = async (target, msg) => {
+                    for (const m of inCat) { m.category = target; await db.put('materials', m); }
+                    modal.remove();
+                    showToast(msg, 'success');
+                    listFilters.materials.cat = ''; listFilters.materials.level = 'cats';
+                    renderMaterials();
+                };
+                modal.querySelector('#catRenameBtn').addEventListener('click', async () => {
+                    const name = modal.querySelector('#catNewName').value.trim();
+                    if (!name || name === cat) { showToast('Bitte einen neuen Namen eingeben.', 'info'); return; }
+                    await bulkMove(name, `Kategorie „${cat}" heißt jetzt „${name}" (${inCat.length} Produkte aktualisiert).`);
+                });
+                modal.querySelector('#catMoveBtn').addEventListener('click', async () => {
+                    const target = modal.querySelector('#catMoveTarget').value.trim();
+                    if (!target) { showToast('Bitte Ziel-Kategorie wählen.', 'info'); return; }
+                    if (!confirm(`Alle ${inCat.length} Produkte von „${cat}" nach „${target}" verschieben?`)) return;
+                    await bulkMove(target, `${inCat.length} Produkte nach „${target}" verschoben.`);
+                });
+                modal.querySelector('#catDeleteBtn').addEventListener('click', async () => {
+                    if (!confirm(`Kategorie „${cat}" auflösen und alle ${inCat.length} Produkte nach „Zubehör" verschieben?`)) return;
+                    await bulkMove('Zubehör', `Kategorie „${cat}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
+                });
+            },
+
             // ---------- Material-Katalog: Navigation ----------
             matNav(level) {
                 const F = listFilters.materials;
