@@ -465,7 +465,7 @@
                 const m = materials.find(mm => String(mm.id) === String(x.materialId));
                 const q = Number(x.quantity) || 0;
                 ek += q * (Number(m?.purchasePrice) || 0);
-                vk += q * (x.price !== undefined && x.price !== null ? Number(x.price) : (Number(m?.sellingPrice) || 0));
+                vk += q * (x.price !== undefined && x.price !== null ? Number(x.price) : matUnitPrice(m, x.unit || m?.unit || 'Stk'));
             }
             const fm = v => String(Math.round(v * 10) / 10).replace('.', ',');
             const chips = [
@@ -591,7 +591,7 @@
                             changed++;
                         }
                     } else {
-                        await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || '', price: Number(mat.sellingPrice) || 0, note: `${roomName} – automatisch` });
+                        await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || '', price: matUnitPrice(mat, w.unit), note: `${roomName} – automatisch` });
                         changed++;
                     }
                 }

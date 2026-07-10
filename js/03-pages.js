@@ -442,12 +442,14 @@
                                         <table>
                                             <thead><tr><th>Material</th><th>Größe</th><th style="width:96px;">Menge</th><th style="width:92px;">Einheit</th><th>Raum</th><th style="width:104px;">Preis/Einh.</th><th style="text-align:right;">Gesamt</th><th>Bemerkung</th><th></th></tr></thead>
                                             <tbody>
-                                                ${pm.map(x => {
-                                                    const mat = materials.find(m => String(m.id) === String(x.materialId));
-                                                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
-                                                    const lineTotal = (Number(x.quantity) || 0) * price;
-                                                    return `<tr>
-                                                        <td><strong>${escapeHtml(mat?.name || x.name || 'Material')}</strong></td>
+                                                ${(() => {
+                                                    const rowPrice = (x, mat) => x.price !== undefined && x.price !== null ? Number(x.price) : matUnitPrice(mat, x.unit || mat?.unit || 'Stk');
+                                                    const renderRow = (x) => {
+                                                        const mat = materials.find(m => String(m.id) === String(x.materialId));
+                                                        const price = rowPrice(x, mat);
+                                                        const lineTotal = (Number(x.quantity) || 0) * price;
+                                                        return `<tr>
+                                                        <td><strong class="pm-matlink" title="Im Katalog ansehen / Kategorie ändern" onclick="app.openMaterialDetail(${idJS(x.materialId)})">${escapeHtml(mat?.name || x.name || 'Material')}</strong>${mat?.category ? `<div class="pm-matcat">📂 ${escapeHtml(mat.category)}${mat.series ? ' › ' + escapeHtml(mat.series) : ''}</div>` : ''}</td>
                                                         <td>${escapeHtml(x.size || mat?.size || '-')}</td>
                                                         <td><input type="number" inputmode="decimal" step="any" min="0" value="${x.quantity ?? 0}" style="padding:6px 8px;text-align:center;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'quantity', this.value)"></td>
                                                         <td><select style="padding:6px 5px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'unit', this.value)">${UNITS.map(u => `<option value="${u}" ${(x.unit || 'Stk') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></td>
@@ -457,13 +459,37 @@
                                                         <td><input type="text" value="${escapeHtml(x.note || '')}" placeholder="..." style="padding:6px 8px;min-width:100px;" onchange="app.updateProjectMaterial(${idJS(x.id)}, 'note', this.value)"></td>
                                                         <td><button class="btn btn-sm btn-danger" onclick="app.deleteProjectMaterial(${idJS(x.id)}, ${idJS(project.id)})">${icon('trash')}</button></td>
                                                     </tr>`;
-                                                }).join('') || '<tr><td colspan="9" class="empty-note">Die Materialliste entsteht automatisch aus den Räumen – lege Räume mit Leitungsdaten an oder klicke „Material berechnen".</td></tr>'}
+                                                    };
+                                                    // Nach Raum gruppieren (Raum-Reihenfolge, dann "Projekt gesamt")
+                                                    const roomOrder = [...(project.rooms || []).map(r => String(r.id)), null];
+                                                    const groups = new Map();
+                                                    for (const x of pm) {
+                                                        const key = x.roomId != null && roomOrder.includes(String(x.roomId)) ? String(x.roomId) : null;
+                                                        if (!groups.has(key)) groups.set(key, []);
+                                                        groups.get(key).push(x);
+                                                    }
+                                                    let out = '';
+                                                    for (const key of roomOrder) {
+                                                        const list = groups.get(key);
+                                                        if (!list || !list.length) continue;
+                                                        list.sort((a, b) => {
+                                                            const ma = materials.find(m => String(m.id) === String(a.materialId));
+                                                            const mb = materials.find(m => String(m.id) === String(b.materialId));
+                                                            return (ma?.name || '').localeCompare(mb?.name || '');
+                                                        });
+                                                        const room = (project.rooms || []).find(r => String(r.id) === key);
+                                                        const sum = list.reduce((s, x) => s + (Number(x.quantity) || 0) * rowPrice(x, materials.find(m => String(m.id) === String(x.materialId))), 0);
+                                                        out += `<tr class="pm-group"><td colspan="6">${room ? '🏠 ' + escapeHtml(room.name || 'Raum') : '📦 Projekt gesamt'} <small>· ${list.length} Position${list.length !== 1 ? 'en' : ''}</small></td><td style="text-align:right;font-weight:800;">${formatCurrency(sum)}</td><td colspan="2"></td></tr>`;
+                                                        out += list.map(renderRow).join('');
+                                                    }
+                                                    return out;
+                                                })() || '<tr><td colspan="9" class="empty-note">Die Materialliste entsteht automatisch aus den Räumen – lege Räume mit Leitungsdaten an oder klicke „Material berechnen".</td></tr>'}
                                             </tbody>
                                             ${pm.length ? `<tfoot><tr>
                                                 <td colspan="6" style="text-align:right;font-weight:700;">Gesamtsumme</td>
                                                 <td style="text-align:right;font-weight:800;color:var(--accent);white-space:nowrap;">${formatCurrency(pm.reduce((s, x) => {
                                                     const mat = materials.find(m => String(m.id) === String(x.materialId));
-                                                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
+                                                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : matUnitPrice(mat, x.unit || mat?.unit || 'Stk');
                                                     return s + (Number(x.quantity) || 0) * price;
                                                 }, 0))}</td><td colspan="2"></td>
                                             </tr></tfoot>` : ''}
@@ -552,6 +578,13 @@
                     const projRooms = allRooms.filter(r => String(r.projectId) === String(selectedProjectId));
                     setTimeout(() => {
                         try { if (proj2) initPlanEditor(proj2, projRooms); } catch (e) { console.warn('Plan-Editor:', e); }
+                        // Scroll-Position halten (z.B. nach Preis-/Mengen-Eingabe in der Materialliste)
+                        if (window.__ktmKeepScroll != null) {
+                            const sc = document.querySelector('.content-scroll') || contentArea;
+                            const y = window.__ktmKeepScroll;
+                            window.__ktmKeepScroll = null;
+                            requestAnimationFrame(() => { sc.scrollTop = y; });
+                        }
                         const d = document.getElementById('projectDetail');
                         if (d && typeof d.scrollIntoView === 'function') d.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }, 60);
@@ -571,6 +604,23 @@
             'Kältemittel': '🧪', 'Arbeitszeit': '⏱️', 'Ersatzteile': '⚙️', 'Steuerungen': '🎛️', 'Zubehör': '📦'
         };
         const matCatIcon = c => MAT_CAT_ICONS[c] || '📦';
+
+        // Einheiten-Preis: Rollen-/Bundware (z.B. Kupferrohr 50 m Bund) wird
+        // bei Verwendung in Metern automatisch auf den METERPREIS umgerechnet.
+        function matBundleLength(mat) {
+            if (!mat) return 0;
+            if (Number(mat.bundleLength) > 0) return Number(mat.bundleLength);
+            const m = `${mat.notes || ''} ${mat.name || ''}`.match(/(\d+(?:[.,]\d+)?)\s*m\s*Bund/i);
+            return m ? parseFloat(m[1].replace(',', '.')) : 0;
+        }
+        function matUnitPrice(mat, unit) {
+            const base = Number(mat?.sellingPrice) || 0;
+            if (unit === 'm' && mat && ['Rolle', 'Bund'].includes(mat.unit || '')) {
+                const bl = matBundleLength(mat);
+                if (bl > 0) return Math.round((base / bl) * 100) / 100;
+            }
+            return base;
+        }
 
         function matStockStatus(m) {
             const s = Number(m.stock) || 0;

@@ -43,6 +43,7 @@
   skontoRate: 'skonto_rate',
   skontoDays: 'skonto_days',
   minStock: 'min_stock',
+  bundleLength: 'bundle_length',
 
   offerNumber: 'offer_number',
   offerDate: 'offer_date',

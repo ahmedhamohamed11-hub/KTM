@@ -559,6 +559,17 @@
         .pm-row .btn { justify-content: center; }
         @media (max-width: 480px) { .pm-row { grid-template-columns: 1fr 64px 72px 38px; } }
 
+        /* Materialliste: Raum-Gruppen + Katalog-Link */
+        tr.pm-group td {
+            background: var(--accent-light); color: var(--accent);
+            font-weight: 800; font-size: 12.5px; letter-spacing: .02em;
+            border-top: 2px solid var(--accent); padding: 9px 16px;
+        }
+        tr.pm-group small { color: var(--text-muted); font-weight: 600; }
+        .pm-matlink { cursor: pointer; }
+        .pm-matlink:hover { color: var(--accent); text-decoration: underline; }
+        .pm-matcat { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
         /* Tabellen-Fußzeile (Summen) */
         tfoot td { padding: 12px 16px; border-top: 2px solid var(--border); background: var(--bg-tertiary); font-size: 13.5px; }
 

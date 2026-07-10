@@ -178,12 +178,33 @@
                     pm[field] = value;
                 }
                 await db.put('projectMaterials', pm);
-                // Zeilensummen/Gesamtsumme aktualisieren
-                if (field === 'quantity' || field === 'price') app.navigate('projects', pm.projectId);
+
+                // PREIS-ÜBERNAHME: gleicher Preis für alle Positionen desselben Materials
+                // (gleiche Einheit) im Projekt + Katalog-VK aktualisieren, wenn Einheit passt
+                if (field === 'price') {
+                    const siblings = ((await db.getByIndex('projectMaterials', 'projectId', pm.projectId)) || [])
+                        .filter(x => String(x.id) !== String(pm.id)
+                            && String(x.materialId) === String(pm.materialId)
+                            && (x.unit || 'Stk') === (pm.unit || 'Stk'));
+                    for (const s of siblings) { s.price = pm.price; await db.put('projectMaterials', s); }
+                    const mat = await db.get('materials', pm.materialId);
+                    if (mat && (mat.unit || 'Stk') === (pm.unit || 'Stk') && Number(mat.sellingPrice) !== pm.price) {
+                        mat.sellingPrice = pm.price;
+                        await db.put('materials', mat);
+                    }
+                    if (siblings.length) showToast(`Preis für ${siblings.length + 1} Position(en) übernommen.`, 'success');
+                }
+
+                // Neu rendern OHNE nach oben zu springen
+                if (field === 'quantity' || field === 'price' || field === 'roomId') {
+                    window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
+                    app.navigate('projects', pm.projectId);
+                }
             },
 
             async deleteProjectMaterial(id, projectId) {
                 await db.delete('projectMaterials', id);
+                window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
                 app.navigate('projects', projectId);
             },
 
@@ -334,7 +355,7 @@
                 let added = 0;
                 for (const w of wanted) {
                     const mat = await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
-                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId: null, quantity: w.qty, unit: w.unit, size: w.size || '', price: Number(mat.sellingPrice) || 0, note: w.note || 'Automatisch berechnet' });
+                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId: null, quantity: w.qty, unit: w.unit, size: w.size || '', price: matUnitPrice(mat, w.unit), note: w.note || 'Automatisch berechnet' });
                     added++;
                 }
 
@@ -517,7 +538,7 @@
                         await db.add('projectMaterials', {
                             projectId, materialId: m.id, roomId: roomId ? parseId(roomId) : null,
                             quantity: qty, unit: overlay.querySelector('#amp_unit').value,
-                            size: m.size || '', price: Number(m.sellingPrice) || 0, note: 'Aus Katalog'
+                            size: m.size || '', price: matUnitPrice(m, overlay.querySelector('#amp_unit').value), note: 'Aus Katalog'
                         });
                         overlay.remove();
                         showToast(`${qty} ${overlay.querySelector('#amp_unit')?.value || ''} ${m.name} zum Projekt hinzugefügt.`.trim(), 'success');
@@ -628,7 +649,7 @@
                                 const rec = await db.get('projectMaterials', pmid);
                                 if (rec) { rec.materialId = parseId(matId); rec.quantity = qty; rec.unit = unit; await db.put('projectMaterials', rec); keptIds.add(String(pmid)); }
                             } else {
-                                const newId = await db.add('projectMaterials', { projectId, materialId: parseId(matId), roomId: rid, quantity: qty, unit, size: mat?.size || '', price: Number(mat?.sellingPrice) || 0, note: name });
+                                const newId = await db.add('projectMaterials', { projectId, materialId: parseId(matId), roomId: rid, quantity: qty, unit, size: mat?.size || '', price: matUnitPrice(mat, unit), note: name });
                                 keptIds.add(String(newId));
                             }
                         }
@@ -729,7 +750,7 @@
                     if (manualMatIds.has(String(mat.id))) continue; // vom Benutzer bereits manuell erfasst
                     const dup = existing.some(x => String(x.materialId) === String(mat.id));
                     if (dup) continue;
-                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || '', price: Number(mat.sellingPrice) || 0, note: `${roomName} – automatisch` });
+                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || '', price: matUnitPrice(mat, w.unit), note: `${roomName} – automatisch` });
                     added++;
                 }
                 return added;
@@ -1243,7 +1264,7 @@
                 const totalMeters = pm.filter(x => (x.unit || '') === 'm').reduce((sum, x) => sum + (Number(x.quantity) || 0), 0);
                 const totalCost = pm.reduce((sum, x) => {
                     const mat = materials.find(m => String(m.id) === String(x.materialId));
-                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
+                    const price = x.price !== undefined && x.price !== null ? Number(x.price) : matUnitPrice(mat, x.unit || mat?.unit || 'Stk');
                     return sum + (Number(x.quantity) || 0) * price;
                 }, 0);
                 const keyLines = [
@@ -1347,7 +1368,7 @@
                         body: pm.map(x => {
                             const mat = materials.find(m => String(m.id) === String(x.materialId));
                             const room = rooms.find(r => String(r.id) === String(x.roomId));
-                            const price = x.price !== undefined && x.price !== null ? Number(x.price) : (Number(mat?.sellingPrice) || 0);
+                            const price = x.price !== undefined && x.price !== null ? Number(x.price) : matUnitPrice(mat, x.unit || mat?.unit || 'Stk');
                             return [mat?.name || x.name || 'Material', x.size || mat?.size || '–', String(x.quantity ?? ''), x.unit || 'Stk', room?.name || 'Gesamt', formatCurrency(price), formatCurrency((Number(x.quantity) || 0) * price)];
                         }),
                         foot: [['Gesamtsumme', '', '', '', '', '', formatCurrency(totalCost)]],
@@ -1443,10 +1464,16 @@
                 try {
                     const mats = await db.getAll('materials');
                     for (const m of mats) {
+                        let changed = false;
                         if (!m.series && m.notes) {
                             const sm = String(m.notes).match(/Serie ([^·]+)/);
-                            if (sm) { m.series = sm[1].trim(); await db.put('materials', m); }
+                            if (sm) { m.series = sm[1].trim(); changed = true; }
                         }
+                        if (!(Number(m.bundleLength) > 0)) {
+                            const bm = `${m.notes || ''} ${m.name || ''}`.match(/(\d+(?:[.,]\d+)?)\s*m\s*Bund/i);
+                            if (bm) { m.bundleLength = parseFloat(bm[1].replace(',', '.')); changed = true; }
+                        }
+                        if (changed) await db.put('materials', m);
                     }
                 } catch (e) { /* Migration optional */ }
                 try {
@@ -1880,6 +1907,9 @@
                             <div class="form-group"><label>Mindestbestand (Warnung bei Unterschreitung)</label><input type="number" inputmode="decimal" step="any" min="0" id="matMinStock" value="${mat?.minStock ?? ''}" placeholder="z. B. 10"></div>
                         </div>
                         <div class="form-row">
+                            <div class="form-group"><label>Gebinde (m je Rolle/Bund) <small>– für automatischen Meterpreis</small></label><input type="number" inputmode="decimal" step="any" min="0" id="matBundle" value="${mat?.bundleLength ?? ''}" placeholder="z. B. 50"></div>
+                        </div>
+                        <div class="form-row">
                             <div class="form-group"><label>Kategorie</label>
                                 <select id="matCategory">
                                     ${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}" ${mat?.category === c.name ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
@@ -1904,6 +1934,7 @@
                             size: overlay.querySelector('#matSize').value.trim(),
                             stock: parseFloat(String(overlay.querySelector('#matStock').value).replace(',', '.')) || 0,
                             minStock: parseFloat(String(overlay.querySelector('#matMinStock').value).replace(',', '.')) || 0,
+                            bundleLength: parseFloat(String(overlay.querySelector('#matBundle').value).replace(',', '.')) || 0,
                             category: overlay.querySelector('#matCategory').value,
                             unit: overlay.querySelector('#matUnit').value.trim() || 'Stk',
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
