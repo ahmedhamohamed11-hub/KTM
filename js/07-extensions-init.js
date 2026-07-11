@@ -365,6 +365,134 @@
                 app.navigate('projects', projectId);
             },
 
+            // ---------- Angebots-Variante: gleiche Positionen, andere Klimamarke ----------
+            async createOfferVariant(offerId) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) return;
+                const mats = await db.getAll('materials');
+                const isDevice = (p) => {
+                    const m = mats.find(x => String(x.id) === String(p.materialId));
+                    const cat = m?.category || p.category || '';
+                    return ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Multisplit-Systeme'].includes(cat);
+                };
+                const devicePos = (offer.positions || []).filter(isDevice);
+                if (devicePos.length === 0) { showToast('Dieses Angebot enthält keine Klimageräte zum Tauschen.', 'info'); return; }
+
+                // Verfügbare Marken aus dem Katalog (nur Geräte-Kategorien)
+                const brands = [...new Set(mats
+                    .filter(m => ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Multisplit-Systeme'].includes(m.category) && m.manufacturer)
+                    .map(m => m.manufacturer))].sort();
+                const currentBrands = [...new Set(devicePos.map(p => {
+                    const m = mats.find(x => String(x.id) === String(p.materialId));
+                    return m?.manufacturer || p.manufacturer || '';
+                }).filter(Boolean))];
+
+                const modal = showModal(
+                    `Variante von ${escapeHtml(offer.offerNumber || 'Angebot')}`,
+                    `
+                        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+                            Es wird ein <strong>zweites Angebot</strong> mit identischen Positionen erstellt –
+                            nur die Klimageräte werden auf eine andere Marke umgestellt.
+                            Kupferrohr, Kabel, Montage und alles Übrige bleiben unverändert.
+                        </div>
+                        <div class="form-group">
+                            <label>Neue Klimamarke *</label>
+                            <select id="varBrand">
+                                <option value="">– Marke wählen –</option>
+                                ${brands.filter(b => !currentBrands.includes(b)).map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-card" style="margin-top:4px;">
+                            <div class="form-card-title">Diese Geräte werden getauscht (${devicePos.length})</div>
+                            <div id="varPreview" style="font-size:12.5px;color:var(--text-muted);">
+                                ${devicePos.map(p => `<div>• ${escapeHtml(p.name)} <span style="color:var(--text-muted);">(${p.quantity} ${escapeHtml(p.unit || 'Stk')})</span></div>`).join('')}
+                            </div>
+                        </div>
+                    `,
+                    async (overlay) => {
+                        const brand = overlay.querySelector('#varBrand').value;
+                        if (!brand) { showToast('Bitte eine Marke wählen.', 'error'); return; }
+
+                        const kwOf = (v) => parseFloat(String(v || '').replace(',', '.')) || 0;
+                        const newPositions = [];
+                        const notFound = [];
+                        for (const p of offer.positions || []) {
+                            if (!isDevice(p)) { newPositions.push({ ...p }); continue; }
+                            const old = mats.find(x => String(x.id) === String(p.materialId));
+                            const cat = old?.category || p.category;
+                            const kw = kwOf(old?.size);
+                            // Passendes Gerät der neuen Marke: gleiche Kategorie, gleiche/nächste kW
+                            const cands = mats.filter(m => m.manufacturer === brand && m.category === cat);
+                            let repl = cands.find(m => kwOf(m.size) === kw);
+                            if (!repl && kw > 0 && cands.length) {
+                                repl = cands.slice().sort((a, b) => Math.abs(kwOf(a.size) - kw) - Math.abs(kwOf(b.size) - kw))[0];
+                            }
+                            if (!repl) { notFound.push(p.name); newPositions.push({ ...p }); continue; }
+                            newPositions.push({
+                                ...p,
+                                materialId: repl.id,
+                                name: repl.name,
+                                manufacturer: repl.manufacturer || brand,
+                                articleNumber: repl.articleNumber || '',
+                                category: repl.category,
+                                price: matUnitPrice(repl, p.unit || repl.unit || 'Stk'),
+                                description: [repl.size, repl.series].filter(Boolean).join(' · ')
+                            });
+                        }
+
+                        const net = newPositions.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
+                        const dRate = (offer.discountRate || 0) > 1 ? (offer.discountRate || 0) / 100 : (offer.discountRate || 0);
+                        const dAmount = offer.discountEnabled ? net * dRate : 0;
+                        const netAfter = net - dAmount;
+                        const vatRate = offer.vatRate ?? 0.2;
+                        const vat = offer.vatEnabled === false ? 0 : netAfter * vatRate;
+
+                        const num = await getNextAutoNumber();
+                        const variant = {
+                            ...offer,
+                            offerNumber: num,
+                            positions: newPositions,
+                            netPrice: net,
+                            discountAmount: dAmount,
+                            netAfterDiscount: netAfter,
+                            vatAmount: vat,
+                            totalPrice: netAfter + vat,
+                            status: 'Angebot offen',
+                            variantOf: String(offer.offerNumber || ''),
+                            notes: `${offer.notes || ''}${offer.notes ? '\n' : ''}Variante mit ${brand}-Klimageräten.`.trim()
+                        };
+                        delete variant.id; delete variant._synced; delete variant.createdAt; delete variant.updatedAt;
+                        await db.add('offers', variant);
+                        overlay.remove();
+                        if (notFound.length) {
+                            showToast(`Variante ${num} erstellt. Für ${notFound.length} Gerät(e) gibt es bei ${brand} keine Entsprechung – Originalgerät beibehalten.`, 'info');
+                        } else {
+                            showToast(`Variante ${num} mit ${brand}-Geräten erstellt. Beide Angebote können jetzt gesendet werden.`, 'success');
+                        }
+                        renderOffers();
+                    },
+                    'Variante erstellen'
+                );
+
+                // Live-Vorschau: welche Geräte werden womit ersetzt?
+                modal.querySelector('#varBrand').addEventListener('change', (e) => {
+                    const brand = e.target.value;
+                    const box = modal.querySelector('#varPreview');
+                    if (!brand) { box.innerHTML = devicePos.map(p => `<div>• ${escapeHtml(p.name)}</div>`).join(''); return; }
+                    const kwOf = (v) => parseFloat(String(v || '').replace(',', '.')) || 0;
+                    box.innerHTML = devicePos.map(p => {
+                        const old = mats.find(x => String(x.id) === String(p.materialId));
+                        const kw = kwOf(old?.size);
+                        const cands = mats.filter(m => m.manufacturer === brand && m.category === (old?.category || p.category));
+                        let repl = cands.find(m => kwOf(m.size) === kw)
+                            || (kw > 0 && cands.length ? cands.slice().sort((a, b) => Math.abs(kwOf(a.size) - kw) - Math.abs(kwOf(b.size) - kw))[0] : null);
+                        return repl
+                            ? `<div>• ${escapeHtml(p.name)} <strong style="color:var(--accent);">→ ${escapeHtml(repl.name)}</strong> <span>(${formatCurrency(matUnitPrice(repl, p.unit || 'Stk'))})</span></div>`
+                            : `<div>• ${escapeHtml(p.name)} <span style="color:var(--warning);">→ keine Entsprechung bei ${escapeHtml(brand)}, bleibt unverändert</span></div>`;
+                    }).join('');
+                });
+            },
+
             // ---------- Materialliste: Sortierung & Gruppierung ----------
             pmSort(key) {
                 const V = window.__pmView = window.__pmView || { groupBy: 'raum', sort: '', dir: 1 };
@@ -1099,17 +1227,6 @@
                 if (projLines.length === 0) projLines.push('–');
                 y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Projekt / Baustelle', projLines);
 
-                if (offer.coolingRecommendation) {
-                    doc.setFillColor(...PDF_LIGHT);
-                    doc.roundedRect(mx, y, pw - mx * 2, 11, 2.5, 2.5, 'F');
-                    pdfSnowflake(doc, mx + 6.5, y + 5.5, 3.2, PDF_TEAL, 0.5);
-                    doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(9.5);
-                    doc.setTextColor(...PDF_TEAL);
-                    doc.text(`Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, mx + 13, y + 7);
-                    y += 16;
-                }
-
                 const rows = (offer.positions || []).map((p, i) => [
                     String(i + 1),
                     p.name || '',
@@ -1123,15 +1240,15 @@
                 doc.autoTable({
                     startY: y,
                     margin: { left: mx, right: mx, bottom: 26 },
-                    head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
+                    head: [['Nr.', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
                     body: rows,
                     ...PDF_TABLE_STYLES,
                     columnStyles: {
-                        0: { cellWidth: 9, halign: 'center' },
-                        3: { cellWidth: 14, halign: 'center' },
+                        0: { cellWidth: 12, halign: 'center' },
+                        3: { cellWidth: 15, halign: 'center' },
                         4: { cellWidth: 13, halign: 'center' },
                         5: { cellWidth: 25, halign: 'right' },
-                        6: { cellWidth: 25, halign: 'right', fontStyle: 'bold' }
+                        6: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }
                     },
                     willDrawPage: () => pdfWatermark(doc),
                     didDrawPage: () => pdfFooterOnce(doc, co)
@@ -1243,7 +1360,7 @@
                 // Materialliste: strukturiert aus Projekt-Material, sonst aus den Textzeilen
                 let head, body;
                 if (pm.length > 0) {
-                    head = [['Pos', 'Material', 'Größe', 'Menge', 'Einheit', 'Raum / Bereich', 'Bemerkung']];
+                    head = [['Nr.', 'Material', 'Größe', 'Menge', 'Einheit', 'Raum / Bereich', 'Bemerkung']];
                     body = pm.map((x, i) => {
                         const mat = materials.find(m => String(m.id) === String(x.materialId));
                         const room = rooms.find(r => String(r.id) === String(x.roomId));
@@ -1258,7 +1375,7 @@
                         ];
                     });
                 } else {
-                    head = [['Pos', 'Artikel']];
+                    head = [['Nr.', 'Artikel']];
                     body = String(order.items || '').split('\n').map(l => l.trim()).filter(Boolean).map((l, i) => [String(i + 1), l]);
                 }
 
@@ -2719,16 +2836,6 @@ async exportOfferPDF(offerId) {
     if (offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
     custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
     y += 6;
-
-    if (offer.coolingRecommendation) {
-        doc.setFillColor(...lightGray);
-        doc.roundedRect(marginX, y, pageWidth - marginX*2, 10, 2, 2, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9.5);
-        doc.setTextColor(...accentColor);
-        doc.text(`❄ Empfohlene Kälteleistung: ${offer.coolingRecommendation} kW`, marginX + 4, y + 6.5);
-        y += 16;
-    }
 
     const rows = (offer.positions || []).map((p, i) => [
         String(i + 1),

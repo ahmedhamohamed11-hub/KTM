@@ -280,10 +280,10 @@
                 doc.autoTable({
                     startY: y,
                     margin: { left: mx, right: mx, bottom: 26 },
-                    head: [['Pos', 'Leistung / Artikel', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
+                    head: [['Nr.', 'Leistung / Artikel', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
                     body: rows,
                     ...PDF_TABLE_STYLES,
-                    columnStyles: { 0: { cellWidth: 9, halign: 'center' }, 2: { cellWidth: 14, halign: 'center' }, 3: { cellWidth: 13, halign: 'center' }, 4: { cellWidth: 25, halign: 'right' }, 5: { cellWidth: 25, halign: 'right', fontStyle: 'bold' } },
+                    columnStyles: { 0: { cellWidth: 12, halign: 'center' }, 2: { cellWidth: 15, halign: 'center' }, 3: { cellWidth: 13, halign: 'center' }, 4: { cellWidth: 25, halign: 'right' }, 5: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } },
                     willDrawPage: () => pdfWatermark(doc),
                     didDrawPage: () => pdfFooterOnce(doc, co)
                 });
