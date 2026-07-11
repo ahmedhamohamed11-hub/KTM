@@ -708,6 +708,47 @@
                     });
                 };
                 modal.querySelectorAll('.pm-row').forEach(bindRow);
+                // ---------- Live-Automatik im Formular ----------
+                // Rohrlänge tippen -> Kommkabel/Kondensat/Kabelkanal/Stromkabel sofort
+                // mitgefüllt (bleiben editierbar: eigene Eingabe stoppt die Automatik)
+                const $f = (k) => modal.querySelector('#rt_' + k);
+                const autoKeys = ['commCableLength', 'condensateLine', 'cableDuct', 'powerCableLength'];
+                for (const k of autoKeys) {
+                    const el = $f(k);
+                    if (!el) continue;
+                    el.dataset.auto = el.value === '' ? '1' : '0';
+                    el.addEventListener('input', () => { el.dataset.auto = '0'; });
+                }
+                $f('pipeLength')?.addEventListener('input', () => {
+                    const L = parseFloat(String($f('pipeLength').value).replace(',', '.'));
+                    if (!(L > 0)) return;
+                    const set = (k, val) => { const el = $f(k); if (el && el.dataset.auto !== '0') { el.value = val; el.dataset.auto = '1'; } };
+                    set('commCableLength', L);      // gleiche Strecke bis zum Außengerät
+                    set('condensateLine', L);       // Kondensat läuft mit zur Außeneinheit
+                    set('cableDuct', L);            // Startwert, bei Bedarf anpassen
+                    set('powerCableLength', L + 1); // + Anschlussreserve
+                });
+                // Geräte-kW -> Rohrdimensionen vorschlagen (nur wenn noch leer)
+                $f('devCapacity')?.addEventListener('input', () => {
+                    const kw = parseFloat(String($f('devCapacity').value).replace(',', '.'));
+                    const a = modal.querySelector('#rt_pipeDimensionFluessig');
+                    const b = modal.querySelector('#rt_pipeDimensionSaug');
+                    if (!(kw > 0) || !a || !b || a.value || b.value) return;
+                    const dims = kw <= 3.5 ? ['1/4', '3/8'] : kw <= 5.0 ? ['1/4', '1/2'] : kw <= 7.1 ? ['3/8', '5/8'] : ['3/8', '3/4'];
+                    a.value = dims[0]; b.value = dims[1];
+                });
+                // Katalog-Anreicherung: eigene Kupferrohre mit Meterpreis in den Dropdowns markieren
+                db.getAll('materials').then(mats => {
+                    modal.querySelectorAll('.pipedim-sel option').forEach(opt => {
+                        if (!opt.value) return;
+                        const kat = app._findKupferrohr(mats, opt.value);
+                        if (kat) {
+                            const pm = matUnitPrice(kat, 'm');
+                            opt.textContent = `${opt.value}  ✓ Lager${pm ? ' · ' + formatCurrency(pm) + '/m' : ''}`;
+                        }
+                    });
+                }).catch(() => {});
+
                 modal.querySelector('#pmAddRow').addEventListener('click', () => {
                     if (materials.length === 0) { showToast('Materialdatenbank ist leer – nutze die automatischen Vorschläge beim Speichern.', 'info'); return; }
                     const wrap = modal.querySelector('#pmRows');

@@ -25,7 +25,7 @@
             { key: 'devPosition', label: 'Position', type: 'text', learn: 'devPosition', placeholder: 'z. B. über Tür, Südwand', group: 'Innengerät' },
             // Leitungen
             { key: 'pipeLength', label: 'Rohrlänge', type: 'number', unit: 'm', group: 'Leitungen' },
-            { key: 'pipeDimension', label: 'Rohrdimension', type: 'text', learn: 'pipeDimension', placeholder: 'z. B. 1/4"+1/2"', group: 'Leitungen' },
+            { key: 'pipeDimension', label: 'Rohrdimension', type: 'pipedim', group: 'Leitungen' },
             { key: 'insulation', label: 'Isolierung', type: 'text', learn: 'insulation', placeholder: 'z. B. 9 mm', group: 'Leitungen' },
             { key: 'cableDuct', label: 'Kabelkanal', type: 'number', unit: 'm', group: 'Leitungen' },
             { key: 'powerCable', label: 'Stromkabel Typ', type: 'text', learn: 'powerCable', placeholder: 'z. B. NYM 5×2,5', group: 'Leitungen' },
@@ -60,8 +60,18 @@
         const LEGACY_SURVEY_LABELS = { pipeLength: 'Rohrlänge (alt)', pipeDimension: 'Rohrdimension (alt)', insulation: 'Isolierung (alt)', cableDuct: 'Kabelkanal (alt)', powerCable: 'Stromkabel (alt)', powerCableLength: 'Stromkabellänge (alt)', commCable: 'Komm.-Kabel (alt)', commCableLength: 'Komm.-Kabellänge (alt)', condensateLine: 'Kondensatleitung (alt)', condensatePump: 'Kondensatpumpe (alt)', coreDrills: 'Kernbohrungen (alt)', wallMaterial: 'Wandmaterial (alt)', outdoorMounting: 'Außengerät (alt)', fiProtection: 'FI (alt)', fuse: 'Absicherung (alt)', scaffold: 'Gerüst (alt)', liftPlatform: 'Hebebühne (alt)', roofMounting: 'Dachmontage (alt)', climbingAid: 'Steighilfe (alt)', powerSupply: 'Spannung (alt)', socketAvailable: 'Steckdose (alt)', supplyLineNeeded: 'Zuleitung (alt)' };
 
         // Generischer Feld-Renderer für Technik-/Besichtigungsfelder
+        const PIPE_DIMS = ['1/4', '3/8', '1/2', '5/8', '3/4', '7/8'];
         function techFieldInput(f, v, prefix) {
             const id = prefix + f.key;
+            if (f.type === 'pipedim') {
+                // Hin- + Rückleitung getrennt wählbar (Katalog-Dimensionen)
+                const parts = String(v || '').match(/\d\/\d/g) || [];
+                const sel = (suffix, label, cur) => `<div class="form-group"><label>${label}</label>
+                    <select id="${id}${suffix}" class="pipedim-sel"><option value="">–</option>
+                    ${PIPE_DIMS.map(d => `<option value="${d}" ${cur === d ? 'selected' : ''}>${d}&quot;</option>`).join('')}
+                    </select></div>`;
+                return sel('Fluessig', 'Flüssigleitung (dünn)', parts[0] || '') + sel('Saug', 'Saugleitung (dick)', parts[1] || '');
+            }
             if (f.type === 'bool') {
                 return `<label class="switch-row"><span>${escapeHtml(f.label)}</span><span class="switch"><input type="checkbox" id="${id}" ${v === true ? 'checked' : ''}><span class="slider"></span></span></label>`;
             }
@@ -82,6 +92,11 @@
             return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="text" id="${id}"${listAttr} value="${escapeHtml(v || '')}" placeholder="${escapeHtml(f.placeholder || '')}">${dl}</div>`;
         }
         function techFieldRead(f, overlay, prefix) {
+            if (f.type === 'pipedim') {
+                const a = overlay.querySelector('#' + prefix + f.key + 'Fluessig')?.value || '';
+                const b = overlay.querySelector('#' + prefix + f.key + 'Saug')?.value || '';
+                return [a, b].filter(Boolean).join(' / ');
+            }
             const el = overlay.querySelector('#' + prefix + f.key);
             if (!el) return undefined;
             if (f.type === 'bool') return el.checked;
