@@ -515,7 +515,11 @@
                                                         }
                                                         groupDefs = roomOrder.filter(k => g.has(k)).map(k => {
                                                             const room = (project.rooms || []).find(r => String(r.id) === k);
-                                                            return { label: room ? '🏠 ' + escapeHtml(room.name || 'Raum') : '📦 Projekt gesamt', list: g.get(k) };
+                                                            return {
+                                                                label: room ? '🏠 ' + escapeHtml(room.name || 'Raum') : '📦 Projekt gesamt',
+                                                                roomId: k,
+                                                                list: g.get(k)
+                                                            };
                                                         });
                                                     }
 
@@ -524,7 +528,10 @@
                                                         grp.list.sort(V.sort ? cmp : defaultCmp);
                                                         if (grp.label !== null) {
                                                             const sum = grp.list.reduce((s, x) => s + (Number(x.quantity) || 0) * rowPrice(x, matOf(x)), 0);
-                                                            out += `<tr class="pm-group"><td colspan="6">${grp.label} <small>· ${grp.list.length} Position${grp.list.length !== 1 ? 'en' : ''}</small></td><td style="text-align:right;font-weight:800;">${formatCurrency(sum)}</td><td colspan="2"></td></tr>`;
+                                                            const addBtn = grp.roomId !== undefined
+                                                                ? `<button class="pm-group-add" title="Material nur für diesen Raum hinzufügen" onclick="app.openProjectMaterialModal(null, ${idJS(project.id)}, ${grp.roomId ? idJS(grp.roomId) : 'null'})">${icon('plus')} Material</button>`
+                                                                : '';
+                                                            out += `<tr class="pm-group"><td colspan="6">${grp.label} <small>· ${grp.list.length} Position${grp.list.length !== 1 ? 'en' : ''}</small> ${addBtn}</td><td style="text-align:right;font-weight:800;">${formatCurrency(sum)}</td><td colspan="2"></td></tr>`;
                                                         }
                                                         out += grp.list.map(renderRow).join('');
                                                     }

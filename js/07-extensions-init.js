@@ -98,7 +98,7 @@
             },
 
             // ---------- Projekt-Material ----------
-            async openProjectMaterialModal(id = null, projectId = null) {
+            async openProjectMaterialModal(id = null, projectId = null, presetRoomId = null) {
                 const pm = id ? await db.get('projectMaterials', id) : null;
                 const pid = pm?.projectId ?? projectId;
                 const materials = (await db.getAll('materials')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -125,10 +125,19 @@
                             <div class="form-group"><label>Größe (überschreiben)</label><input type="text" id="pmSize" value="${escapeHtml(pm?.size || '')}" placeholder="Standard aus Material"></div>
                         </div>
                         <div class="form-row">
-                            <div class="form-group"><label>Raum (optional)</label>
-                                <select id="pmRoom"><option value="">— Ganzes Projekt —</option>${rooms.map(r => `<option value="${escapeHtml(String(r.id))}" ${String(pm?.roomId) === String(r.id) ? 'selected' : ''}>${escapeHtml(r.name || 'Raum')}</option>`).join('')}</select>
-                            </div>
+                            <div class="form-group"><label>Preis je Einheit (€)</label><input type="number" inputmode="decimal" step="any" min="0" id="pmPrice" value="${pm?.price ?? ''}" placeholder="Standard aus Katalog"></div>
                             <div class="form-group"><label>Bemerkung</label><input type="text" id="pmNote" value="${escapeHtml(pm?.note || '')}"></div>
+                        </div>
+                        <div class="form-card" style="margin-top:2px;">
+                            <div class="form-card-title">🏠 ${id ? 'Raum' : 'Räume zuordnen'}</div>
+                            ${id
+                                ? `<div class="form-group"><select id="pmRoom"><option value="">— Ganzes Projekt —</option>${rooms.map(r => `<option value="${escapeHtml(String(r.id))}" ${String(pm?.roomId) === String(r.id) ? 'selected' : ''}>${escapeHtml(r.name || 'Raum')}</option>`).join('')}</select></div>`
+                                : `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:9px;">Mehrere Räume wählbar – die Menge wird für <strong>jeden</strong> gewählten Raum angelegt. Ohne Auswahl landet das Material unter „Projekt gesamt".</div>
+                                   <div class="offer-rooms-chips" id="pmRoomChips">
+                                       ${rooms.map(r => `<button type="button" class="room-chip ${String(presetRoomId) === String(r.id) ? 'on' : ''}" data-room="${escapeHtml(String(r.id))}">${String(presetRoomId) === String(r.id) ? '✓' : '＋'} ${escapeHtml(r.name || 'Raum')}</button>`).join('')}
+                                   </div>
+                                   ${rooms.length > 1 ? '<button type="button" class="btn btn-sm btn-outline" id="pmAllRooms" style="margin-top:9px;">Alle Räume</button>' : ''}`
+                            }
                         </div>
                     `,
                     async (overlay) => {
@@ -142,23 +151,88 @@
                             quantity: qty,
                             unit: overlay.querySelector('#pmUnit').value,
                             size: overlay.querySelector('#pmSize').value.trim(),
-                            roomId: overlay.querySelector('#pmRoom').value ? parseId(overlay.querySelector('#pmRoom').value) : null,
                             note: overlay.querySelector('#pmNote').value.trim()
                         };
-                        if (id) { await db.put('projectMaterials', data); } else { await db.add('projectMaterials', data); }
-                        overlay.remove();
-                        showToast('Material gespeichert.', 'success');
+                        const mat = materials.find(m => String(m.id) === String(matId));
+                        const priceRaw = overlay.querySelector('#pmPrice')?.value;
+                        const priceIn = priceRaw === '' || priceRaw === undefined ? null : parseFloat(String(priceRaw).replace(',', '.'));
+                        data.price = (priceIn !== null && !isNaN(priceIn) && priceIn >= 0) ? priceIn : matUnitPrice(mat, data.unit);
+
+                        // Preisänderung im Katalog merken (gleiche Einheit)
+                        if (mat && priceIn !== null && !isNaN(priceIn) && priceIn > 0
+                            && (mat.unit || 'Stk') === data.unit && Number(mat.sellingPrice) !== priceIn) {
+                            const fresh = await db.get('materials', mat.id);
+                            if (fresh) { fresh.sellingPrice = priceIn; if (!(Number(fresh.purchasePrice) > 0)) fresh.purchasePrice = priceIn; await db.put('materials', fresh); }
+                        }
+
+                        if (id) {
+                            data.roomId = overlay.querySelector('#pmRoom').value ? parseId(overlay.querySelector('#pmRoom').value) : null;
+                            await db.put('projectMaterials', data);
+                            overlay.remove();
+                            showToast('Material gespeichert.', 'success');
+                        } else {
+                            // MEHRFACH-ZUORDNUNG: je gewähltem Raum eine eigene Position
+                            const chosen = [...overlay.querySelectorAll('#pmRoomChips .room-chip.on')].map(b => b.dataset.room);
+                            const targets = chosen.length ? chosen : [null];
+                            const existing = (await db.getByIndex('projectMaterials', 'projectId', pid)) || [];
+                            let added = 0, merged = 0;
+                            for (const rid of targets) {
+                                const dup = existing.find(x => String(x.materialId) === String(data.materialId)
+                                    && (x.unit || 'Stk') === data.unit
+                                    && String(x.roomId ?? '') === String(rid ?? ''));
+                                if (dup) {
+                                    dup.quantity = (Number(dup.quantity) || 0) + qty;
+                                    dup.price = data.price;
+                                    await db.put('projectMaterials', dup);
+                                    merged++;
+                                } else {
+                                    await db.add('projectMaterials', { ...data, roomId: rid ? parseId(rid) : null });
+                                    added++;
+                                }
+                            }
+                            overlay.remove();
+                            const roomTxt = chosen.length ? `${chosen.length} Raum/Räume` : 'Projekt gesamt';
+                            showToast(`${data.name || 'Material'} für ${roomTxt} gespeichert${merged ? ` (${merged} vorhandene Position(en) aufgestockt)` : ''}.`, 'success');
+                        }
                         app.navigate('projects', pid);
                     }
                 );
 
-                // Einheit aus Material vorbelegen
+                // Einheit + Preis aus Material vorbelegen
                 const sel = modal.querySelector('#pmMaterial');
                 const applyUnit = () => {
-                    if (!pm) modal.querySelector('#pmUnit').value = sel.selectedOptions[0]?.dataset.unit || 'Stk';
+                    if (pm) return;
+                    const unit = sel.selectedOptions[0]?.dataset.unit || 'Stk';
+                    modal.querySelector('#pmUnit').value = unit;
+                    const m = materials.find(x => String(x.id) === String(sel.value));
+                    const pf = modal.querySelector('#pmPrice');
+                    if (pf && m) pf.value = matUnitPrice(m, unit) || '';
                 };
                 sel.addEventListener('change', applyUnit);
+                modal.querySelector('#pmUnit')?.addEventListener('change', () => {
+                    if (pm) return;
+                    const m = materials.find(x => String(x.id) === String(sel.value));
+                    const pf = modal.querySelector('#pmPrice');
+                    if (pf && m) pf.value = matUnitPrice(m, modal.querySelector('#pmUnit').value) || '';
+                });
                 if (!pm) applyUnit();
+
+                // Raum-Chips (Mehrfachauswahl)
+                modal.querySelectorAll('#pmRoomChips .room-chip').forEach(b => b.addEventListener('click', () => {
+                    b.classList.toggle('on');
+                    const name = b.textContent.trim().replace(/^[✓＋]\s*/, '');
+                    b.textContent = `${b.classList.contains('on') ? '✓' : '＋'} ${name}`;
+                }));
+                modal.querySelector('#pmAllRooms')?.addEventListener('click', () => {
+                    const chips = [...modal.querySelectorAll('#pmRoomChips .room-chip')];
+                    const allOn = chips.every(c => c.classList.contains('on'));
+                    chips.forEach(c => {
+                        const name = c.textContent.trim().replace(/^[✓＋]\s*/, '');
+                        c.classList.toggle('on', !allOn);
+                        c.textContent = `${!allOn ? '✓' : '＋'} ${name}`;
+                    });
+                    modal.querySelector('#pmAllRooms').textContent = allOn ? 'Alle Räume' : 'Keine Räume';
+                });
                 modal.querySelector('#pmNewMat')?.addEventListener('click', (e) => {
                     e.preventDefault();
                     modal.closest('.modal-overlay')?.remove();
