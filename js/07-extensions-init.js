@@ -2339,6 +2339,10 @@
     let selected = [];
     let activeFilter = 'Alle';
 
+    // --- Räume für das Angebot: standardmäßig ALLE aktiv ---
+    const offerRooms = (project.rooms || []).map(r => String(r.id));
+    let activeRooms = new Set([...offerRooms, '__none__']);   // '__none__' = Positionen ohne Raum
+
     // --- Projekt-Materialien als Angebotspositionen (aktuelle Preise) ---
     async function buildPositionsFromProject() {
         const pms = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
@@ -2349,6 +2353,9 @@
         // Räume in der Bemerkung sammeln
         const agg = new Map();
         for (const x of pms) {
+            // Nur Positionen aus den ausgewählten Räumen übernehmen
+            const rkey = x.roomId != null && offerRooms.includes(String(x.roomId)) ? String(x.roomId) : '__none__';
+            if (!activeRooms.has(rkey)) continue;
             const mat = freshMats.find(m => String(m.id) === String(x.materialId));
             const unit = x.unit || mat?.unit || 'Stk';
             const price = (x.price !== undefined && x.price !== null) ? Number(x.price) : matUnitPrice(mat, unit);
@@ -2467,6 +2474,7 @@
                     <label style="font-size:13px;font-weight:600;color:var(--text-secondary);">Ausgewählte Positionen</label>
                     <button type="button" class="btn btn-sm btn-outline" id="offerReloadProject" title="Alle Projekt-Materialien mit aktuellen Preisen laden">↻ Projekt-Material</button>
                 </div>
+                <div class="offer-rooms" id="offerRoomPicker"></div>
                 <div class="offer-pos-list" id="offerPosList"></div>
                 <div class="offer-summary-box" id="offerSummaryBox"></div>
             </div>
@@ -2783,15 +2791,57 @@
         });
     });
 
+    // --- Raum-Auswahl: welche Räume kommen ins Angebot? ---
+    async function reloadFromRooms(toast = true) {
+        const pos = await buildPositionsFromProject();
+        selected = pos;
+        renderPosList();
+        updateSettingsFromUI();
+        renderSummary();
+        renderRoomPicker();
+        if (toast) showToast(pos.length ? `${pos.length} Position(en) aus ${activeRooms.size - (activeRooms.has('__none__') ? 1 : 0)} Raum/Räumen geladen.` : 'Keine Positionen in der Auswahl.', pos.length ? 'success' : 'info');
+    }
+    function renderRoomPicker() {
+        const box = modal.querySelector('#offerRoomPicker');
+        if (!box) return;
+        const rooms = project.rooms || [];
+        if (!rooms.length) { box.innerHTML = ''; return; }
+        const allOn = rooms.every(r => activeRooms.has(String(r.id)));
+        box.innerHTML = `
+            <div class="offer-rooms-head">
+                <span>Räume im Angebot</span>
+                <button type="button" class="btn btn-sm btn-outline" id="offerRoomsAll">${allOn ? 'Alle abwählen' : 'Alle auswählen'}</button>
+            </div>
+            <div class="offer-rooms-chips">
+                ${rooms.map(r => `<button type="button" class="room-chip ${activeRooms.has(String(r.id)) ? 'on' : ''}" data-room="${escapeHtml(String(r.id))}">
+                    ${activeRooms.has(String(r.id)) ? '✓' : '＋'} ${escapeHtml(r.name || 'Raum')}
+                </button>`).join('')}
+                <button type="button" class="room-chip ${activeRooms.has('__none__') ? 'on' : ''}" data-room="__none__" title="Positionen ohne Raumzuordnung (z. B. Außengerät, Kleinmaterial)">
+                    ${activeRooms.has('__none__') ? '✓' : '＋'} Projekt gesamt
+                </button>
+            </div>`;
+        box.querySelectorAll('.room-chip').forEach(b => b.addEventListener('click', async () => {
+            const k = b.dataset.room;
+            if (activeRooms.has(k)) activeRooms.delete(k); else activeRooms.add(k);
+            await reloadFromRooms(false);
+        }));
+        box.querySelector('#offerRoomsAll')?.addEventListener('click', async () => {
+            if (allOn) { activeRooms = new Set(activeRooms.has('__none__') ? ['__none__'] : []); }
+            else { activeRooms = new Set([...rooms.map(r => String(r.id)), ...(activeRooms.has('__none__') ? ['__none__'] : [])]); }
+            await reloadFromRooms(false);
+        });
+    }
+
     modal.querySelector('#offerReloadProject')?.addEventListener('click', async () => {
         const pos = await buildPositionsFromProject();
-        if (!pos.length) { showToast('Keine Materialien im Projekt gefunden.', 'info'); return; }
+        if (!pos.length) { showToast('Keine Materialien in der Raum-Auswahl gefunden.', 'info'); return; }
         selected = pos;
         renderPosList();
         updateSettingsFromUI();
         renderSummary();
         showToast(`${pos.length} Position(en) mit aktuellen Preisen neu geladen.`, 'success');
     });
+    renderRoomPicker();
     // Positionen aus dem Projekt automatisch vorladen (aktuelle Preise)
     buildPositionsFromProject().then(pos => {
         if (pos.length && selected.length === 0) {
