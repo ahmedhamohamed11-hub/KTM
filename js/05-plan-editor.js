@@ -583,7 +583,11 @@
                 let changed = 0;
                 for (const w of wanted) {
                     const mat = await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
-                    const ex = existing.find(x => String(x.materialId) === String(mat.id));
+                    // Dubletten-Regel: gleiches Material + gleiche Einheit + gleicher Raum = EINE Position,
+                    // egal ob sie von der Raum- oder der Projekt-Automatik stammt
+                    const ex = existing.find(x => String(x.materialId) === String(mat.id)
+                        && (x.unit || 'Stk') === w.unit
+                        && String(x.roomId ?? '') === String(roomId ?? ''));
                     if (ex) {
                         if ((ex.note || '').includes('automatisch') && Number(ex.quantity) !== w.qty) {
                             ex.quantity = w.qty;

@@ -705,11 +705,17 @@
                 const existingPm = roomId ? ((await db.getByIndex('projectMaterials', 'projectId', projectId)) || []).filter(x => String(x.roomId) === String(roomId)) : [];
 
                 const matOptions = (sel) => materials.map(m => `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" ${String(sel) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}</option>`).join('');
+                const pmPrice = (x) => {
+                    if (x && x.price !== undefined && x.price !== null) return Number(x.price);
+                    const m = materials.find(mm => String(mm.id) === String(x?.materialId));
+                    return m ? matUnitPrice(m, x?.unit || m.unit || 'Stk') : 0;
+                };
                 const pmRow = (x = null) => `
                     <div class="pm-row" data-pmid="${x ? escapeHtml(String(x.id)) : ''}">
                         <select class="pmr-mat">${matOptions(x?.materialId)}</select>
                         <input type="number" class="pmr-qty" inputmode="decimal" step="any" min="0" value="${x?.quantity ?? 1}" title="Menge">
                         <select class="pmr-unit">${UNITS.map(u => `<option value="${u}" ${(x?.unit || 'Stk') === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
+                        <input type="number" class="pmr-price" inputmode="decimal" step="any" min="0" value="${x ? pmPrice(x) : ''}" title="Preis je Einheit – Änderung wird im Katalog gemerkt" placeholder="€">
                         <button type="button" class="btn btn-sm btn-danger pmr-del">${icon('trash')}</button>
                     </div>`;
 
@@ -778,19 +784,34 @@
                         const rows = [...overlay.querySelectorAll('.pm-row')];
                         const keptIds = new Set();
                         const manualMatIds = new Set();
+                        const priceLearned = [];
                         for (const r of rows) {
                             const matId = r.querySelector('.pmr-mat').value;
                             const qty = parseFloat(String(r.querySelector('.pmr-qty').value).replace(',', '.'));
                             if (!matId || isNaN(qty) || qty <= 0) continue;
                             manualMatIds.add(String(matId));
                             const unit = r.querySelector('.pmr-unit').value;
-                            const mat = materials.find(m => String(m.id) === String(matId));
+                            // Material IMMER frisch aus der DB (Modal-Scope kann veraltet sein)
+                            const mat = (await db.get('materials', parseId(matId))) || materials.find(m => String(m.id) === String(matId));
+                            const priceRaw = r.querySelector('.pmr-price')?.value;
+                            const priceIn = priceRaw === '' || priceRaw === undefined ? null : parseFloat(String(priceRaw).replace(',', '.'));
+                            const price = (priceIn !== null && !isNaN(priceIn) && priceIn >= 0) ? priceIn : matUnitPrice(mat, unit);
+
+                            // PREIS MERKEN: geänderter Preis wandert direkt in den Katalog (gleiche Einheit)
+                            if (mat && priceIn !== null && !isNaN(priceIn) && priceIn > 0
+                                && (mat.unit || 'Stk') === unit && Number(mat.sellingPrice) !== priceIn) {
+                                mat.sellingPrice = priceIn;
+                                if (!(Number(mat.purchasePrice) > 0)) mat.purchasePrice = priceIn;
+                                await db.put('materials', mat);
+                                priceLearned.push(mat.name);
+                            }
+
                             const pmid = r.dataset.pmid;
                             if (pmid) {
                                 const rec = await db.get('projectMaterials', pmid);
-                                if (rec) { rec.materialId = parseId(matId); rec.quantity = qty; rec.unit = unit; await db.put('projectMaterials', rec); keptIds.add(String(pmid)); }
+                                if (rec) { rec.materialId = parseId(matId); rec.quantity = qty; rec.unit = unit; rec.price = price; await db.put('projectMaterials', rec); keptIds.add(String(pmid)); }
                             } else {
-                                const newId = await db.add('projectMaterials', { projectId, materialId: parseId(matId), roomId: rid, quantity: qty, unit, size: mat?.size || '', price: matUnitPrice(mat, unit), note: name });
+                                const newId = await db.add('projectMaterials', { projectId, materialId: parseId(matId), roomId: rid, quantity: qty, unit, size: mat?.size || '', price, note: name });
                                 keptIds.add(String(newId));
                             }
                         }
@@ -805,6 +826,9 @@
 
                         overlay.remove();
                         showToast(`${room ? 'Raum aktualisiert' : 'Raum angelegt'}${auto > 0 ? ` – ${auto} Materialposition(en) automatisch ergänzt` : ''}.`, 'success');
+                        if (priceLearned.length) {
+                            showToast(`Neuer Preis im Katalog gemerkt: ${[...new Set(priceLearned)].join(', ')}`, 'success');
+                        }
                         app.navigate('projects', projectId);
                     },
                     null,
@@ -854,7 +878,7 @@
                     set('commCableLength', L);      // gleiche Strecke bis zum Außengerät
                     set('condensateLine', L);       // Kondensat läuft mit zur Außeneinheit
                     set('cableDuct', L);            // Startwert, bei Bedarf anpassen
-                    set('powerCableLength', L + 1); // + Anschlussreserve
+                    set('powerCableLength', L);     // gleiche Strecke wie das Rohr
                 });
                 // Geräte-kW -> Rohrdimensionen vorschlagen (nur wenn noch leer)
                 $f('devCapacity')?.addEventListener('input', () => {
@@ -890,15 +914,51 @@
             },
 
             // Material im Katalog sicherstellen (legt fehlende automatisch an)
-            async _ensureCatalogMaterial(name, size, category, unit) {
-                const all = await db.getAll('materials');
-                let mat = all.find(m => (m.name || '').toLowerCase() === name.toLowerCase() && ((m.size || '') === (size || '') || !size))
-                    || all.find(m => (m.name || '').toLowerCase() === name.toLowerCase());
-                if (!mat) {
-                    const id = await db.add('materials', { name, size: size || '', category, unit, manufacturer: '', articleNumber: '', purchasePrice: 0, sellingPrice: 0, notes: 'Automatisch angelegt' });
-                    mat = await db.get('materials', id);
-                }
-                return mat;
+            // Sucht IMMER zuerst im eigenen Katalog (Stichwörter + Kategorie + Größe).
+            // Nur wenn wirklich nichts passt, wird ein Platzhalter angelegt.
+            async _ensureCatalogMaterial(name, size, category, unit, allMats = null) {
+                const all = allMats || await db.getAll('materials');
+                const norm = s => String(s || '').toLowerCase().replace(/[\s.,×x*"']/g, '');
+                const n = norm(name), sz = norm(size);
+
+                // Stichwörter je Materialtyp -> findet auch abweichende Schreibweisen
+                const KEYS = [
+                    { k: ['kommunikationskabel', 'kommkabel', 'steuerkabel', 'busleitung'], cat: ['Kabel', 'Elektromaterial'] },
+                    { k: ['stromkabel', 'zuleitung', 'nym', 'speisekabel'], cat: ['Kabel', 'Elektromaterial'] },
+                    { k: ['kondensatschlauch', 'kondensatleitung', 'ablaufschlauch'], cat: ['Kondensat', 'Kondensattechnik'] },
+                    { k: ['kondensatpumpe', 'hebepumpe'], cat: ['Kondensat', 'Kondensattechnik'] },
+                    { k: ['kabelkanalbogen', 'kanalbogen'], cat: ['Elektromaterial', 'Montagematerial'] },
+                    { k: ['kabelkanal', 'installationskanal', 'leitungskanal'], cat: ['Elektromaterial', 'Montagematerial'], not: ['bogen'] },
+                    { k: ['kupferrohr', 'curohr'], cat: ['Kupferrohr', 'Kupferrohre'] },
+                    { k: ['arbeitsleistung', 'montage', 'arbeitszeit'], cat: ['Arbeitszeit'] },
+                    { k: ['bigfoot', 'bodenkonsole'], cat: ['Befestigung', 'Montagematerial'] },
+                    { k: ['wandkonsole', 'wandhalter'], cat: ['Befestigung', 'Montagematerial'] },
+                    { k: ['schwingungsdämpfer', 'schwingungsdampfer', 'gummipuffer'], cat: ['Befestigung', 'Montagematerial'] }
+                ];
+                const entry = KEYS.find(e => e.k.some(k => n.includes(norm(k))));
+                const score = (m) => {
+                    const mn = norm(m.name), mc = m.category || '';
+                    let s = 0;
+                    if (entry) {
+                        if (!entry.k.some(k => mn.includes(norm(k)))) return -1;             // falscher Typ
+                        if (entry.not && entry.not.some(x => mn.includes(norm(x)))) return -1; // Ausschluss (z.B. Bogen)
+                        if (entry.cat.includes(mc) || mc === category) s += 3;
+                    } else {
+                        if (mn === n) s += 5; else if (mn.includes(n) || n.includes(mn)) s += 2; else return -1;
+                        if (mc === category) s += 2;
+                    }
+                    if (sz && norm(m.size) === sz) s += 4;                                    // exakte Größe (4x1,5)
+                    else if (sz && norm(m.size).includes(sz)) s += 2;
+                    if (Number(m.sellingPrice) > 0) s += 2;                                   // gepflegter Preis bevorzugt
+                    if (Number(m.stock) > 0) s += 1;                                          // auf Lager bevorzugt
+                    return s;
+                };
+                const ranked = all.map(m => ({ m, s: score(m) })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s);
+                if (ranked.length) return ranked[0].m;
+
+                // Nichts Passendes im Katalog -> Platzhalter (klar gekennzeichnet)
+                const id = await db.add('materials', { name, size: size || '', category, unit, manufacturer: '', articleNumber: '', purchasePrice: 0, sellingPrice: 0, stock: 0, notes: 'Automatisch angelegt – Preis bitte ergänzen' });
+                return await db.get('materials', id);
             },
 
             // Automatische Raum-Materialvorschläge aus den Leitungsdaten (Rohrlänge 6 m ->
@@ -932,15 +992,15 @@
                             const kat = this._findKupferrohr(allMats, d);
                             wanted.push(kat
                                 ? { mat: kat, qty: L, unit: 'm' }
-                                : { name: 'Kupferrohr isoliert', size: d + '"', qty: L, unit: 'm', category: 'Kupferrohre' });
+                                : { name: `Kupferrohr isoliert ${d}"`, size: d + '"', qty: L, unit: 'm', category: 'Kupferrohre' });
                         }
                     } else {
                         wanted.push({ name: 'Kupferrohr isoliert', size: tech.pipeDimension || '', qty: L, unit: 'm', category: 'Kupferrohre' });
                     }
                     // Automatische Längen: gleiche Strecke wie das Rohr, nur bei Abweichung ändern
                     wanted.push({ name: 'Kondensatschlauch', size: '', qty: num(tech.condensateLine) || L, unit: 'm', category: 'Kondensat' });
-                    wanted.push({ name: 'Stromkabel', size: tech.powerCable || '3x1,5', qty: num(tech.powerCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
-                    wanted.push({ name: 'Kommunikationskabel', size: tech.commCable || '4x1,5', qty: num(tech.commCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
+                    wanted.push({ name: 'Stromkabel', size: tech.powerCable || '3x1,5', qty: num(tech.powerCableLength) || L, unit: 'm', category: 'Kabel' });
+                    wanted.push({ name: 'Kommunikationskabel', size: tech.commCable || '4x1,5', qty: num(tech.commCableLength) || L, unit: 'm', category: 'Kabel' });
                     wanted.push({ name: 'Kabelkanal', size: '', qty: num(tech.cableDuct) || L, unit: 'm', category: 'Elektromaterial' });
                     wanted.push({ name: 'Arbeitsleistung Montage', size: '', qty: 1, unit: 'Stk', category: 'Arbeitszeit' });
                 }
@@ -964,7 +1024,7 @@
                 const existing = ((await db.getByIndex('projectMaterials', 'projectId', projectId)) || []).filter(x => String(x.roomId) === String(roomId));
                 let added = 0, updated = 0;
                 for (const w of wanted) {
-                    const mat = w.mat || await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
+                    const mat = w.mat || await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit, allMats);
                     if (manualMatIds.has(String(mat.id))) continue;   // manuell erfasst -> nicht anfassen
                     const dup = existing.find(x => String(x.materialId) === String(mat.id) && (x.unit || 'Stk') === w.unit);
                     if (dup) {

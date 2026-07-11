@@ -555,7 +555,7 @@
         .brand-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
         /* Material-Zeilen im Raum-Modal */
-        .pm-row { display: grid; grid-template-columns: 1fr 78px 86px 40px; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .pm-row { display: grid; grid-template-columns: 1fr 82px 84px 92px auto; gap: 8px; margin-bottom: 8px; align-items: center; }
         .pm-row .btn { justify-content: center; }
         @media (max-width: 480px) { .pm-row { grid-template-columns: 1fr 64px 72px 38px; } }
 
