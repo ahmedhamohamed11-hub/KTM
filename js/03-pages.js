@@ -435,12 +435,23 @@
                                         <h4>📦 Material aller Räume (${pm.length})</h4>
                                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                                             <button class="btn btn-sm btn-primary" onclick="app.openProjectMaterialModal(null, ${idJS(project.id)})">${icon('plus')} Material</button>
-                                            ${pm.length > 0 ? `<button class="btn btn-sm btn-outline" onclick="app.createOrderFromProject(${idJS(project.id)})">${icon('cart')} Bestellliste erstellen</button>` : ''}
+                                            ${pm.length > 0 ? `<select class="filter-select" style="padding:6px 8px;" onchange="app.pmSetGroup(this.value)" title="Gruppieren nach">
+                                                <option value="raum" ${(window.__pmView?.groupBy || 'raum') === 'raum' ? 'selected' : ''}>Gruppieren: Raum</option>
+                                                <option value="material" ${window.__pmView?.groupBy === 'material' ? 'selected' : ''}>Gruppieren: Material</option>
+                                                <option value="hersteller" ${window.__pmView?.groupBy === 'hersteller' ? 'selected' : ''}>Gruppieren: Hersteller</option>
+                                                <option value="keine" ${window.__pmView?.groupBy === 'keine' ? 'selected' : ''}>Ohne Gruppierung</option>
+                                            </select>
+                                            <button class="btn btn-sm btn-outline" onclick="app.createOrderFromProject(${idJS(project.id)})">${icon('cart')} Bestellliste erstellen</button>
+                                            <button class="btn btn-sm btn-primary" onclick="app.createOffer(${idJS(project.id)})">${icon('file')} Angebot erstellen</button>` : ''}
                                         </div>
                                     </div>
                                     <div class="table-container">
                                         <table>
-                                            <thead><tr><th>Material</th><th>Größe</th><th style="width:96px;">Menge</th><th style="width:92px;">Einheit</th><th>Raum</th><th style="width:104px;">Preis/Einh.</th><th style="text-align:right;">Gesamt</th><th>Bemerkung</th><th></th></tr></thead>
+                                            <thead><tr>${(() => {
+                                                const V = window.__pmView = window.__pmView || { groupBy: 'raum', sort: '', dir: 1 };
+                                                const th = (key, label, style = '') => `<th ${style ? `style="${style}"` : ''} class="pm-th" onclick="app.pmSort('${key}')">${label}${V.sort === key ? (V.dir === 1 ? ' ▲' : ' ▼') : ''}</th>`;
+                                                return th('name', 'Material') + th('size', 'Größe') + th('quantity', 'Menge', 'width:96px;') + th('unit', 'Einheit', 'width:92px;') + th('room', 'Raum') + th('price', 'Preis/Einh.', 'width:104px;') + th('total', 'Gesamt', 'text-align:right;') + th('note', 'Bemerkung') + '<th></th>';
+                                            })()}</tr></thead>
                                             <tbody>
                                                 ${(() => {
                                                     const rowPrice = (x, mat) => x.price !== undefined && x.price !== null ? Number(x.price) : matUnitPrice(mat, x.unit || mat?.unit || 'Stk');
@@ -460,27 +471,62 @@
                                                         <td><button class="btn btn-sm btn-danger" onclick="app.deleteProjectMaterial(${idJS(x.id)}, ${idJS(project.id)})">${icon('trash')}</button></td>
                                                     </tr>`;
                                                     };
-                                                    // Nach Raum gruppieren (Raum-Reihenfolge, dann "Projekt gesamt")
-                                                    const roomOrder = [...(project.rooms || []).map(r => String(r.id)), null];
-                                                    const groups = new Map();
-                                                    for (const x of pm) {
-                                                        const key = x.roomId != null && roomOrder.includes(String(x.roomId)) ? String(x.roomId) : null;
-                                                        if (!groups.has(key)) groups.set(key, []);
-                                                        groups.get(key).push(x);
-                                                    }
-                                                    let out = '';
-                                                    for (const key of roomOrder) {
-                                                        const list = groups.get(key);
-                                                        if (!list || !list.length) continue;
-                                                        list.sort((a, b) => {
-                                                            const ma = materials.find(m => String(m.id) === String(a.materialId));
-                                                            const mb = materials.find(m => String(m.id) === String(b.materialId));
-                                                            return (ma?.name || '').localeCompare(mb?.name || '');
+                                                    // Gruppieren (Raum / Material / Hersteller / keine) + sortierbare Spalten
+                                                    const V = window.__pmView = window.__pmView || { groupBy: 'raum', sort: '', dir: 1 };
+                                                    const matOf = x => materials.find(m => String(m.id) === String(x.materialId));
+                                                    const roomNameOf = x => (project.rooms || []).find(r => String(r.id) === String(x.roomId))?.name || '';
+                                                    const sortVal = (x) => {
+                                                        const m = matOf(x);
+                                                        switch (V.sort) {
+                                                            case 'size': return x.size || m?.size || '';
+                                                            case 'quantity': return Number(x.quantity) || 0;
+                                                            case 'unit': return x.unit || '';
+                                                            case 'room': return roomNameOf(x);
+                                                            case 'price': return rowPrice(x, m);
+                                                            case 'total': return (Number(x.quantity) || 0) * rowPrice(x, m);
+                                                            case 'note': return x.note || '';
+                                                            default: return m?.name || x.name || '';
+                                                        }
+                                                    };
+                                                    const cmp = (a, b) => {
+                                                        const va = sortVal(a), vb = sortVal(b);
+                                                        const r = (typeof va === 'number' && typeof vb === 'number') ? va - vb : String(va).localeCompare(String(vb), 'de', { numeric: true });
+                                                        return r * V.dir;
+                                                    };
+                                                    const defaultCmp = (a, b) => (matOf(a)?.name || '').localeCompare(matOf(b)?.name || '');
+
+                                                    let groupDefs = [];   // [{ label, list }]
+                                                    if (V.groupBy === 'keine') {
+                                                        groupDefs = [{ label: null, list: [...pm] }];
+                                                    } else if (V.groupBy === 'material') {
+                                                        const g = new Map();
+                                                        for (const x of pm) { const k = matOf(x)?.name || x.name || 'Material'; (g.get(k) || g.set(k, []).get(k)).push(x); }
+                                                        groupDefs = [...g.keys()].sort((a, b) => a.localeCompare(b)).map(k => ({ label: '📦 ' + escapeHtml(k), list: g.get(k) }));
+                                                    } else if (V.groupBy === 'hersteller') {
+                                                        const g = new Map();
+                                                        for (const x of pm) { const k = matOf(x)?.manufacturer || 'Ohne Hersteller'; (g.get(k) || g.set(k, []).get(k)).push(x); }
+                                                        groupDefs = [...g.keys()].sort((a, b) => a.localeCompare(b)).map(k => ({ label: '🏭 ' + escapeHtml(k), list: g.get(k) }));
+                                                    } else {
+                                                        const roomOrder = [...(project.rooms || []).map(r => String(r.id)), null];
+                                                        const g = new Map();
+                                                        for (const x of pm) {
+                                                            const key = x.roomId != null && roomOrder.includes(String(x.roomId)) ? String(x.roomId) : null;
+                                                            (g.get(key) || g.set(key, []).get(key)).push(x);
+                                                        }
+                                                        groupDefs = roomOrder.filter(k => g.has(k)).map(k => {
+                                                            const room = (project.rooms || []).find(r => String(r.id) === k);
+                                                            return { label: room ? '🏠 ' + escapeHtml(room.name || 'Raum') : '📦 Projekt gesamt', list: g.get(k) };
                                                         });
-                                                        const room = (project.rooms || []).find(r => String(r.id) === key);
-                                                        const sum = list.reduce((s, x) => s + (Number(x.quantity) || 0) * rowPrice(x, materials.find(m => String(m.id) === String(x.materialId))), 0);
-                                                        out += `<tr class="pm-group"><td colspan="6">${room ? '🏠 ' + escapeHtml(room.name || 'Raum') : '📦 Projekt gesamt'} <small>· ${list.length} Position${list.length !== 1 ? 'en' : ''}</small></td><td style="text-align:right;font-weight:800;">${formatCurrency(sum)}</td><td colspan="2"></td></tr>`;
-                                                        out += list.map(renderRow).join('');
+                                                    }
+
+                                                    let out = '';
+                                                    for (const grp of groupDefs) {
+                                                        grp.list.sort(V.sort ? cmp : defaultCmp);
+                                                        if (grp.label !== null) {
+                                                            const sum = grp.list.reduce((s, x) => s + (Number(x.quantity) || 0) * rowPrice(x, matOf(x)), 0);
+                                                            out += `<tr class="pm-group"><td colspan="6">${grp.label} <small>· ${grp.list.length} Position${grp.list.length !== 1 ? 'en' : ''}</small></td><td style="text-align:right;font-weight:800;">${formatCurrency(sum)}</td><td colspan="2"></td></tr>`;
+                                                        }
+                                                        out += grp.list.map(renderRow).join('');
                                                     }
                                                     return out;
                                                 })() || '<tr><td colspan="9" class="empty-note">Die Materialliste entsteht automatisch aus den Räumen – lege Räume mit Leitungsdaten an oder klicke „Material berechnen".</td></tr>'}

@@ -365,6 +365,19 @@
                 app.navigate('projects', projectId);
             },
 
+            // ---------- Materialliste: Sortierung & Gruppierung ----------
+            pmSort(key) {
+                const V = window.__pmView = window.__pmView || { groupBy: 'raum', sort: '', dir: 1 };
+                if (V.sort === key) { V.dir = -V.dir; } else { V.sort = key; V.dir = 1; }
+                window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
+                app.navigate('projects', app.currentProjectId);
+            },
+            pmSetGroup(v) {
+                (window.__pmView = window.__pmView || { groupBy: 'raum', sort: '', dir: 1 }).groupBy = v;
+                window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
+                app.navigate('projects', app.currentProjectId);
+            },
+
             // ---------- Kategorie verwalten: umbenennen, verschieben, löschen ----------
             async openCategoryManageModal(cat) {
                 const materials = await db.getAll('materials');
@@ -721,21 +734,58 @@
 
             // Automatische Raum-Materialvorschläge aus den Leitungsdaten (Rohrlänge 6 m ->
             // 6 m Kupferrohr, 6 m Isolierung, 6 m Kondensatschlauch, 7 m Strom-/Komm.-Kabel, 6 m Kanal)
+            // Katalog-Kupferrohr zur Dimension finden (nutzt echte Artikel mit Bund-Meterpreis)
+            _findKupferrohr(allMats, dim) {
+                const d = String(dim).replace(/[^0-9/]/g, '');
+                if (!d) return null;
+                const cands = allMats.filter(m =>
+                    `${m.category || ''} ${m.name || ''}`.toLowerCase().includes('kupferrohr') &&
+                    `${m.size || ''} ${m.name || ''}`.includes(d));
+                cands.sort((a, b) => {
+                    const w = (m) => (`${m.size} ${m.name}`.includes('0.8') || `${m.size} ${m.name}`.includes('0,8') ? 2 : 0) + (Number(m.bundleLength) > 0 ? 1 : 0);
+                    return w(b) - w(a);
+                });
+                return cands[0] || null;
+            },
+
             async _applyRoomAutoMaterials(projectId, roomId, roomName, tech, manualMatIds = new Set()) {
                 const num = v => (typeof v === 'number' && v > 0 ? v : 0);
                 const L = num(tech.pipeLength);
-                const wanted = [];
+                const allMats = await db.getAll('materials');
+                const wanted = [];   // { mat | (name,size,category,unit), qty }
+
                 if (L > 0) {
-                    wanted.push({ name: 'Kupferrohr', size: tech.pipeDimension || '', qty: L, unit: 'm', category: 'Kupferrohre' });
-                    wanted.push({ name: 'Rohrisolierung', size: tech.insulation || '', qty: L, unit: 'm', category: 'Isolierung' });
+                    // Kupferrohr ISOLIERT je Dimension (1/4" + 3/8" = 2 Positionen) - Isolierung
+                    // ist enthalten, KEINE separate Rohrisolierungs-Position mehr (Dubletten-Regel)
+                    const dims = String(tech.pipeDimension || '').match(/\d\/\d/g) || [];
+                    if (dims.length) {
+                        for (const d of dims) {
+                            const kat = this._findKupferrohr(allMats, d);
+                            wanted.push(kat
+                                ? { mat: kat, qty: L, unit: 'm' }
+                                : { name: 'Kupferrohr isoliert', size: d + '"', qty: L, unit: 'm', category: 'Kupferrohre' });
+                        }
+                    } else {
+                        wanted.push({ name: 'Kupferrohr isoliert', size: tech.pipeDimension || '', qty: L, unit: 'm', category: 'Kupferrohre' });
+                    }
+                    // Automatische Längen: gleiche Strecke wie das Rohr, nur bei Abweichung ändern
                     wanted.push({ name: 'Kondensatschlauch', size: '', qty: num(tech.condensateLine) || L, unit: 'm', category: 'Kondensat' });
-                    wanted.push({ name: 'Stromkabel', size: tech.powerCable || '', qty: num(tech.powerCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
-                    wanted.push({ name: 'Kommunikationskabel', size: tech.commCable || '', qty: num(tech.commCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
+                    wanted.push({ name: 'Stromkabel', size: tech.powerCable || '3x1,5', qty: num(tech.powerCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
+                    wanted.push({ name: 'Kommunikationskabel', size: tech.commCable || '4x1,5', qty: num(tech.commCableLength) || (L + 1), unit: 'm', category: 'Kabel' });
                     wanted.push({ name: 'Kabelkanal', size: '', qty: num(tech.cableDuct) || L, unit: 'm', category: 'Elektromaterial' });
+                    wanted.push({ name: 'Arbeitsleistung Montage', size: '', qty: 1, unit: 'Stk', category: 'Arbeitszeit' });
                 }
                 if (tech.condensatePump === true) wanted.push({ name: 'Kondensatpumpe', size: '', qty: 1, unit: 'Stk', category: 'Kondensat' });
                 if (tech.devManufacturer) {
-                    wanted.push({ name: `Innengerät ${tech.devManufacturer}`, size: tech.devModel || (num(tech.devCapacity) ? `${tech.devCapacity} kW` : ''), qty: 1, unit: 'Stk', category: 'Klimageräte' });
+                    // Innengerät: zuerst echtes Katalog-Gerät suchen (Modell/Hersteller), sonst generisch
+                    const model = String(tech.devModel || '').trim();
+                    const dev = allMats.find(m => model && `${m.name || ''}`.toLowerCase().includes(model.toLowerCase()))
+                        || allMats.find(m => (m.category === 'Innengeräte' || m.category === 'Klimageräte')
+                            && (m.manufacturer || '').toLowerCase() === String(tech.devManufacturer).toLowerCase()
+                            && num(tech.devCapacity) && parseFloat(String(m.size).replace(',', '.')) === num(tech.devCapacity));
+                    wanted.push(dev
+                        ? { mat: dev, qty: 1, unit: 'Stk' }
+                        : { name: `Innengerät ${tech.devManufacturer}`, size: model || (num(tech.devCapacity) ? `${tech.devCapacity} kW` : ''), qty: 1, unit: 'Stk', category: 'Innengeräte' });
                 }
                 if (tech.bigFoot === true) wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
                 if (tech.wallBracket === true) wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
@@ -743,17 +793,25 @@
                 if (wanted.length === 0) return 0;
 
                 const existing = ((await db.getByIndex('projectMaterials', 'projectId', projectId)) || []).filter(x => String(x.roomId) === String(roomId));
-                const allMats = await db.getAll('materials');
-                let added = 0;
+                let added = 0, updated = 0;
                 for (const w of wanted) {
-                    const mat = await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
-                    if (manualMatIds.has(String(mat.id))) continue; // vom Benutzer bereits manuell erfasst
-                    const dup = existing.some(x => String(x.materialId) === String(mat.id));
-                    if (dup) continue;
-                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || '', price: matUnitPrice(mat, w.unit), note: `${roomName} – automatisch` });
+                    const mat = w.mat || await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
+                    if (manualMatIds.has(String(mat.id))) continue;   // manuell erfasst -> nicht anfassen
+                    const dup = existing.find(x => String(x.materialId) === String(mat.id) && (x.unit || 'Stk') === w.unit);
+                    if (dup) {
+                        // DUBLETTEN-REGEL: existiert bereits -> Menge aktualisieren statt neu anlegen
+                        if (Number(dup.quantity) !== w.qty && String(dup.note || '').includes('automatisch')) {
+                            dup.quantity = w.qty;
+                            dup.note = `${roomName} – automatisch`;
+                            await db.put('projectMaterials', dup);
+                            updated++;
+                        }
+                        continue;
+                    }
+                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || mat.size || '', price: matUnitPrice(mat, w.unit), note: `${roomName} – automatisch` });
                     added++;
                 }
-                return added;
+                return added + updated;
             },
 
             // ---------- Projekt-Modal: intelligente Titel + Datenschutz vor Überschreiben ----------
