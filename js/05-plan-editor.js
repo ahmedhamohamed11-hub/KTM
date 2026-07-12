@@ -654,7 +654,7 @@
                 await refreshProjectSummary(projectId);
                 if (!silent) {
                     showToast(`Plan übernommen: ${updatedRooms} Raum/Räume aktualisiert, ${changedMat} Materialposition(en) angepasst.`, 'success');
-                    app.navigate('projects', projectId);
+                    app.reloadProject(projectId);
                 } else if (updatedRooms > 0 || changedMat > 0) {
                     planUpdateStatus(`🔄 ${updatedRooms} Räume · ${changedMat} Material automatisch aktualisiert`);
                     setTimeout(() => planUpdateStatus(), 2200);

@@ -194,7 +194,7 @@
                             const roomTxt = chosen.length ? `${chosen.length} Raum/Räume` : 'Projekt gesamt';
                             showToast(`${data.name || 'Material'} für ${roomTxt} gespeichert${merged ? ` (${merged} vorhandene Position(en) aufgestockt)` : ''}.`, 'success');
                         }
-                        app.navigate('projects', pid);
+                        app.reloadProject(pid);
                     }
                 );
 
@@ -271,15 +271,13 @@
 
                 // Neu rendern OHNE nach oben zu springen
                 if (field === 'quantity' || field === 'price' || field === 'roomId') {
-                    window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
-                    app.navigate('projects', pm.projectId);
+                    app.reloadProject(pm.projectId);
                 }
             },
 
             async deleteProjectMaterial(id, projectId) {
                 await db.delete('projectMaterials', id);
-                window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
-                app.navigate('projects', projectId);
+                app.reloadProject(projectId);
             },
 
             // Bestellliste aus Projekt-Material erzeugen
@@ -364,7 +362,7 @@
                         }
                         await db.put('projects', project);
                         showToast('Besichtigung gespeichert.', 'success');
-                        app.navigate('projects', projectId);
+                        app.reloadProject(projectId);
                     },
                     null,
                     { wide: true }
@@ -436,7 +434,7 @@
                 const total = addedRooms + added;
                 if (total === 0) showToast('Materialliste ist bereits vollständig.', 'info');
                 else showToast(`${total} Materialposition(en) automatisch berechnet (${addedRooms} raumbezogen, ${added} projektweit).`, 'success');
-                app.navigate('projects', projectId);
+                app.reloadProject(projectId);
             },
 
             // ---------- Angebots-Variante: gleiche Positionen, andere Klimamarke ----------
@@ -444,64 +442,59 @@
                 const offer = await db.get('offers', offerId);
                 if (!offer) return;
                 const mats = await db.getAll('materials');
+                const DEV_CATS = ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Multisplit-Systeme', 'Multi Split'];
                 const isDevice = (p) => {
                     const m = mats.find(x => String(x.id) === String(p.materialId));
-                    const cat = m?.category || p.category || '';
-                    return ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Multisplit-Systeme'].includes(cat);
+                    return DEV_CATS.includes(m?.category || p.category || '');
                 };
                 const devicePos = (offer.positions || []).filter(isDevice);
                 if (devicePos.length === 0) { showToast('Dieses Angebot enthält keine Klimageräte zum Tauschen.', 'info'); return; }
 
-                // Verfügbare Marken aus dem Katalog (nur Geräte-Kategorien)
-                const brands = [...new Set(mats
-                    .filter(m => ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Multisplit-Systeme'].includes(m.category) && m.manufacturer)
-                    .map(m => m.manufacturer))].sort();
-                const currentBrands = [...new Set(devicePos.map(p => {
-                    const m = mats.find(x => String(x.id) === String(p.materialId));
-                    return m?.manufacturer || p.manufacturer || '';
-                }).filter(Boolean))];
+                const kwOf = (v) => parseFloat(String(v || '').replace(',', '.')) || 0;
+                const brands = [...new Set(mats.filter(m => DEV_CATS.includes(m.category) && m.manufacturer).map(m => m.manufacturer))].sort();
+
+                // Für jedes Gerät die Kandidaten der Zielmarke nach kW-Nähe sortieren
+                const candidatesFor = (p, brand) => {
+                    const old = mats.find(x => String(x.id) === String(p.materialId));
+                    const cat = old?.category || p.category;
+                    const kw = kwOf(old?.size);
+                    return mats
+                        .filter(m => m.manufacturer === brand && m.category === cat)
+                        .map(m => ({ m, kw: kwOf(m.size), diff: Math.abs(kwOf(m.size) - kw) }))
+                        .sort((a, b) => a.diff - b.diff || a.kw - b.kw);
+                };
 
                 const modal = showModal(
                     `Variante von ${escapeHtml(offer.offerNumber || 'Angebot')}`,
                     `
                         <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
-                            Es wird ein <strong>zweites Angebot</strong> mit identischen Positionen erstellt –
-                            nur die Klimageräte werden auf eine andere Marke umgestellt.
-                            Kupferrohr, Kabel, Montage und alles Übrige bleiben unverändert.
+                            Es entsteht ein <strong>zweites Angebot</strong> mit identischen Positionen –
+                            nur die Klimageräte werden getauscht. Du wählst für jedes Gerät selbst das Modell.
                         </div>
                         <div class="form-group">
-                            <label>Neue Klimamarke *</label>
+                            <label>Marke *</label>
                             <select id="varBrand">
                                 <option value="">– Marke wählen –</option>
-                                ${brands.filter(b => !currentBrands.includes(b)).map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
+                                ${brands.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
                             </select>
                         </div>
-                        <div class="form-card" style="margin-top:4px;">
-                            <div class="form-card-title">Diese Geräte werden getauscht (${devicePos.length})</div>
-                            <div id="varPreview" style="font-size:12.5px;color:var(--text-muted);">
-                                ${devicePos.map(p => `<div>• ${escapeHtml(p.name)} <span style="color:var(--text-muted);">(${p.quantity} ${escapeHtml(p.unit || 'Stk')})</span></div>`).join('')}
-                            </div>
-                        </div>
+                        <div id="varDevices"></div>
                     `,
                     async (overlay) => {
                         const brand = overlay.querySelector('#varBrand').value;
                         if (!brand) { showToast('Bitte eine Marke wählen.', 'error'); return; }
 
-                        const kwOf = (v) => parseFloat(String(v || '').replace(',', '.')) || 0;
+                        const picks = new Map();   // Position-Index -> Material-ID ('' = unverändert)
+                        overlay.querySelectorAll('.var-pick').forEach(sel => picks.set(sel.dataset.idx, sel.value));
+
                         const newPositions = [];
-                        const notFound = [];
-                        for (const p of offer.positions || []) {
-                            if (!isDevice(p)) { newPositions.push({ ...p }); continue; }
-                            const old = mats.find(x => String(x.id) === String(p.materialId));
-                            const cat = old?.category || p.category;
-                            const kw = kwOf(old?.size);
-                            // Passendes Gerät der neuen Marke: gleiche Kategorie, gleiche/nächste kW
-                            const cands = mats.filter(m => m.manufacturer === brand && m.category === cat);
-                            let repl = cands.find(m => kwOf(m.size) === kw);
-                            if (!repl && kw > 0 && cands.length) {
-                                repl = cands.slice().sort((a, b) => Math.abs(kwOf(a.size) - kw) - Math.abs(kwOf(b.size) - kw))[0];
-                            }
-                            if (!repl) { notFound.push(p.name); newPositions.push({ ...p }); continue; }
+                        let swapped = 0;
+                        (offer.positions || []).forEach((p, i) => {
+                            const pick = picks.get(String(i));
+                            if (!isDevice(p) || !pick) { newPositions.push({ ...p }); return; }
+                            const repl = mats.find(m => String(m.id) === String(pick));
+                            if (!repl) { newPositions.push({ ...p }); return; }
+                            swapped++;
                             newPositions.push({
                                 ...p,
                                 materialId: repl.id,
@@ -512,7 +505,8 @@
                                 price: matUnitPrice(repl, p.unit || repl.unit || 'Stk'),
                                 description: [repl.size, repl.series].filter(Boolean).join(' · ')
                             });
-                        }
+                        });
+                        if (swapped === 0) { showToast('Kein Gerät ausgewählt – nichts zu tauschen.', 'info'); return; }
 
                         const net = newPositions.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
                         const dRate = (offer.discountRate || 0) > 1 ? (offer.discountRate || 0) / 100 : (offer.discountRate || 0);
@@ -538,46 +532,67 @@
                         delete variant.id; delete variant._synced; delete variant.createdAt; delete variant.updatedAt;
                         await db.add('offers', variant);
                         overlay.remove();
-                        if (notFound.length) {
-                            showToast(`Variante ${num} erstellt. Für ${notFound.length} Gerät(e) gibt es bei ${brand} keine Entsprechung – Originalgerät beibehalten.`, 'info');
-                        } else {
-                            showToast(`Variante ${num} mit ${brand}-Geräten erstellt. Beide Angebote können jetzt gesendet werden.`, 'success');
-                        }
+                        showToast(`Variante ${num}: ${swapped} Gerät(e) auf ${brand} umgestellt. Beide Angebote können jetzt gesendet werden.`, 'success');
                         renderOffers();
                     },
                     'Variante erstellen'
                 );
 
-                // Live-Vorschau: welche Geräte werden womit ersetzt?
-                modal.querySelector('#varBrand').addEventListener('change', (e) => {
-                    const brand = e.target.value;
-                    const box = modal.querySelector('#varPreview');
-                    if (!brand) { box.innerHTML = devicePos.map(p => `<div>• ${escapeHtml(p.name)}</div>`).join(''); return; }
-                    const kwOf = (v) => parseFloat(String(v || '').replace(',', '.')) || 0;
-                    box.innerHTML = devicePos.map(p => {
+                // Geräteliste mit Modell-Auswahl je Position
+                const renderDevices = () => {
+                    const brand = modal.querySelector('#varBrand').value;
+                    const box = modal.querySelector('#varDevices');
+                    if (!brand) { box.innerHTML = '<div class="empty-note" style="padding:14px;">Marke wählen, dann erscheinen die passenden Modelle.</div>'; return; }
+
+                    box.innerHTML = (offer.positions || []).map((p, i) => {
+                        if (!isDevice(p)) return '';
                         const old = mats.find(x => String(x.id) === String(p.materialId));
                         const kw = kwOf(old?.size);
-                        const cands = mats.filter(m => m.manufacturer === brand && m.category === (old?.category || p.category));
-                        let repl = cands.find(m => kwOf(m.size) === kw)
-                            || (kw > 0 && cands.length ? cands.slice().sort((a, b) => Math.abs(kwOf(a.size) - kw) - Math.abs(kwOf(b.size) - kw))[0] : null);
-                        return repl
-                            ? `<div>• ${escapeHtml(p.name)} <strong style="color:var(--accent);">→ ${escapeHtml(repl.name)}</strong> <span>(${formatCurrency(matUnitPrice(repl, p.unit || 'Stk'))})</span></div>`
-                            : `<div>• ${escapeHtml(p.name)} <span style="color:var(--warning);">→ keine Entsprechung bei ${escapeHtml(brand)}, bleibt unverändert</span></div>`;
+                        const cands = candidatesFor(p, brand);
+                        if (!cands.length) {
+                            return `<div class="form-card"><div class="form-card-title">${escapeHtml(p.name)}</div>
+                                <div style="font-size:12.5px;color:var(--warning);">Keine ${escapeHtml(brand)}-Geräte in dieser Kategorie – Position bleibt unverändert.</div></div>`;
+                        }
+                        const exact = cands.filter(c => c.diff < 0.05);
+                        const near = cands.filter(c => c.diff >= 0.05).slice(0, 6);
+                        const opt = (c) => {
+                            const tag = c.diff < 0.05 ? '✓ exakt' : (c.kw > kw ? '▲ eine Stufe höher' : '▼ eine Stufe niedriger');
+                            return `<option value="${escapeHtml(String(c.m.id))}">${escapeHtml(c.m.name)} · ${escapeHtml(c.m.size || '')} · ${formatCurrency(matUnitPrice(c.m, p.unit || 'Stk'))} — ${tag}</option>`;
+                        };
+                        return `<div class="form-card">
+                            <div class="form-card-title">${escapeHtml(p.name)} <span style="font-weight:600;color:var(--text-muted);">· aktuell ${escapeHtml(old?.size || '')} · ${formatCurrency(p.price || 0)}</span></div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">
+                                ${exact.length
+                                    ? `${escapeHtml(brand)} hat <strong style="color:var(--success);">${exact.length} Modell(e) mit exakt ${escapeHtml(old?.size || '')}</strong>.`
+                                    : `${escapeHtml(brand)} hat kein Modell mit exakt ${escapeHtml(old?.size || '')} – nächstliegende Leistungen:`}
+                            </div>
+                            <select class="var-pick" data-idx="${i}">
+                                ${exact.map(opt).join('')}
+                                ${near.map(opt).join('')}
+                                <option value="">— Gerät nicht tauschen (Original behalten) —</option>
+                            </select>
+                        </div>`;
                     }).join('');
-                });
+                };
+                modal.querySelector('#varBrand').addEventListener('change', renderDevices);
+                renderDevices();
+            },
+
+            // Neu rendern OHNE Scroll-Sprung (Position wird gemerkt und wiederhergestellt)
+            reloadProject(pid) {
+                window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
+                app.navigate('projects', pid);
             },
 
             // ---------- Materialliste: Sortierung & Gruppierung ----------
             pmSort(key) {
                 const V = window.__pmView = window.__pmView || { groupBy: 'raum', sort: '', dir: 1 };
                 if (V.sort === key) { V.dir = -V.dir; } else { V.sort = key; V.dir = 1; }
-                window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
-                app.navigate('projects', app.currentProjectId);
+                app.reloadProject(app.currentProjectId);
             },
             pmSetGroup(v) {
                 (window.__pmView = window.__pmView || { groupBy: 'raum', sort: '', dir: 1 }).groupBy = v;
-                window.__ktmKeepScroll = (document.querySelector('.content-scroll') || contentArea)?.scrollTop ?? null;
-                app.navigate('projects', app.currentProjectId);
+                app.reloadProject(app.currentProjectId);
             },
 
             // ---------- Kategorie verwalten: umbenennen, verschieben, löschen ----------
@@ -903,7 +918,7 @@
                         if (priceLearned.length) {
                             showToast(`Neuer Preis im Katalog gemerkt: ${[...new Set(priceLearned)].join(', ')}`, 'success');
                         }
-                        app.navigate('projects', projectId);
+                        app.reloadProject(projectId);
                     },
                     null,
                     { wide: true }
@@ -1156,7 +1171,7 @@
                         else { pid = await db.add('projects', data); }
                         overlay.remove();
                         showToast(id ? 'Projekt aktualisiert.' : 'Projekt erstellt.', 'success');
-                        app.navigate('projects', pid);
+                        app.reloadProject(pid);
                     }
                 );
 

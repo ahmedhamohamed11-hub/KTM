@@ -375,49 +375,6 @@
                                     </div>` : ''}
                                 </div>
 
-                                <!-- ===== Planung / Grundriss ===== -->
-                                <div class="detail-section">
-                                    <div class="detail-section-head">
-                                        <h4>📐 Planung / Grundriss</h4>
-                                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                                            <button class="btn btn-sm btn-outline" id="planUndo" title="Rückgängig">↶</button>
-                                            <button class="btn btn-sm btn-outline" id="planRelayout">Räume anordnen</button>
-                                            <button class="btn btn-sm btn-primary" id="planApplyNow">✓ In Material übernehmen</button>
-                                        </div>
-                                    </div>
-                                    <div class="plan-wrap">
-                                        <div class="plan-tools">
-                                            <button class="plan-tool active" data-tool="select" title="Auswählen / Verschieben / Plan bewegen">🖐</button>
-                                            <div class="plan-tools-sep"></div>
-                                            ${Object.entries(PLAN_LINE_KINDS).map(([k, v]) => `<button class="plan-tool" data-tool="line:${k}" title="${v.label} zeichnen"><span style="border-bottom:3px solid ${v.color};padding-bottom:1px;">${v.emoji}</span></button>`).join('')}
-                                            <div class="plan-tools-sep"></div>
-                                            ${Object.entries(PLAN_SYMBOLS).map(([k, v]) => `<button class="plan-tool" data-tool="${k}" title="${v.label}">${v.emoji}</button>`).join('')}
-                                        </div>
-                                        <div class="plan-canvas-wrap">
-                                            <svg id="planSvg" preserveAspectRatio="xMidYMid meet">
-                                                <defs>
-                                                    <pattern id="planGrid" width="${PLAN_SCALE}" height="${PLAN_SCALE}" patternUnits="userSpaceOnUse">
-                                                        <path d="M ${PLAN_SCALE} 0 L 0 0 0 ${PLAN_SCALE}" fill="none" class="pl-grid"/>
-                                                    </pattern>
-                                                </defs>
-                                                <rect x="-4000" y="-4000" width="9000" height="9000" fill="url(#planGrid)" pointer-events="none"></rect>
-                                                <g id="planLayer"></g>
-                                            </svg>
-                                            <button class="btn btn-sm btn-primary plan-finish" id="planFinishLine">✔ Linie fertig</button>
-                                            <div class="plan-status" id="planStatus"></div>
-                                            <div class="plan-selbar" id="planSelBar">
-                                                <button class="btn btn-sm btn-outline" id="planSelRotate" title="Drehen (45°)">⟳</button>
-                                                <button class="btn btn-sm btn-outline" id="planSelScaleUp" title="Größer">＋</button>
-                                                <button class="btn btn-sm btn-outline" id="planSelScaleDown" title="Kleiner">－</button>
-                                                <button class="btn btn-sm btn-outline" id="planSelCopy" title="Kopieren">⧉</button>
-                                                <button class="btn btn-sm btn-outline" id="planSelText" title="Text">✎</button>
-                                                <button class="btn btn-sm btn-danger" id="planSelDelete" title="Löschen">🗑</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Zeichnen mit Maus, Finger oder Stift · Linien rasten horizontal/vertikal/45° ein und schnappen an Geräte · Längen fließen automatisch in Räume, Material, Bestellung und PDF.</div>
-                                </div>
-
                                 <!-- ===== Material ===== -->
                                 <div class="detail-section">
                                     ${pm.length > 0 ? (() => {
@@ -580,6 +537,49 @@
                                         `).join('') || '<div class="empty-note" style="grid-column:1/-1;">Keine Bilder</div>'}
                                     </div>
                                 </div>
+                                <!-- ===== Planung / Grundriss ===== -->
+                                <div class="detail-section">
+                                    <div class="detail-section-head">
+                                        <h4>📐 Planung / Grundriss</h4>
+                                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                            <button class="btn btn-sm btn-outline" id="planUndo" title="Rückgängig">↶</button>
+                                            <button class="btn btn-sm btn-outline" id="planRelayout">Räume anordnen</button>
+                                            <button class="btn btn-sm btn-primary" id="planApplyNow">✓ In Material übernehmen</button>
+                                        </div>
+                                    </div>
+                                    <div class="plan-wrap">
+                                        <div class="plan-tools">
+                                            <button class="plan-tool active" data-tool="select" title="Auswählen / Verschieben / Plan bewegen">🖐</button>
+                                            <div class="plan-tools-sep"></div>
+                                            ${Object.entries(PLAN_LINE_KINDS).map(([k, v]) => `<button class="plan-tool" data-tool="line:${k}" title="${v.label} zeichnen"><span style="border-bottom:3px solid ${v.color};padding-bottom:1px;">${v.emoji}</span></button>`).join('')}
+                                            <div class="plan-tools-sep"></div>
+                                            ${Object.entries(PLAN_SYMBOLS).map(([k, v]) => `<button class="plan-tool" data-tool="${k}" title="${v.label}">${v.emoji}</button>`).join('')}
+                                        </div>
+                                        <div class="plan-canvas-wrap">
+                                            <svg id="planSvg" preserveAspectRatio="xMidYMid meet">
+                                                <defs>
+                                                    <pattern id="planGrid" width="${PLAN_SCALE}" height="${PLAN_SCALE}" patternUnits="userSpaceOnUse">
+                                                        <path d="M ${PLAN_SCALE} 0 L 0 0 0 ${PLAN_SCALE}" fill="none" class="pl-grid"/>
+                                                    </pattern>
+                                                </defs>
+                                                <rect x="-4000" y="-4000" width="9000" height="9000" fill="url(#planGrid)" pointer-events="none"></rect>
+                                                <g id="planLayer"></g>
+                                            </svg>
+                                            <button class="btn btn-sm btn-primary plan-finish" id="planFinishLine">✔ Linie fertig</button>
+                                            <div class="plan-status" id="planStatus"></div>
+                                            <div class="plan-selbar" id="planSelBar">
+                                                <button class="btn btn-sm btn-outline" id="planSelRotate" title="Drehen (45°)">⟳</button>
+                                                <button class="btn btn-sm btn-outline" id="planSelScaleUp" title="Größer">＋</button>
+                                                <button class="btn btn-sm btn-outline" id="planSelScaleDown" title="Kleiner">－</button>
+                                                <button class="btn btn-sm btn-outline" id="planSelCopy" title="Kopieren">⧉</button>
+                                                <button class="btn btn-sm btn-outline" id="planSelText" title="Text">✎</button>
+                                                <button class="btn btn-sm btn-danger" id="planSelDelete" title="Löschen">🗑</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Zeichnen mit Maus, Finger oder Stift · Linien rasten horizontal/vertikal/45° ein und schnappen an Geräte · Längen fließen automatisch in Räume, Material, Bestellung und PDF.</div>
+                                </div>
+
                             </div>
                         `;
                     }
@@ -633,13 +633,19 @@
                         try { if (proj2) initPlanEditor(proj2, projRooms); } catch (e) { console.warn('Plan-Editor:', e); }
                         // Scroll-Position halten (z.B. nach Preis-/Mengen-Eingabe in der Materialliste)
                         if (window.__ktmKeepScroll != null) {
+                            // Position halten (Bearbeitung in der Liste) – NICHT nach oben springen
                             const sc = document.querySelector('.content-scroll') || contentArea;
                             const y = window.__ktmKeepScroll;
                             window.__ktmKeepScroll = null;
-                            requestAnimationFrame(() => { sc.scrollTop = y; });
+                            requestAnimationFrame(() => {
+                                sc.scrollTop = y;
+                                requestAnimationFrame(() => { sc.scrollTop = y; });   // nach Bild-/Plan-Layout nochmal
+                            });
+                        } else {
+                            // Nur beim erstmaligen Öffnen eines Projekts nach oben scrollen
+                            const d = document.getElementById('projectDetail');
+                            if (d && typeof d.scrollIntoView === 'function') d.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }
-                        const d = document.getElementById('projectDetail');
-                        if (d && typeof d.scrollIntoView === 'function') d.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }, 60);
                 }
             })();
