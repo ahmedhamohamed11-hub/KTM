@@ -453,13 +453,37 @@
                 const kwOf = (v) => parseFloat(String(v || '').replace(',', '.')) || 0;
                 const brands = [...new Set(mats.filter(m => DEV_CATS.includes(m.category) && m.manufacturer).map(m => m.manufacturer))].sort();
 
-                // Für jedes Gerät die Kandidaten der Zielmarke nach kW-Nähe sortieren
+                // Multi-Split-Außengerät? -> maximale Anzahl Innengeräte (aus Notiz "max. 4 IG"
+                // oder aus dem Modellnamen wie 4MXM68A8 / 4AMW81U4RJC / MU4R25.U22)
+                const maxIG = (m) => {
+                    if (!m) return 0;
+                    const n = String(m.notes || '');
+                    const mn = n.match(/max\.?\s*(\d+)\s*IG/i);
+                    if (mn) return parseInt(mn[1], 10);
+                    const nm = String(m.name || '') + ' ' + String(m.articleNumber || '');
+                    const mm = nm.match(/\b(\d)\s*(?:MXM|AMW)/i) || nm.match(/\bMU\s*(\d)\s*R/i);
+                    return mm ? parseInt(mm[1], 10) : 0;
+                };
+                // Gerätetyp: Multi-AG / Single-AG / Innengerät – darf NIE gemischt werden
+                const devType = (m) => {
+                    if (!m) return '?';
+                    const cat = m.category || '';
+                    if (cat === 'Innengeräte' || cat === 'Truhengeräte') return 'IG';
+                    if (cat === 'Außengeräte') return maxIG(m) >= 2 ? 'MULTI-AG' : 'AG';
+                    return cat;
+                };
+
+                // Kandidaten der Zielmarke: gleicher Typ, bei Multi-AG auch gleiche IG-Anzahl,
+                // dann nach kW-Nähe sortiert
                 const candidatesFor = (p, brand) => {
-                    const old = mats.find(x => String(x.id) === String(p.materialId));
-                    const cat = old?.category || p.category;
-                    const kw = kwOf(old?.size);
+                    const orig = mats.find(x => String(x.id) === String(p.materialId));
+                    const type = devType(orig);
+                    const need = maxIG(orig);
+                    const kw = kwOf(orig?.size);
                     return mats
-                        .filter(m => m.manufacturer === brand && m.category === cat)
+                        .filter(m => m.manufacturer === brand
+                            && devType(m) === type                                     // IG bleibt IG, AG bleibt AG
+                            && (type !== 'MULTI-AG' || maxIG(m) === need))             // 4 IG -> nur 4-IG-Geräte
                         .map(m => ({ m, kw: kwOf(m.size), diff: Math.abs(kwOf(m.size) - kw) }))
                         .sort((a, b) => a.diff - b.diff || a.kw - b.kw);
                 };
@@ -548,23 +572,29 @@
                         if (!isDevice(p)) return '';
                         const old = mats.find(x => String(x.id) === String(p.materialId));
                         const kw = kwOf(old?.size);
+                        const type = devType(old);
+                        const need = maxIG(old);
+                        const typeLabel = type === 'MULTI-AG' ? `Multi-Split-Außengerät für ${need} Innengeräte`
+                            : type === 'AG' ? 'Außengerät (Single-Split)'
+                            : type === 'IG' ? 'Innengerät' : escapeHtml(old?.category || '');
                         const cands = candidatesFor(p, brand);
                         if (!cands.length) {
-                            return `<div class="form-card"><div class="form-card-title">${escapeHtml(p.name)}</div>
-                                <div style="font-size:12.5px;color:var(--warning);">Keine ${escapeHtml(brand)}-Geräte in dieser Kategorie – Position bleibt unverändert.</div></div>`;
+                            return `<div class="form-card"><div class="form-card-title">${escapeHtml(p.name)} <span style="font-weight:600;color:var(--text-muted);">· ${typeLabel}</span></div>
+                                <div style="font-size:12.5px;color:var(--warning);">${escapeHtml(brand)} hat kein passendes ${type === 'MULTI-AG' ? `Multi-Außengerät für ${need} Innengeräte` : 'Gerät dieser Bauart'} – Position bleibt unverändert.</div></div>`;
                         }
                         const exact = cands.filter(c => c.diff < 0.05);
                         const near = cands.filter(c => c.diff >= 0.05).slice(0, 6);
                         const opt = (c) => {
                             const tag = c.diff < 0.05 ? '✓ exakt' : (c.kw > kw ? '▲ eine Stufe höher' : '▼ eine Stufe niedriger');
-                            return `<option value="${escapeHtml(String(c.m.id))}">${escapeHtml(c.m.name)} · ${escapeHtml(c.m.size || '')} · ${formatCurrency(matUnitPrice(c.m, p.unit || 'Stk'))} — ${tag}</option>`;
+                            const ig = maxIG(c.m) >= 2 ? ` · ${maxIG(c.m)} IG` : '';
+                            return `<option value="${escapeHtml(String(c.m.id))}">${escapeHtml(c.m.name)} · ${escapeHtml(c.m.size || '')}${ig} · ${formatCurrency(matUnitPrice(c.m, p.unit || 'Stk'))} — ${tag}</option>`;
                         };
                         return `<div class="form-card">
-                            <div class="form-card-title">${escapeHtml(p.name)} <span style="font-weight:600;color:var(--text-muted);">· aktuell ${escapeHtml(old?.size || '')} · ${formatCurrency(p.price || 0)}</span></div>
+                            <div class="form-card-title">${escapeHtml(p.name)} <span style="font-weight:600;color:var(--text-muted);">· ${typeLabel} · aktuell ${escapeHtml(old?.size || '')} · ${formatCurrency(p.price || 0)}</span></div>
                             <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">
                                 ${exact.length
-                                    ? `${escapeHtml(brand)} hat <strong style="color:var(--success);">${exact.length} Modell(e) mit exakt ${escapeHtml(old?.size || '')}</strong>.`
-                                    : `${escapeHtml(brand)} hat kein Modell mit exakt ${escapeHtml(old?.size || '')} – nächstliegende Leistungen:`}
+                                    ? `${escapeHtml(brand)} hat <strong style="color:var(--success);">${exact.length} passende(s) Modell(e) mit exakt ${escapeHtml(old?.size || '')}</strong>${type === 'MULTI-AG' ? ` und ${need} Innengeräte-Anschlüssen` : ''}.`
+                                    : `${escapeHtml(brand)} hat kein Modell mit exakt ${escapeHtml(old?.size || '')}${type === 'MULTI-AG' ? ` bei ${need} Innengeräte-Anschlüssen` : ''} – nächstliegende Leistungen:`}
                             </div>
                             <select class="var-pick" data-idx="${i}">
                                 ${exact.map(opt).join('')}
