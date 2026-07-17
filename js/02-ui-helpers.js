@@ -3,7 +3,8 @@
         const PAGE_TITLES = {
             dashboard: 'Dashboard', customers: 'Kunden', projects: 'Projekte',
             calendar: 'Kalender', materials: 'Materialien', offers: 'Angebote',
-            orders: 'Bestellungen', invoices: 'Rechnungen', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien'
+            orders: 'Bestellungen', invoices: 'Rechnungen', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien',
+            calc: 'Schnellrechner'
         };
         function setPageTitle(page) {
             const el = document.getElementById('pageTitle');

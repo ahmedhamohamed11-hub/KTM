@@ -3,6 +3,172 @@
         // ============================================================
         // ============ DASHBOARD =====================================
         // ============================================================
+        // ============================================================
+        // SCHNELLRECHNER – Kühllast-Überschlag + Gerät aus Katalog + Richtpreis
+        // ============================================================
+        const CALC_STATE = window.__calcState || (window.__calcState = {
+            rooms: [{ area: 30, windows: 4, dir: 'sued', shade: 'normal', persons: 2 }],
+            building: 'normal', distance: 5, breakthrough: 1, ductLength: 4,
+            outdoor: 'wand', demolish: false, scaffold: false, brand: ''
+        });
+
+        // Kühllast je Raum (kW) – vereinfachtes, praxisnahes Verfahren
+        function calcRoomLoad(r) {
+            const bldFactor = { neu: 0.03, normal: 0.04, alt: 0.055 }[CALC_STATE.building] || 0.04;
+            let base = (Number(r.area) || 0) * bldFactor;                 // Grundlast Gebäude (kW/m²)
+            const dirF = { sued: 0.20, west: 0.16, ost: 0.12, nord: 0.05 }[r.dir] ?? 0.12;
+            const shadeF = { keine: 1.0, normal: 0.6, stark: 0.35 }[r.shade] ?? 0.6;
+            const sun = (Number(r.windows) || 0) * 0.09 * dirF / 0.15 * shadeF;   // Sonneneintrag über Glas
+            const glass = (Number(r.windows) || 0) * 0.015;               // Transmission Fenster
+            const persons = (Number(r.persons) || 0) * 0.09;             // 90 W je Person
+            const sub = base + sun + glass + persons;
+            const reserve = sub * 0.05;                                   // 5 % Reserve
+            return {
+                base: base, sun: sun, glass: glass, persons: persons, reserve: reserve,
+                total: Math.round((sub + reserve) * 100) / 100
+            };
+        }
+
+        // Nächstgrößeres Gerät aus dem eigenen Katalog (Innengerät) zur Last finden
+        async function calcPickDevice(loadKw, brand) {
+            const mats = await db.getAll('materials');
+            const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+            const isIndoor = m => {
+                const nm = (m.name || '') + ' ' + (m.articleNumber || '');
+                const notes = (m.notes || '').toLowerCase();
+                if (/\b\d\s*(?:MXM|AMW)/i.test(nm) || /\bMU\s*\d\s*R/i.test(nm) || /\bR[XZ][A-Z]?\d/i.test(nm)) return false;
+                return m.category === 'Innengeräte' || m.category === 'Klimageräte' || notes.includes('innengerät');
+            };
+            let pool = mats.filter(m => isIndoor(m) && kwOf(m.size) > 0 && Number(m.sellingPrice) > 0);
+            if (brand) pool = pool.filter(m => (m.manufacturer || '') === brand);
+            if (!pool.length) return null;
+            // kleinstes Gerät, das die Last deckt; sonst das größte verfügbare
+            const covering = pool.filter(m => kwOf(m.size) >= loadKw - 0.1).sort((a, b) => kwOf(a.size) - kwOf(b.size));
+            return covering[0] || pool.sort((a, b) => kwOf(b.size) - kwOf(a.size))[0];
+        }
+
+        // Montage-/Zusatzpauschalen (Richtwerte, in Einstellungen später anpassbar)
+        const CALC_RATES = { montageBase: 380, montagePerRoom: 180, leitungPerM: 22, durchbruch: 90, demontage: 120, geruest: 140 };
+
+        async function calcCompute() {
+            const rooms = [];
+            let sumLoad = 0;
+            for (const r of CALC_STATE.rooms) {
+                const load = calcRoomLoad(r);
+                const dev = await calcPickDevice(load.total, CALC_STATE.brand);
+                rooms.push({ r, load, dev });
+                sumLoad += load.total;
+            }
+            const multi = rooms.length > 1;
+            const geraeteSum = rooms.reduce((s, x) => s + (Number(x.dev?.sellingPrice) || 0), 0);
+            const montage = CALC_RATES.montageBase + CALC_RATES.montagePerRoom * rooms.length;
+            const leitungen = (Number(CALC_STATE.distance) || 0) * CALC_RATES.leitungPerM * rooms.length + (Number(CALC_STATE.ductLength) || 0) * 6;
+            const durchbruch = (Number(CALC_STATE.breakthrough) || 0) * CALC_RATES.durchbruch;
+            const extra = (CALC_STATE.demolish ? CALC_RATES.demontage : 0) + (CALC_STATE.scaffold ? CALC_RATES.geruest : 0);
+            const net = geraeteSum + montage + leitungen + durchbruch + extra;
+            const vat = net * 0.2;
+            return {
+                rooms, sumLoad: Math.round(sumLoad * 10) / 10, multi,
+                geraeteSum, montage, leitungen, durchbruch, extra,
+                net: Math.round(net), vat: Math.round(vat), brutto: Math.round(net + vat),
+                low: Math.round(net * 1.2 * 0.92), high: Math.round(net * 1.2 * 1.12)
+            };
+        }
+
+        function renderCalc() {
+            (async () => {
+                const brands = [...new Set((await db.getAll('materials'))
+                    .filter(m => m.category === 'Innengeräte' && m.manufacturer).map(m => m.manufacturer))].sort();
+                const res = await calcCompute();
+                const S = CALC_STATE;
+                const cur = v => formatCurrency(v);
+
+                const roomCard = (r, i) => `
+                    <div class="calc-room">
+                        <div class="calc-room-head">Raum ${i + 1}${S.rooms.length > 1 ? ` <button class="calc-x" onclick="app.calcDelRoom(${i})">✕</button>` : ''}</div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Fläche (m²)</label><input type="number" min="1" value="${r.area}" onchange="app.calcSet(${i},'area',this.value)"></div>
+                            <div class="form-group"><label>Fenster (Anzahl)</label><input type="number" min="0" value="${r.windows}" onchange="app.calcSet(${i},'windows',this.value)"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Fensterrichtung</label><select onchange="app.calcSet(${i},'dir',this.value)">
+                                ${[['sued','Süd'],['west','West'],['ost','Ost'],['nord','Nord']].map(([v,l])=>`<option value="${v}" ${r.dir===v?'selected':''}>${l}</option>`).join('')}
+                            </select></div>
+                            <div class="form-group"><label>Verschattung</label><select onchange="app.calcSet(${i},'shade',this.value)">
+                                ${[['keine','Keine'],['normal','Normal'],['stark','Stark (Rollläden)']].map(([v,l])=>`<option value="${v}" ${r.shade===v?'selected':''}>${l}</option>`).join('')}
+                            </select></div>
+                        </div>
+                        <div class="form-group"><label>Personen</label><input type="number" min="0" value="${r.persons}" onchange="app.calcSet(${i},'persons',this.value)"></div>
+                        <div class="calc-room-result">
+                            Kühllast: <strong>${res.rooms[i].load.total.toFixed(1).replace('.', ',')} kW</strong>
+                            ${res.rooms[i].dev ? ` → <span class="calc-dev">${escapeHtml(res.rooms[i].dev.name)} · ${escapeHtml(res.rooms[i].dev.size)} · ${cur(res.rooms[i].dev.sellingPrice)}</span>` : ' → <span style="color:var(--warning);">kein passendes Gerät im Katalog</span>'}
+                        </div>
+                    </div>`;
+
+                contentArea.innerHTML = `
+                    <div class="calc-wrap">
+                        <div class="calc-form">
+                            <div class="form-card">
+                                <div class="form-card-title">🏠 Objekt</div>
+                                <div class="form-row">
+                                    <div class="form-group"><label>Gebäudezustand</label><select onchange="app.calcSetGlobal('building',this.value)">
+                                        ${[['neu','Neubau / sehr gut'],['normal','Saniert / normal'],['alt','Altbau / unsaniert']].map(([v,l])=>`<option value="${v}" ${S.building===v?'selected':''}>${l}</option>`).join('')}
+                                    </select></div>
+                                    <div class="form-group"><label>Marke (optional)</label><select onchange="app.calcSetGlobal('brand',this.value)">
+                                        <option value="">Beste aus Katalog</option>
+                                        ${brands.map(b=>`<option value="${escapeHtml(b)}" ${S.brand===b?'selected':''}>${escapeHtml(b)}</option>`).join('')}
+                                    </select></div>
+                                </div>
+                            </div>
+                            ${S.rooms.map(roomCard).join('')}
+                            <button class="btn btn-outline btn-sm" onclick="app.calcAddRoom()" style="margin-bottom:14px;">${icon('plus')} Weiterer Raum</button>
+                            <div class="form-card">
+                                <div class="form-card-title">🔧 Montage</div>
+                                <div class="form-row">
+                                    <div class="form-group"><label>Entfernung innen↔außen (m)</label><input type="number" min="0" value="${S.distance}" onchange="app.calcSetGlobal('distance',this.value)"></div>
+                                    <div class="form-group"><label>Kabelkanal sichtbar (m)</label><input type="number" min="0" value="${S.ductLength}" onchange="app.calcSetGlobal('ductLength',this.value)"></div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group"><label>Wanddurchbrüche</label><input type="number" min="0" value="${S.breakthrough}" onchange="app.calcSetGlobal('breakthrough',this.value)"></div>
+                                    <div class="form-group"><label>Außengerät</label><select onchange="app.calcSetGlobal('outdoor',this.value)">
+                                        ${[['wand','Wandmontage'],['boden','Bodenaufstellung'],['balkon','Balkon / Terrasse'],['dach','Dach']].map(([v,l])=>`<option value="${v}" ${S.outdoor===v?'selected':''}>${l}</option>`).join('')}
+                                    </select></div>
+                                </div>
+                                <label class="calc-check"><input type="checkbox" ${S.demolish?'checked':''} onchange="app.calcSetGlobal('demolish',this.checked)"> Altgerät demontieren & entsorgen</label>
+                                <label class="calc-check"><input type="checkbox" ${S.scaffold?'checked':''} onchange="app.calcSetGlobal('scaffold',this.checked)"> Gerüst / Arbeit in Höhe nötig</label>
+                            </div>
+                        </div>
+
+                        <div class="calc-result">
+                            <div class="calc-headline">
+                                <div class="calc-price-big">${cur(res.brutto)}</div>
+                                <div class="calc-price-range">ca. ${cur(res.low)} bis ${cur(res.high)}</div>
+                                <div class="calc-badges">
+                                    <span class="calc-badge">Empfehlung: <strong>${res.multi ? 'Multi-Split' : 'Single-Split'}</strong></span>
+                                    <span class="calc-badge">Raumlast gesamt: <strong>${res.sumLoad.toFixed(1).replace('.', ',')} kW</strong></span>
+                                </div>
+                            </div>
+                            <table class="calc-table">
+                                <tr><td>Geräte (${res.rooms.length})</td><td>${cur(res.geraeteSum)}</td></tr>
+                                <tr><td>Montage & Inbetriebnahme</td><td>${cur(res.montage)}</td></tr>
+                                <tr><td>Leitungen & Kabelkanal</td><td>${cur(res.leitungen)}</td></tr>
+                                <tr><td>Wanddurchbruch</td><td>${cur(res.durchbruch)}</td></tr>
+                                ${res.extra ? `<tr><td>Zusatzleistungen</td><td>${cur(res.extra)}</td></tr>` : ''}
+                                <tr class="calc-sum"><td>Richtpreis netto</td><td>${cur(res.net)}</td></tr>
+                                <tr><td>USt. 20 %</td><td>${cur(res.vat)}</td></tr>
+                                <tr class="calc-total"><td>Unverbindlicher Richtpreis</td><td>${cur(res.brutto)}</td></tr>
+                            </table>
+                            <div class="calc-actions">
+                                <button class="btn btn-primary" onclick="app.calcToOffer()">${icon('file')} Angebot + Kunde anlegen</button>
+                                <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
+                                <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
+                            </div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert.</div>
+                        </div>
+                    </div>`;
+            })();
+        }
+
         function renderDashboard() {
             (async () => {
                 try {

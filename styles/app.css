@@ -865,3 +865,26 @@
             .calendar-day .cal-dot { display: none; }
         }
     
+        /* ===== Schnellrechner ===== */
+        .calc-wrap { display: grid; grid-template-columns: 1fr 380px; gap: 20px; align-items: start; }
+        @media (max-width: 900px) { .calc-wrap { grid-template-columns: 1fr; } }
+        .calc-room { background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 15px; margin-bottom: 12px; }
+        .calc-room-head { font-weight: 700; font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .calc-x { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 15px; }
+        .calc-room-result { margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 13px; }
+        .calc-dev { color: var(--accent); font-weight: 600; }
+        .calc-check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 8px; cursor: pointer; }
+        .calc-result { position: sticky; top: 16px; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px; box-shadow: var(--shadow-md); }
+        .calc-headline { text-align: center; padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+        .calc-price-big { font-family: var(--font-display); font-weight: 800; font-size: 34px; color: var(--accent); line-height: 1.1; }
+        .calc-price-range { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
+        .calc-badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
+        .calc-badge { background: var(--accent-light); color: var(--accent); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: var(--radius-pill); }
+        .calc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .calc-table td { padding: 7px 2px; border-bottom: 1px solid var(--border); }
+        .calc-table td:last-child { text-align: right; font-weight: 600; white-space: nowrap; }
+        .calc-table .calc-sum td { font-weight: 700; border-top: 1.5px solid var(--border); }
+        .calc-table .calc-total td { font-weight: 800; font-size: 15px; color: var(--accent); border-bottom: none; }
+        .calc-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+        .calc-actions .btn { width: 100%; justify-content: center; }
+        .calc-note { font-size: 11.5px; color: var(--text-muted); margin-top: 12px; text-align: center; }

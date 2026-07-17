@@ -706,6 +706,79 @@
                 });
             },
 
+            // ---------- Schnellrechner ----------
+            calcSet(i, key, val) {
+                const r = CALC_STATE.rooms[i]; if (!r) return;
+                r[key] = ['area', 'windows', 'persons'].includes(key) ? (parseFloat(String(val).replace(',', '.')) || 0) : val;
+                renderCalc();
+            },
+            calcSetGlobal(key, val) {
+                CALC_STATE[key] = (key === 'demolish' || key === 'scaffold') ? !!val
+                    : (['distance', 'breakthrough', 'ductLength'].includes(key) ? (parseFloat(String(val).replace(',', '.')) || 0) : val);
+                renderCalc();
+            },
+            calcAddRoom() { CALC_STATE.rooms.push({ area: 25, windows: 2, dir: 'sued', shade: 'normal', persons: 2 }); renderCalc(); },
+            calcDelRoom(i) { CALC_STATE.rooms.splice(i, 1); if (!CALC_STATE.rooms.length) CALC_STATE.rooms.push({ area: 25, windows: 2, dir: 'sued', shade: 'normal', persons: 2 }); renderCalc(); },
+            calcReset() {
+                window.__calcState = { rooms: [{ area: 30, windows: 4, dir: 'sued', shade: 'normal', persons: 2 }], building: 'normal', distance: 5, breakthrough: 1, ductLength: 4, outdoor: 'wand', demolish: false, scaffold: false, brand: '' };
+                Object.assign(CALC_STATE, window.__calcState);
+                renderCalc();
+            },
+            async calcCopy() {
+                const res = await calcCompute();
+                const lines = [
+                    `Richtpreis: ${formatCurrency(res.brutto)} (ca. ${formatCurrency(res.low)}–${formatCurrency(res.high)})`,
+                    `Empfehlung: ${res.multi ? 'Multi-Split' : 'Single-Split'}, Gesamtlast ${res.sumLoad.toFixed(1).replace('.', ',')} kW`,
+                    ...res.rooms.map((x, i) => `Raum ${i + 1}: ${x.load.total.toFixed(1).replace('.', ',')} kW${x.dev ? ' → ' + x.dev.name + ' (' + formatCurrency(x.dev.sellingPrice) + ')' : ''}`),
+                    `Netto ${formatCurrency(res.net)} + USt ${formatCurrency(res.vat)} = ${formatCurrency(res.brutto)}`
+                ];
+                try { await navigator.clipboard.writeText(lines.join('\n')); showToast('Zusammenfassung kopiert.', 'success'); }
+                catch (e) { showToast('Kopieren nicht möglich.', 'error'); }
+            },
+            async calcToOffer() {
+                const res = await calcCompute();
+                const modal = showModal('Angebot aus Schnellrechner', `
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">Es wird ein Kunde angelegt und daraus direkt ein Angebot über <strong>${formatCurrency(res.brutto)}</strong> erstellt.</div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Vorname</label><input type="text" id="calcFirst"></div>
+                        <div class="form-group"><label>Nachname *</label><input type="text" id="calcLast"></div>
+                    </div>
+                    <div class="form-group"><label>Telefon</label><input type="text" id="calcPhone"></div>
+                    <div class="form-group"><label>Adresse / Baustelle</label><input type="text" id="calcAddr"></div>
+                `, async (overlay) => {
+                    const last = overlay.querySelector('#calcLast').value.trim();
+                    if (!last) { showToast('Bitte mindestens den Nachnamen angeben.', 'error'); return; }
+                    // Kunde anlegen
+                    const custId = await db.add('customers', {
+                        firstName: overlay.querySelector('#calcFirst').value.trim(),
+                        lastName: last, phone: overlay.querySelector('#calcPhone').value.trim(),
+                        street: overlay.querySelector('#calcAddr').value.trim(), status: 'Neu', source: 'Schnellrechner'
+                    });
+                    // Projekt anlegen
+                    const projId = await db.add('projects', { title: `Klima ${last}`, customerId: custId, status: 'Angebot', coolingRecommendation: res.sumLoad });
+                    // Positionen aus dem Rechner
+                    const positions = [];
+                    res.rooms.forEach((x, i) => {
+                        if (x.dev) positions.push({ materialId: x.dev.id, name: x.dev.name, category: x.dev.category, description: `Raum ${i + 1} · ${x.dev.size}`, quantity: 1, unit: 'Stk', price: Number(x.dev.sellingPrice) || 0 });
+                    });
+                    positions.push({ name: 'Montage & Inbetriebnahme', quantity: 1, unit: 'Pauschale', price: res.montage });
+                    positions.push({ name: 'Leitungen & Kabelkanal', quantity: 1, unit: 'Pauschale', price: res.leitungen });
+                    if (res.durchbruch) positions.push({ name: 'Wanddurchbruch', quantity: 1, unit: 'Pauschale', price: res.durchbruch });
+                    if (res.extra) positions.push({ name: 'Zusatzleistungen (Demontage/Gerüst)', quantity: 1, unit: 'Pauschale', price: res.extra });
+                    const net = positions.reduce((s, p) => s + p.price * p.quantity, 0);
+                    const num = (typeof getNextAutoNumber === 'function') ? await getNextAutoNumber() : `A-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+                    await db.add('offers', {
+                        offerNumber: num, customerId: custId, projectId: projId, positions,
+                        netPrice: net, vatAmount: net * 0.2, totalPrice: net * 1.2,
+                        vatRate: 0.2, status: 'Angebot offen', coolingRecommendation: res.sumLoad,
+                        notes: 'Aus Schnellrechner erstellt – finaler Preis nach Besichtigung.'
+                    });
+                    overlay.remove();
+                    showToast(`Kunde & Angebot ${num} angelegt.`, 'success');
+                    app.navigate('offers');
+                }, 'Anlegen');
+            },
+
             // ---------- Material-Katalog: Navigation ----------
             matNav(level) {
                 const F = listFilters.materials;
@@ -1973,6 +2046,7 @@
 
                 switch (page) {
                     case 'dashboard': renderDashboard(); break;
+                    case 'calc': renderCalc(); break;
                     case 'customers': renderCustomers(); break;
                     case 'projects': renderProjects(param); break;
                     case 'calendar': renderCalendar(param); break;
