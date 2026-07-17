@@ -256,7 +256,15 @@
                     ...orders.map(o => ({ t: 'Bestellung', title: o.supplier || 'Bestellung', at: o.updatedAt || o.createdAt, link: 'orders', id: null }))
                 ].filter(a => a.at).sort((a, b) => (b.at || '').localeCompare(a.at || '')).slice(0, 6);
 
+                const overdue = invoices.filter(inv => invoiceStatus(inv) === 'Überfällig');
+                const overdueSum = overdue.reduce((s, inv) => s + invoiceOpen(inv), 0);
+
                 contentArea.innerHTML = `
+                    ${overdue.length ? `<div class="overdue-banner" onclick="app.navigate('invoices')">
+                        <span class="overdue-icon">⚠️</span>
+                        <div><strong>${overdue.length} überfällige Rechnung${overdue.length !== 1 ? 'en' : ''}</strong> · offen ${formatCurrency(overdueSum)}<br>
+                        <span style="font-size:12px;opacity:0.85;">Tippen, um die Rechnungen zu öffnen und zu mahnen</span></div>
+                    </div>` : ''}
                     <div class="stat-grid">
                         <div class="stat-card" onclick="app.navigate('customers')" style="cursor:pointer;">
                             <div class="stat-ico ico-teal">${icon('users')}</div>

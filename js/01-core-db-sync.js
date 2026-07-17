@@ -625,6 +625,23 @@ async function backgroundSyncPushInner() {
             }, 3000);
         }
 
+        // Toast mit "Rückgängig"-Knopf – ruft onUndo, wenn innerhalb von 6 Sek. geklickt
+        function showUndoToast(message, onUndo) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast toast-info toast-undo';
+            const btn = document.createElement('button');
+            btn.className = 'toast-undo-btn';
+            btn.textContent = 'Rückgängig';
+            toast.innerHTML = `↩️ ${message} `;
+            toast.appendChild(btn);
+            container.appendChild(toast);
+            let done = false;
+            const finish = () => { if (done) return; done = true; toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); };
+            btn.addEventListener('click', async () => { if (done) return; done = true; toast.remove(); try { await onUndo(); } catch (e) { showToast('Wiederherstellen fehlgeschlagen.', 'error'); } });
+            setTimeout(finish, 6000);
+        }
+
         function formatCurrency(amount) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount || 0); }
         function formatDate(isoString) { return !isoString ? '-' : new Date(isoString).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
 

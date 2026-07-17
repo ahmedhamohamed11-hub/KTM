@@ -276,8 +276,15 @@
             },
 
             async deleteProjectMaterial(id, projectId) {
+                const rec = await db.get('projectMaterials', id);
                 await db.delete('projectMaterials', id);
                 app.reloadProject(projectId);
+                if (rec) showUndoToast('Material gelöscht.', async () => {
+                    const restore = { ...rec }; delete restore._synced;
+                    await db.add('projectMaterials', restore);
+                    app.reloadProject(projectId);
+                    showToast('Material wiederhergestellt.', 'success');
+                });
             },
 
             // Bestellliste aus Projekt-Material erzeugen
@@ -2208,6 +2215,33 @@
                             data.createdAt = customer.createdAt;
                             await db.put('customers', data);
                         } else {
+                            // Dubletten-Prüfung: ähnlicher Name ODER gleiche Telefonnummer/E-Mail
+                            const norm = s => String(s || '').toLowerCase().replace(/[\s.\-]/g, '');
+                            const nameKey = norm(data.firstName + data.lastName);
+                            const phoneKey = norm(data.phone);
+                            const mailKey = norm(data.email);
+                            const all = await db.getAll('customers');
+                            const dup = all.find(c => {
+                                const cn = norm((c.firstName || '') + (c.lastName || ''));
+                                if (nameKey && cn === nameKey) return true;
+                                if (phoneKey && phoneKey.length >= 6 && norm(c.phone) === phoneKey) return true;
+                                if (mailKey && mailKey.includes('@') && norm(c.email) === mailKey) return true;
+                                return false;
+                            });
+                            if (dup && !overlay.dataset.dupConfirmed) {
+                                const reason = norm((dup.firstName || '') + (dup.lastName || '')) === nameKey ? 'gleicher Name'
+                                    : (phoneKey && norm(dup.phone) === phoneKey ? 'gleiche Telefonnummer' : 'gleiche E-Mail');
+                                const info = [dup.firstName, dup.lastName, dup.city ? '· ' + dup.city : '', dup.phone ? '· ' + dup.phone : ''].filter(Boolean).join(' ');
+                                overlay.dataset.dupConfirmed = '1';
+                                showModal('Kunde existiert womöglich schon',
+                                    `<div style="font-size:13.5px;line-height:1.55;">Es gibt bereits einen Kunden mit <strong>${reason}</strong>:<br><br>
+                                     <div class="form-card" style="margin:0;"><strong>${escapeHtml(info)}</strong></div><br>
+                                     Möchtest du trotzdem einen <strong>neuen</strong> Kunden anlegen?</div>`,
+                                    async (ov2) => { ov2.remove(); overlay.querySelector('.save-btn')?.click(); },
+                                    'Trotzdem neu anlegen'
+                                );
+                                return;
+                            }
                             await db.add('customers', data);
                         }
                         overlay.remove();
@@ -2219,9 +2253,15 @@
 
             async deleteCustomer(id) {
                 if (!confirm('Kunden wirklich löschen? Alle zugehörigen Projekte bleiben erhalten.')) return;
+                const rec = await db.get('customers', id);
                 await db.delete('customers', id);
-                showToast('Kunde gelöscht.', 'info');
                 this.navigate('customers');
+                if (rec) showUndoToast('Kunde gelöscht.', async () => {
+                    const restore = { ...rec }; delete restore._synced;
+                    await db.add('customers', restore);
+                    app.navigate('customers');
+                    showToast('Kunde wiederhergestellt.', 'success');
+                });
             },
 
             async duplicateCustomer(id) {

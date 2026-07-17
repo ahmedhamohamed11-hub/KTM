@@ -128,6 +128,7 @@
                                         <td><span class="status-badge ${invoiceStatusClass(st)}">${st}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             ${st !== 'Bezahlt' && st !== 'Storniert' ? `<button class="btn btn-sm btn-primary" onclick="app.openPaymentModal(${idJS(inv.id)})">€ Zahlung</button>` : ''}
+                                            ${st === 'Überfällig' ? `<button class="btn btn-sm btn-warning" onclick="app.exportInvoicePDF(${idJS(inv.id)}, true)">📨 Mahnung</button>` : ''}
                                             <button class="btn btn-sm btn-outline" onclick="app.exportInvoicePDF(${idJS(inv.id)})">${icon('pdf')} PDF</button>
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteInvoice(${idJS(inv.id)})">${icon('trash')}</button>
                                         </td>
@@ -238,7 +239,7 @@
             },
 
             // ============ RECHNUNGS-PDF mit EPC-QR-Code ============
-            async exportInvoicePDF(invoiceId) {
+            async exportInvoicePDF(invoiceId, asReminder = false) {
                 if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
                 const inv = await db.get('invoices', invoiceId);
                 if (!inv) return;
@@ -254,9 +255,9 @@
                 const mx = 16;
 
                 pdfWatermark(doc);
-                let y = pdfHeader(doc, co, 'RECHNUNG', [
-                    `Nr. ${inv.invoiceNumber}  ·  ${formatDate(inv.date)}`,
-                    `Zahlbar bis ${formatDate(inv.dueDate)}${inv.skontoRate > 0 ? `  ·  ${(inv.skontoRate * 100).toFixed(0)} % Skonto binnen ${inv.skontoDays} Tagen` : ''}`
+                let y = pdfHeader(doc, co, asReminder ? 'ZAHLUNGSERINNERUNG' : 'RECHNUNG', [
+                    `zu Rechnung Nr. ${inv.invoiceNumber}  ·  ${formatDate(inv.date)}`,
+                    asReminder ? `ursprünglich zahlbar bis ${formatDate(inv.dueDate)}` : `Zahlbar bis ${formatDate(inv.dueDate)}${inv.skontoRate > 0 ? `  ·  ${(inv.skontoRate * 100).toFixed(0)} % Skonto binnen ${inv.skontoDays} Tagen` : ''}`
                 ]);
 
                 const custLines = customer ? [
@@ -270,6 +271,19 @@
                     st !== 'Offen' ? `Status: ${st}` : ''
                 ].filter(Boolean);
                 y = pdfInfoBoxes(doc, y, 'Rechnungsempfänger', custLines, 'Zuordnung', infoLines.length ? infoLines : ['–']);
+
+                if (asReminder) {
+                    const open = invoiceOpen(inv);
+                    doc.setFillColor(255, 247, 237);
+                    doc.setDrawColor(230, 160, 90);
+                    const boxH = 26;
+                    doc.roundedRect(mx, y, pw - mx * 2, boxH, 2, 2, 'FD');
+                    doc.setFontSize(9.5); doc.setTextColor(120, 70, 20); doc.setFont(undefined, 'normal');
+                    const txt = `Sehr geehrte Damen und Herren, unsere oben genannte Rechnung ist zwischenzeitlich fällig, ein Zahlungseingang liegt uns noch nicht vor. Wir bitten Sie höflich, den offenen Betrag von ${formatCurrency(open)} umgehend zu begleichen. Sollten Sie die Zahlung bereits veranlasst haben, betrachten Sie dieses Schreiben als gegenstandslos.`;
+                    doc.text(doc.splitTextToSize(txt, pw - mx * 2 - 8), mx + 4, y + 6);
+                    y += boxH + 6;
+                    doc.setTextColor(0, 0, 0);
+                }
 
                 // Positionen (aus verknüpftem Angebot) oder Pauschalzeile
                 const rows = (offer?.positions || []).map((p, i) => [
@@ -343,7 +357,7 @@
                 doc.text(terms, mx, ty, { maxWidth: pw - mx * 2 });
 
                 pdfFooterOnce(doc, co);
-                doc.save(`${inv.invoiceNumber}_${customer?.lastName || 'Kunde'}.pdf`);
-                showToast('Rechnung als PDF exportiert.', 'success');
+                doc.save(`${asReminder ? 'Mahnung_' : ''}${inv.invoiceNumber}_${customer?.lastName || 'Kunde'}.pdf`);
+                showToast(asReminder ? 'Zahlungserinnerung als PDF erstellt.' : 'Rechnung als PDF exportiert.', 'success');
             }
         };
