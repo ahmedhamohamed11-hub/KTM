@@ -2038,6 +2038,15 @@
                 });
             },
 
+            toggleSidebar(force) {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                if (!sidebar) return;
+                const open = force === undefined ? !sidebar.classList.contains('open') : !!force;
+                sidebar.classList.toggle('open', open);
+                overlay?.classList.toggle('show', open);
+            },
+
             navigate(page, param = null) {
                 this.currentPage = page;
                 this.currentProjectId = param;
@@ -2156,7 +2165,8 @@
                     document.getElementById('sidebarOverlay').classList.remove('show');
                 });
                 document.addEventListener('click', (e) => {
-                    if (window.innerWidth <= 1024 && !sidebar.contains(e.target) && e.target !== menuToggle && !menuToggle.contains(e.target)) {
+                    const bottomMenu = document.getElementById('bottomNavMenu');
+                    if (window.innerWidth <= 1024 && !sidebar.contains(e.target) && e.target !== menuToggle && !menuToggle.contains(e.target) && !(bottomMenu && (e.target === bottomMenu || bottomMenu.contains(e.target)))) {
                         sidebar.classList.remove('open');
                         document.getElementById('sidebarOverlay').classList.remove('show');
                     }
