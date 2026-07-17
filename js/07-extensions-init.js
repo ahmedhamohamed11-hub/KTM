@@ -460,17 +460,39 @@
                     const n = String(m.notes || '');
                     const mn = n.match(/max\.?\s*(\d+)\s*IG/i);
                     if (mn) return parseInt(mn[1], 10);
-                    const nm = String(m.name || '') + ' ' + String(m.articleNumber || '');
-                    const mm = nm.match(/\b(\d)\s*(?:MXM|AMW)/i) || nm.match(/\bMU\s*(\d)\s*R/i);
+                    const nm = (String(m.name || '') + ' ' + String(m.articleNumber || '')).toUpperCase();
+                    // Führende Zahl bei Multi-AG: 2MXM.., 4AMW.., 5AMW105U4ROC
+                    const mm = nm.match(/\b(\d)\s*(?:MXM|AMW)/) || nm.match(/\bMU\s*(\d)\s*R/) || nm.match(/\bAJ\d+TXJ(\d)/);
                     return mm ? parseInt(mm[1], 10) : 0;
                 };
-                // Gerätetyp: Multi-AG / Single-AG / Innengerät – darf NIE gemischt werden
+                // Gerätetyp: Multi-AG / Single-AG / Innengerät – darf NIE gemischt werden.
+                // WICHTIG: primär über den Modellnamen erkennen (Nomenklatur ist eindeutig),
+                // weil die Kategorie im Katalog nicht immer sauber gepflegt ist
+                // (z. B. Hisense-Außengeräte, die als "Klimagerät" importiert wurden).
                 const devType = (m) => {
                     if (!m) return '?';
+                    const nm = (String(m.name || '') + ' ' + String(m.articleNumber || '')).toUpperCase();
+                    const notes = String(m.notes || '').toLowerCase();
+
+                    // 1) Eindeutige AUSSENGERÄTE-Muster im Modellnamen
+                    //    Multi-AG: 2MXM.., 4AMW.., MU4R.., 5AMW105U4ROC ...
+                    if (/\b\d\s*(?:MXM|AMW)/.test(nm) || /\bMU\s*\d\s*R/.test(nm)) return 'MULTI-AG';
+                    //    Single-AG: RXP.., RXM.., RXF.., RXA.., AS..EW (Hisense-Außen), AJ..TXJ (Samsung-Multi-AG)
+                    if (/\bR[XZ][A-Z]?\d/.test(nm) || /\bAS\d.*EW\b/.test(nm)) return 'AG';
+                    if (/\bAJ\d+TXJ/.test(nm)) return 'MULTI-AG';
+                    //    aus der Notiz
+                    if (notes.includes('multi-split-ag') || notes.includes('multi-split-außeng')) return 'MULTI-AG';
+                    if (notes.includes('außengerät') || notes.includes('aussengerät')) return maxIG(m) >= 2 ? 'MULTI-AG' : 'AG';
+
+                    // 2) Eindeutige INNENGERÄTE-Muster
+                    //    Hisense Innen: HB..AG, Daikin Innen: FTX.., Samsung: AR..N/EU, LG: PC../PM../MJ../S..EC
+                    if (/\bHB\d.*AG\b/.test(nm) || /\bFTX/.test(nm) || /\bCTX/.test(nm) || notes.includes('innengerät') || notes.includes('truhengerät')) return 'IG';
+
+                    // 3) Fallback über Kategorie
                     const cat = m.category || '';
                     if (cat === 'Innengeräte' || cat === 'Truhengeräte') return 'IG';
                     if (cat === 'Außengeräte') return maxIG(m) >= 2 ? 'MULTI-AG' : 'AG';
-                    return cat;
+                    return 'IG';   // im Zweifel als Innengerät behandeln (nie fälschlich als AG vorschlagen)
                 };
 
                 // Kandidaten der Zielmarke: gleicher Typ, bei Multi-AG auch gleiche IG-Anzahl,
