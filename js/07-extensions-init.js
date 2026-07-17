@@ -761,6 +761,7 @@
                     res.rooms.forEach((x, i) => {
                         if (x.dev) positions.push({ materialId: x.dev.id, name: x.dev.name, category: x.dev.category, description: `Raum ${i + 1} · ${x.dev.size}`, quantity: 1, unit: 'Stk', price: Number(x.dev.sellingPrice) || 0 });
                     });
+                    if (res.outdoor) positions.push({ materialId: res.outdoor.id, name: res.outdoor.name, category: res.outdoor.category || 'Außengeräte', description: `${res.multi ? 'Multi-Außengerät' : 'Außengerät'} · ${res.outdoor.size || ''}`, quantity: 1, unit: 'Stk', price: Number(res.outdoor.sellingPrice) || 0 });
                     positions.push({ name: 'Montage & Inbetriebnahme', quantity: 1, unit: 'Pauschale', price: res.montage });
                     positions.push({ name: 'Leitungen & Kabelkanal', quantity: 1, unit: 'Pauschale', price: res.leitungen });
                     if (res.durchbruch) positions.push({ name: 'Wanddurchbruch', quantity: 1, unit: 'Pauschale', price: res.durchbruch });

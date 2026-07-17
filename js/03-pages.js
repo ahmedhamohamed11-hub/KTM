@@ -42,9 +42,42 @@
             let pool = mats.filter(m => isIndoor(m) && kwOf(m.size) > 0 && Number(m.sellingPrice) > 0);
             if (brand) pool = pool.filter(m => (m.manufacturer || '') === brand);
             if (!pool.length) return null;
-            // kleinstes Gerät, das die Last deckt; sonst das größte verfügbare
             const covering = pool.filter(m => kwOf(m.size) >= loadKw - 0.1).sort((a, b) => kwOf(a.size) - kwOf(b.size));
             return covering[0] || pool.sort((a, b) => kwOf(b.size) - kwOf(a.size))[0];
+        }
+
+        // Passendes AUSSENGERÄT: Single-Split (1 Raum) oder Multi-Split (mehrere Räume)
+        async function calcPickOutdoor(igCount, totalLoad, brand) {
+            const mats = await db.getAll('materials');
+            const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+            const maxIG = (m) => {
+                const n = String(m.notes || ''); const mn = n.match(/max\.?\s*(\d+)\s*IG/i); if (mn) return parseInt(mn[1], 10);
+                const nm = ((m.name || '') + ' ' + (m.articleNumber || '')).toUpperCase();
+                const mm = nm.match(/\b(\d)\s*(?:MXM|AMW)/) || nm.match(/\bMU\s*(\d)\s*R/) || nm.match(/\bAJ\d+TXJ(\d)/);
+                return mm ? parseInt(mm[1], 10) : 0;
+            };
+            const isOutdoor = (m) => {
+                const nm = ((m.name || '') + ' ' + (m.articleNumber || '')).toUpperCase();
+                const notes = (m.notes || '').toLowerCase();
+                if (/\b\d\s*(?:MXM|AMW)/.test(nm) || /\bMU\s*\d\s*R/.test(nm) || /\bR[XZ][A-Z]?\d/.test(nm) || /\bAS\d.*EW\b/.test(nm) || /\bAJ\d+TXJ/.test(nm)) return true;
+                if (notes.includes('außengerät') || notes.includes('aussengerät') || notes.includes('multi-split-ag')) return true;
+                return m.category === 'Außengeräte';
+            };
+            let pool = mats.filter(m => isOutdoor(m) && Number(m.sellingPrice) > 0);
+            if (brand) { const b = pool.filter(m => (m.manufacturer || '') === brand); if (b.length) pool = b; }
+            if (!pool.length) return null;
+
+            if (igCount <= 1) {
+                // Single-Split-Außengerät, das die Last deckt
+                const singles = pool.filter(m => maxIG(m) <= 1 && kwOf(m.size) > 0);
+                const covering = singles.filter(m => kwOf(m.size) >= totalLoad - 0.3).sort((a, b) => kwOf(a.size) - kwOf(b.size));
+                return covering[0] || singles.sort((a, b) => kwOf(b.size) - kwOf(a.size))[0] || null;
+            }
+            // Multi-Split: genug Anschlüsse UND genug Gesamtleistung, kleinstes passendes zuerst
+            const multis = pool.filter(m => maxIG(m) >= igCount);
+            const covering = multis.filter(m => kwOf(m.size) >= totalLoad - 0.5)
+                .sort((a, b) => maxIG(a) - maxIG(b) || kwOf(a.size) - kwOf(b.size));
+            return covering[0] || multis.sort((a, b) => maxIG(a) - maxIG(b) || kwOf(b.size) - kwOf(a.size))[0] || null;
         }
 
         // Montage-/Zusatzpauschalen aus den Einstellungen (mit Fallback-Richtwerten)
@@ -72,7 +105,8 @@
                 sumLoad += load.total;
             }
             const multi = rooms.length > 1;
-            const geraeteSum = rooms.reduce((s, x) => s + (Number(x.dev?.sellingPrice) || 0), 0);
+            const outdoor = await calcPickOutdoor(rooms.length, sumLoad, CALC_STATE.brand);
+            const geraeteSum = rooms.reduce((s, x) => s + (Number(x.dev?.sellingPrice) || 0), 0) + (Number(outdoor?.sellingPrice) || 0);
             const montage = RATES.montageBase + RATES.montagePerRoom * rooms.length;
             const leitungen = (Number(CALC_STATE.distance) || 0) * RATES.leitungPerM * rooms.length + (Number(CALC_STATE.ductLength) || 0) * 6;
             const durchbruch = (Number(CALC_STATE.breakthrough) || 0) * RATES.durchbruch;
@@ -80,7 +114,7 @@
             const net = geraeteSum + montage + leitungen + durchbruch + extra;
             const vat = net * RATES.vat;
             return {
-                rooms, sumLoad: Math.round(sumLoad * 10) / 10, multi,
+                rooms, sumLoad: Math.round(sumLoad * 10) / 10, multi, outdoor,
                 geraeteSum, montage, leitungen, durchbruch, extra, vatRate: RATES.vat,
                 net: Math.round(net), vat: Math.round(vat), brutto: Math.round(net + vat),
                 low: Math.round((net + vat) * 0.92), high: Math.round((net + vat) * 1.12)
@@ -161,7 +195,8 @@
                                 </div>
                             </div>
                             <table class="calc-table">
-                                <tr><td>Geräte (${res.rooms.length})</td><td>${cur(res.geraeteSum)}</td></tr>
+                                <tr><td>Innengeräte (${res.rooms.length})</td><td>${cur(res.rooms.reduce((s, x) => s + (Number(x.dev?.sellingPrice) || 0), 0))}</td></tr>
+                                <tr><td>${res.multi ? 'Multi-Außengerät' : 'Außengerät'}${res.outdoor ? ' · ' + escapeHtml(res.outdoor.name) : ''}</td><td>${res.outdoor ? cur(res.outdoor.sellingPrice) : '<span style="color:var(--warning);">fehlt im Katalog</span>'}</td></tr>
                                 <tr><td>Montage & Inbetriebnahme</td><td>${cur(res.montage)}</td></tr>
                                 <tr><td>Leitungen & Kabelkanal</td><td>${cur(res.leitungen)}</td></tr>
                                 <tr><td>Wanddurchbruch</td><td>${cur(res.durchbruch)}</td></tr>
