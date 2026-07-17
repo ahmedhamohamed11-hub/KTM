@@ -47,10 +47,22 @@
             return covering[0] || pool.sort((a, b) => kwOf(b.size) - kwOf(a.size))[0];
         }
 
-        // Montage-/Zusatzpauschalen (Richtwerte, in Einstellungen später anpassbar)
-        const CALC_RATES = { montageBase: 380, montagePerRoom: 180, leitungPerM: 22, durchbruch: 90, demontage: 120, geruest: 140 };
+        // Montage-/Zusatzpauschalen aus den Einstellungen (mit Fallback-Richtwerten)
+        async function calcRates() {
+            const g = async (k, d) => parseFloat(String(await getSetting(k, d)).replace(',', '.')) || parseFloat(d);
+            return {
+                montageBase: await g('rateMontageBase', '380'),
+                montagePerRoom: await g('rateMontagePerRoom', '180'),
+                leitungPerM: await g('rateLeitungPerM', '22'),
+                durchbruch: await g('rateDurchbruch', '90'),
+                demontage: await g('rateDemontage', '120'),
+                geruest: await g('rateGeruest', '140'),
+                vat: (await g('rateVat', '20')) / 100
+            };
+        }
 
         async function calcCompute() {
+            const RATES = await calcRates();
             const rooms = [];
             let sumLoad = 0;
             for (const r of CALC_STATE.rooms) {
@@ -61,17 +73,17 @@
             }
             const multi = rooms.length > 1;
             const geraeteSum = rooms.reduce((s, x) => s + (Number(x.dev?.sellingPrice) || 0), 0);
-            const montage = CALC_RATES.montageBase + CALC_RATES.montagePerRoom * rooms.length;
-            const leitungen = (Number(CALC_STATE.distance) || 0) * CALC_RATES.leitungPerM * rooms.length + (Number(CALC_STATE.ductLength) || 0) * 6;
-            const durchbruch = (Number(CALC_STATE.breakthrough) || 0) * CALC_RATES.durchbruch;
-            const extra = (CALC_STATE.demolish ? CALC_RATES.demontage : 0) + (CALC_STATE.scaffold ? CALC_RATES.geruest : 0);
+            const montage = RATES.montageBase + RATES.montagePerRoom * rooms.length;
+            const leitungen = (Number(CALC_STATE.distance) || 0) * RATES.leitungPerM * rooms.length + (Number(CALC_STATE.ductLength) || 0) * 6;
+            const durchbruch = (Number(CALC_STATE.breakthrough) || 0) * RATES.durchbruch;
+            const extra = (CALC_STATE.demolish ? RATES.demontage : 0) + (CALC_STATE.scaffold ? RATES.geruest : 0);
             const net = geraeteSum + montage + leitungen + durchbruch + extra;
-            const vat = net * 0.2;
+            const vat = net * RATES.vat;
             return {
                 rooms, sumLoad: Math.round(sumLoad * 10) / 10, multi,
-                geraeteSum, montage, leitungen, durchbruch, extra,
+                geraeteSum, montage, leitungen, durchbruch, extra, vatRate: RATES.vat,
                 net: Math.round(net), vat: Math.round(vat), brutto: Math.round(net + vat),
-                low: Math.round(net * 1.2 * 0.92), high: Math.round(net * 1.2 * 1.12)
+                low: Math.round((net + vat) * 0.92), high: Math.round((net + vat) * 1.12)
             };
         }
 
@@ -155,7 +167,7 @@
                                 <tr><td>Wanddurchbruch</td><td>${cur(res.durchbruch)}</td></tr>
                                 ${res.extra ? `<tr><td>Zusatzleistungen</td><td>${cur(res.extra)}</td></tr>` : ''}
                                 <tr class="calc-sum"><td>Richtpreis netto</td><td>${cur(res.net)}</td></tr>
-                                <tr><td>USt. 20 %</td><td>${cur(res.vat)}</td></tr>
+                                <tr><td>USt. ${Math.round((res.vatRate || 0.2) * 100)} %</td><td>${cur(res.vat)}</td></tr>
                                 <tr class="calc-total"><td>Unverbindlicher Richtpreis</td><td>${cur(res.brutto)}</td></tr>
                             </table>
                             <div class="calc-actions">
@@ -1186,7 +1198,26 @@
                             <div class="form-group"><label>Telefon</label><input type="text" id="stgPhone" value="${escapeHtml(companyPhone)}"></div>
                             <div class="form-group"><label>E-Mail</label><input type="email" id="stgEmail" value="${escapeHtml(companyEmail)}"></div>
                         </div>
-                        <button class="btn btn-primary" id="stgSaveBtn">Speichern</button>
+                        <button class="btn btn-primary" id="stgSaveBtn">Firmendaten speichern</button>
+                    </div>
+
+                    <div class="panel settings-form" style="margin-bottom:18px;">
+                        <div class="panel-title">🧮 Kalkulation (Schnellrechner & Angebote)</div>
+                        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Deine Montage-Richtwerte. Diese Preise verwendet der Schnellrechner für den Überschlag.</div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Montage-Grundpauschale (€)</label><input type="number" min="0" id="rateMontageBase" value="${await getSetting('rateMontageBase', '380')}"></div>
+                            <div class="form-group"><label>Montage je Raum (€)</label><input type="number" min="0" id="rateMontagePerRoom" value="${await getSetting('rateMontagePerRoom', '180')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Leitung je Meter (€)</label><input type="number" min="0" step="any" id="rateLeitungPerM" value="${await getSetting('rateLeitungPerM', '22')}"></div>
+                            <div class="form-group"><label>Wanddurchbruch je Stück (€)</label><input type="number" min="0" id="rateDurchbruch" value="${await getSetting('rateDurchbruch', '90')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Altgerät-Demontage (€)</label><input type="number" min="0" id="rateDemontage" value="${await getSetting('rateDemontage', '120')}"></div>
+                            <div class="form-group"><label>Gerüst / Höhenarbeit (€)</label><input type="number" min="0" id="rateGeruest" value="${await getSetting('rateGeruest', '140')}"></div>
+                        </div>
+                        <div class="form-group"><label>USt.-Satz (%)</label><input type="number" min="0" max="100" step="any" id="rateVat" value="${await getSetting('rateVat', '20')}"></div>
+                        <button class="btn btn-primary" id="stgRatesSaveBtn">Kalkulation speichern</button>
                     </div>
 
                     <div class="card-grid" style="margin-bottom:18px;">
@@ -1227,6 +1258,18 @@
 
                 document.getElementById('stgDiagBtn').addEventListener('click', () => {
                     runSyncDiagnosis(document.getElementById('stgDiagResult'));
+                });
+
+                document.getElementById('stgRatesSaveBtn')?.addEventListener('click', async () => {
+                    const num = id => String(Math.max(0, parseFloat(String(document.getElementById(id).value).replace(',', '.')) || 0));
+                    await setSetting('rateMontageBase', num('rateMontageBase'));
+                    await setSetting('rateMontagePerRoom', num('rateMontagePerRoom'));
+                    await setSetting('rateLeitungPerM', num('rateLeitungPerM'));
+                    await setSetting('rateDurchbruch', num('rateDurchbruch'));
+                    await setSetting('rateDemontage', num('rateDemontage'));
+                    await setSetting('rateGeruest', num('rateGeruest'));
+                    await setSetting('rateVat', num('rateVat'));
+                    showToast('Kalkulation gespeichert – der Schnellrechner nutzt jetzt deine Preise.', 'success');
                 });
 
                 const st = document.getElementById('stgSyncState');
