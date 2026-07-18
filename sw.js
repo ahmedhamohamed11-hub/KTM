@@ -3,7 +3,7 @@
 // öffnen. Supabase-/API-Aufrufe werden NIE abgefangen, damit Sync und
 // Realtime nicht durch den Service Worker gestört werden.
 
-const CACHE_NAME = 'ktm-shell-3aa8e6908a';
+const CACHE_NAME = 'ktm-shell-4bd87f912d';
 const APP_SHELL = ['./', './index.html', './manifest.json', './logo-192.png', './logo-512.png', './logo-maskable-192.png', './logo-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {

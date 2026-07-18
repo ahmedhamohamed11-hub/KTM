@@ -194,23 +194,23 @@
                                     <span class="calc-badge">Raumlast gesamt: <strong>${res.sumLoad.toFixed(1).replace('.', ',')} kW</strong></span>
                                 </div>
                             </div>
-                            <table class="calc-table">
-                                <tr><td>Innengeräte (${res.rooms.length})</td><td>${cur(res.rooms.reduce((s, x) => s + (Number(x.dev?.sellingPrice) || 0), 0))}</td></tr>
-                                <tr><td>${res.multi ? 'Multi-Außengerät' : 'Außengerät'}${res.outdoor ? ' · ' + escapeHtml(res.outdoor.name) : ''}</td><td>${res.outdoor ? cur(res.outdoor.sellingPrice) : '<span style="color:var(--warning);">fehlt im Katalog</span>'}</td></tr>
-                                <tr><td>Montage & Inbetriebnahme</td><td>${cur(res.montage)}</td></tr>
-                                <tr><td>Leitungen & Kabelkanal</td><td>${cur(res.leitungen)}</td></tr>
-                                <tr><td>Wanddurchbruch</td><td>${cur(res.durchbruch)}</td></tr>
-                                ${res.extra ? `<tr><td>Zusatzleistungen</td><td>${cur(res.extra)}</td></tr>` : ''}
-                                <tr class="calc-sum"><td>Richtpreis netto</td><td>${cur(res.net)}</td></tr>
-                                <tr><td>USt. ${Math.round((res.vatRate || 0.2) * 100)} %</td><td>${cur(res.vat)}</td></tr>
-                                <tr class="calc-total"><td>Unverbindlicher Richtpreis</td><td>${cur(res.brutto)}</td></tr>
-                            </table>
+                            <div class="calc-lines">
+                                <div class="calc-line"><span class="calc-line-label">Innengeräte (${res.rooms.length})</span><span class="calc-line-price">${cur(res.rooms.reduce((s, x) => s + (Number(x.dev?.sellingPrice) || 0), 0))}</span></div>
+                                <div class="calc-line"><span class="calc-line-label">${res.multi ? 'Multi-Außengerät' : 'Außengerät'}${res.outdoor ? ' · ' + escapeHtml(res.outdoor.name) : ''}</span><span class="calc-line-price">${res.outdoor ? cur(res.outdoor.sellingPrice) : '<span style="color:var(--warning);">fehlt im Katalog</span>'}</span></div>
+                                <div class="calc-line"><span class="calc-line-label">Montage & Inbetriebnahme</span><span class="calc-line-price">${cur(res.montage)}</span></div>
+                                <div class="calc-line"><span class="calc-line-label">Leitungen & Kabelkanal</span><span class="calc-line-price">${cur(res.leitungen)}</span></div>
+                                <div class="calc-line"><span class="calc-line-label">Wanddurchbruch</span><span class="calc-line-price">${cur(res.durchbruch)}</span></div>
+                                ${res.extra ? `<div class="calc-line"><span class="calc-line-label">Zusatzleistungen</span><span class="calc-line-price">${cur(res.extra)}</span></div>` : ''}
+                                <div class="calc-line calc-line-sum"><span class="calc-line-label">Richtpreis netto</span><span class="calc-line-price">${cur(res.net)}</span></div>
+                                <div class="calc-line"><span class="calc-line-label">USt. ${Math.round((res.vatRate || 0.2) * 100)} %</span><span class="calc-line-price">${cur(res.vat)}</span></div>
+                                <div class="calc-line calc-line-total"><span class="calc-line-label">Unverbindlicher Richtpreis</span><span class="calc-line-price">${cur(res.brutto)}</span></div>
+                            </div>
                             <div class="calc-actions">
                                 <button class="btn btn-primary" onclick="app.calcToOffer()">${icon('file')} Angebot + Kunde anlegen</button>
                                 <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v12</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v13</span></div>
                         </div>
                     </div>`;
             })();
