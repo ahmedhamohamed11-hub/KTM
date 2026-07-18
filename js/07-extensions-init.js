@@ -720,7 +720,7 @@
                 renderCalc();
             },
             calcSetGlobal(key, val) {
-                CALC_STATE[key] = (key === 'demolish' || key === 'scaffold') ? !!val
+                CALC_STATE[key] = (key === 'demolish' || key === 'scaffold' || key === 'showVat') ? !!val
                     : (['distance', 'breakthrough', 'ductLength'].includes(key) ? (parseFloat(String(val).replace(',', '.')) || 0) : val);
                 renderCalc();
             },
@@ -734,10 +734,14 @@
             async calcCopy() {
                 const res = await calcCompute();
                 const lines = [
-                    `Richtpreis: ${formatCurrency(res.brutto)} (ca. ${formatCurrency(res.low)}–${formatCurrency(res.high)})`,
+                    res.showVat
+                        ? `Richtpreis: ${formatCurrency(res.brutto)} inkl. MwSt. (ca. ${formatCurrency(res.low)}–${formatCurrency(res.high)})`
+                        : `Richtpreis: ${formatCurrency(res.net)} netto (zzgl. MwSt.)`,
                     `Empfehlung: ${res.multi ? 'Multi-Split' : 'Single-Split'}, Gesamtlast ${res.sumLoad.toFixed(1).replace('.', ',')} kW`,
                     ...res.rooms.map((x, i) => `Raum ${i + 1}: ${x.load.total.toFixed(1).replace('.', ',')} kW${x.dev ? ' → ' + x.dev.name + ' (' + formatCurrency(x.dev.sellingPrice) + ')' : ''}`),
-                    `Netto ${formatCurrency(res.net)} + USt ${formatCurrency(res.vat)} = ${formatCurrency(res.brutto)}`
+                    res.showVat
+                        ? `Netto ${formatCurrency(res.net)} + USt ${formatCurrency(res.vat)} = ${formatCurrency(res.brutto)}`
+                        : `Netto ${formatCurrency(res.net)} (zzgl. MwSt.)`
                 ];
                 try { await navigator.clipboard.writeText(lines.join('\n')); showToast('Zusammenfassung kopiert.', 'success'); }
                 catch (e) { showToast('Kopieren nicht möglich.', 'error'); }
@@ -807,11 +811,12 @@
                     if (res.extra) positions.push({ name: 'Zusatzleistungen (Demontage/Gerüst)', quantity: 1, unit: 'Pauschale', price: res.extra });
                     const net = positions.reduce((s, p) => s + p.price * p.quantity, 0);
                     const vatRate = res.vatRate ?? 0.2;
+                    const withVat = res.showVat !== false;
                     const num = (typeof getNextAutoNumber === 'function') ? await getNextAutoNumber() : `A-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
                     await db.add('offers', {
                         offerNumber: num, customerId: custId, projectId: projId, positions,
-                        netPrice: net, vatAmount: net * vatRate, totalPrice: net * (1 + vatRate),
-                        vatRate, status: 'Angebot offen', coolingRecommendation: res.sumLoad,
+                        netPrice: net, vatAmount: withVat ? net * vatRate : 0, totalPrice: withVat ? net * (1 + vatRate) : net,
+                        vatRate, vatEnabled: withVat, status: 'Angebot offen', coolingRecommendation: res.sumLoad,
                         notes: 'Aus Schnellrechner erstellt – finaler Preis nach Besichtigung.'
                     });
                     overlay.remove();

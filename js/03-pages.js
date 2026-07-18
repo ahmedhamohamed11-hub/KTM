@@ -9,7 +9,7 @@
         const CALC_STATE = window.__calcState || (window.__calcState = {
             rooms: [{ area: 30, windows: 4, dir: 'sued', shade: 'normal', persons: 2 }],
             building: 'normal', distance: 5, breakthrough: 1, ductLength: 4,
-            outdoor: 'wand', demolish: false, scaffold: false, brand: ''
+            outdoor: 'wand', demolish: false, scaffold: false, brand: '', showVat: true
         });
 
         // Kühllast je Raum (kW) – vereinfachtes, praxisnahes Verfahren
@@ -115,7 +115,7 @@
             const vat = net * RATES.vat;
             return {
                 rooms, sumLoad: Math.round(sumLoad * 10) / 10, multi, outdoor,
-                geraeteSum, montage, leitungen, durchbruch, extra, vatRate: RATES.vat,
+                geraeteSum, montage, leitungen, durchbruch, extra, vatRate: RATES.vat, showVat: CALC_STATE.showVat !== false,
                 net: Math.round(net), vat: Math.round(vat), brutto: Math.round(net + vat),
                 low: Math.round((net + vat) * 0.92), high: Math.round((net + vat) * 1.12)
             };
@@ -182,13 +182,14 @@
                                 </div>
                                 <label class="calc-check"><input type="checkbox" ${S.demolish?'checked':''} onchange="app.calcSetGlobal('demolish',this.checked)"> Altgerät demontieren & entsorgen</label>
                                 <label class="calc-check"><input type="checkbox" ${S.scaffold?'checked':''} onchange="app.calcSetGlobal('scaffold',this.checked)"> Gerüst / Arbeit in Höhe nötig</label>
+                                <label class="calc-check"><input type="checkbox" ${S.showVat?'checked':''} onchange="app.calcSetGlobal('showVat',this.checked)"> MwSt. anzeigen (Preis inkl. USt.)</label>
                             </div>
                         </div>
 
                         <div class="calc-result">
                             <div class="calc-headline">
-                                <div class="calc-price-big">${cur(res.brutto)}</div>
-                                <div class="calc-price-range">ca. ${cur(res.low)} bis ${cur(res.high)}</div>
+                                <div class="calc-price-big">${cur(res.showVat ? res.brutto : res.net)}</div>
+                                <div class="calc-price-range">${res.showVat ? `ca. ${cur(res.low)} bis ${cur(res.high)}` : 'zzgl. MwSt.'}</div>
                                 <div class="calc-badges">
                                     <span class="calc-badge">Empfehlung: <strong>${res.multi ? 'Multi-Split' : 'Single-Split'}</strong></span>
                                     <span class="calc-badge">Raumlast gesamt: <strong>${res.sumLoad.toFixed(1).replace('.', ',')} kW</strong></span>
@@ -201,16 +202,16 @@
                                 <div class="calc-line"><span class="calc-line-label">Leitungen & Kabelkanal</span><span class="calc-line-price">${cur(res.leitungen)}</span></div>
                                 <div class="calc-line"><span class="calc-line-label">Wanddurchbruch</span><span class="calc-line-price">${cur(res.durchbruch)}</span></div>
                                 ${res.extra ? `<div class="calc-line"><span class="calc-line-label">Zusatzleistungen</span><span class="calc-line-price">${cur(res.extra)}</span></div>` : ''}
-                                <div class="calc-line calc-line-sum"><span class="calc-line-label">Richtpreis netto</span><span class="calc-line-price">${cur(res.net)}</span></div>
-                                <div class="calc-line"><span class="calc-line-label">USt. ${Math.round((res.vatRate || 0.2) * 100)} %</span><span class="calc-line-price">${cur(res.vat)}</span></div>
-                                <div class="calc-line calc-line-total"><span class="calc-line-label">Unverbindlicher Richtpreis</span><span class="calc-line-price">${cur(res.brutto)}</span></div>
+                                <div class="calc-line calc-line-sum"><span class="calc-line-label">${res.showVat ? 'Richtpreis netto' : 'Unverbindlicher Richtpreis (netto)'}</span><span class="calc-line-price">${cur(res.net)}</span></div>
+                                ${res.showVat ? `<div class="calc-line"><span class="calc-line-label">USt. ${Math.round((res.vatRate || 0.2) * 100)} %</span><span class="calc-line-price">${cur(res.vat)}</span></div>` : ''}
+                                ${res.showVat ? `<div class="calc-line calc-line-total"><span class="calc-line-label">Unverbindlicher Richtpreis</span><span class="calc-line-price">${cur(res.brutto)}</span></div>` : ''}
                             </div>
                             <div class="calc-actions">
                                 <button class="btn btn-primary" onclick="app.calcToOffer()">${icon('file')} Angebot + Kunde anlegen</button>
                                 <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v13</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v14</span></div>
                         </div>
                     </div>`;
             })();

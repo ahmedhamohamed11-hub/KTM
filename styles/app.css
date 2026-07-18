@@ -872,8 +872,9 @@
         .calc-form .form-group { min-width: 0; }
         .calc-form input, .calc-form select { width: 100%; max-width: 100%; box-sizing: border-box; }
         @media (max-width: 900px) {
-            .calc-wrap { grid-template-columns: 1fr; gap: 14px; }
-            .calc-result { position: static; min-width: 0; max-width: 100%; }
+            .calc-wrap { display: block; }
+            .calc-form, .calc-result { display: block; width: 100%; max-width: 100%; box-sizing: border-box; margin: 0 0 14px; }
+            .calc-result { position: static; }
         }
         @media (max-width: 560px) {
             .calc-form .form-row { grid-template-columns: 1fr; gap: 0; }
