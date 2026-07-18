@@ -1,21 +1,21 @@
 {
-  "id": "/KTM/",
+  "id": "/",
   "name": "KTM – Kälte Technik Management",
   "short_name": "KTM",
   "description": "Kunden-, Projekt- und Angebotsverwaltung für Kälte- und Klimatechnik",
-  "start_url": "/KTM/index.html",
-  "scope": "/KTM/",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
-  "background_color": "#f4f7f9",
+  "background_color": "#12808f",
   "theme_color": "#12808f",
   "orientation": "portrait-primary",
   "lang": "de-AT",
   "categories": ["business", "productivity"],
   "icons": [
-    { "src": "/KTM/logo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/KTM/logo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/KTM/logo-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "/KTM/logo-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/logo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/logo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/logo-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/logo-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
