@@ -898,10 +898,10 @@
         .calc-badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
         .calc-badge { background: var(--accent-light); color: var(--accent); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: var(--radius-pill); max-width: 100%; }
         .calc-table { width: 100%; max-width: 100%; border-collapse: collapse; font-size: 13px; }
-        .calc-table tr { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border); }
-        .calc-table td { padding: 7px 0; border: none; }
-        .calc-table td:first-child { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-        .calc-table td:last-child { flex: 0 0 auto; text-align: right; font-weight: 600; white-space: nowrap; }
+        .calc-table tr { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); }
+        .calc-table td { padding: 8px 0; border: none; }
+        .calc-table td:first-child { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: break-word; line-height: 1.35; }
+        .calc-table td:last-child { flex: 0 0 auto; text-align: right; font-weight: 700; white-space: nowrap; }
         .calc-table .calc-sum { font-weight: 700; border-top: 1.5px solid var(--border); }
         .calc-table .calc-sum td { font-weight: 700; }
         .calc-table .calc-total { border-bottom: none; }
