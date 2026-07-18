@@ -210,7 +210,7 @@
                                 <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert.</div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v7</span></div>
                         </div>
                     </div>`;
             })();
