@@ -35,7 +35,27 @@ self.addEventListener('fetch', (event) => {
     }
 
     event.respondWith(
-        caches.match(event.request).then((cached) => {
+        (async () => {
+            // Für App-Dateien (HTML/JS/CSS) NETWORK-FIRST: immer die neueste Version
+            // holen, nur bei Offline auf den Cache zurückfallen. Verhindert, dass nach
+            // einem Update alte Dateien aus dem Cache angezeigt werden.
+            const isAsset = url.pathname.endsWith('.html') || url.pathname.endsWith('.js') ||
+                url.pathname.endsWith('.css') || url.pathname === '/' || url.pathname.endsWith('/');
+            if (isAsset) {
+                try {
+                    const response = await fetch(event.request);
+                    if (response && response.ok) {
+                        const clone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+                    }
+                    return response;
+                } catch (e) {
+                    const cached = await caches.match(event.request);
+                    return cached || Response.error();
+                }
+            }
+            // Übrige Requests: cache-first mit Hintergrund-Update
+            const cached = await caches.match(event.request);
             const network = fetch(event.request)
                 .then((response) => {
                     if (response && response.ok) {
@@ -46,6 +66,6 @@ self.addEventListener('fetch', (event) => {
                 })
                 .catch(() => cached);
             return cached || network;
-        })
+        })()
     );
 });
