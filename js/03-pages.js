@@ -535,6 +535,21 @@
                                 </div>
                                 ${project.notes ? `<p style="margin-bottom:14px;"><strong>Notizen:</strong> ${escapeHtml(project.notes)}</p>` : ''}
 
+                                ${project.source === 'Schnellrechner' && project.calcData ? (() => {
+                                    const cd = project.calcData;
+                                    const bld = { neu: 'Neubau / sehr gut', normal: 'Saniert / normal', alt: 'Altbau / unsaniert' }[cd.building] || cd.building;
+                                    const dirL = { sued: 'Süd', west: 'West', ost: 'Ost', nord: 'Nord' };
+                                    const shadeL = { keine: 'keine', normal: 'normal', stark: 'stark' };
+                                    return `<div class="calc-origin">
+                                        <div class="calc-origin-head">📞 Aus telefonischer Schnellberechnung · Besichtigung ausständig</div>
+                                        <div class="calc-origin-body">
+                                            <div>Damals genannt: <strong>${formatCurrency(cd.brutto || 0)}</strong> · Gesamtlast <strong>${(cd.sumLoad || 0).toFixed(1).replace('.', ',')} kW</strong> · ${escapeHtml(bld)}</div>
+                                            ${(cd.rooms || []).map((r, i) => `<div class="calc-origin-room">Raum ${i + 1}: ${r.area} m² · ${r.windows} Fenster ${dirL[r.dir] || r.dir} · Verschattung ${shadeL[r.shade] || r.shade} · ${r.persons} Pers. → ${(r.load || 0).toFixed(1).replace('.', ',')} kW${r.device ? ' · ' + escapeHtml(r.device) : ''}</div>`).join('')}
+                                            <div class="calc-origin-note">Diese Angaben stammen aus dem Telefonat. Nach der Besichtigung kannst du alles anpassen – die ursprüngliche Berechnung bleibt hier erhalten.</div>
+                                        </div>
+                                    </div>`;
+                                })() : ''}
+
                                 <!-- ===== Live-Zusammenfassung ===== -->
                                 <div class="agg-panel" style="margin-bottom:4px;">
                                     <div class="agg-title">📊 Projektzusammenfassung (live)</div>

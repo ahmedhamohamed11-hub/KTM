@@ -761,8 +761,40 @@
                         lastName: last, phone: overlay.querySelector('#calcPhone').value.trim(),
                         street: overlay.querySelector('#calcAddr').value.trim(), status: 'Neu', source: 'Schnellrechner'
                     });
-                    // Projekt anlegen
-                    const projId = await db.add('projects', { title: `Klima ${last}`, customerId: custId, status: 'Angebot', coolingRecommendation: res.sumLoad });
+                    // Projekt anlegen – mit Herkunft und kompletten Schnellrechner-Rohdaten
+                    const calcSnapshot = {
+                        building: CALC_STATE.building, distance: CALC_STATE.distance,
+                        breakthrough: CALC_STATE.breakthrough, ductLength: CALC_STATE.ductLength,
+                        outdoor: CALC_STATE.outdoor, demolish: CALC_STATE.demolish, scaffold: CALC_STATE.scaffold,
+                        brand: CALC_STATE.brand, sumLoad: res.sumLoad, brutto: res.brutto,
+                        rooms: res.rooms.map((x, i) => ({
+                            area: x.r.area, windows: x.r.windows, dir: x.r.dir, shade: x.r.shade, persons: x.r.persons,
+                            load: x.load.total, device: x.dev ? x.dev.name : null
+                        }))
+                    };
+                    const projId = await db.add('projects', {
+                        title: `Klima ${last}`, customerId: custId,
+                        status: 'Telefonische Schnellberechnung – Besichtigung ausständig',
+                        coolingRecommendation: res.sumLoad,
+                        source: 'Schnellrechner', calcData: calcSnapshot
+                    });
+                    // Räume anlegen (Fläche als quadratische Näherung -> Länge/Breite), damit
+                    // nach der Besichtigung nichts neu eingegeben werden muss
+                    for (let i = 0; i < res.rooms.length; i++) {
+                        const x = res.rooms[i];
+                        const side = Math.max(1, Math.round(Math.sqrt(Number(x.r.area) || 0) * 10) / 10);
+                        await db.add('rooms', {
+                            projectId: projId, name: `Raum ${i + 1}`, length: side, width: side, height: 2.5,
+                            tech: {
+                                distance: CALC_STATE.distance, cableDuct: CALC_STATE.ductLength,
+                                coreDrills: CALC_STATE.breakthrough, outdoorMounting: CALC_STATE.outdoor,
+                                devManufacturer: x.dev?.manufacturer || '', devModel: x.dev?.name || '',
+                                devCapacity: parseFloat(String(x.dev?.size || '').replace(',', '.')) || null,
+                                calcArea: x.r.area, calcWindows: x.r.windows, calcDir: x.r.dir,
+                                calcShade: x.r.shade, calcPersons: x.r.persons, calcLoad: x.load.total
+                            }
+                        });
+                    }
                     // Positionen aus dem Rechner
                     const positions = [];
                     res.rooms.forEach((x, i) => {
@@ -774,16 +806,17 @@
                     if (res.durchbruch) positions.push({ name: 'Wanddurchbruch', quantity: 1, unit: 'Pauschale', price: res.durchbruch });
                     if (res.extra) positions.push({ name: 'Zusatzleistungen (Demontage/Gerüst)', quantity: 1, unit: 'Pauschale', price: res.extra });
                     const net = positions.reduce((s, p) => s + p.price * p.quantity, 0);
+                    const vatRate = res.vatRate ?? 0.2;
                     const num = (typeof getNextAutoNumber === 'function') ? await getNextAutoNumber() : `A-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
                     await db.add('offers', {
                         offerNumber: num, customerId: custId, projectId: projId, positions,
-                        netPrice: net, vatAmount: net * 0.2, totalPrice: net * 1.2,
-                        vatRate: 0.2, status: 'Angebot offen', coolingRecommendation: res.sumLoad,
+                        netPrice: net, vatAmount: net * vatRate, totalPrice: net * (1 + vatRate),
+                        vatRate, status: 'Angebot offen', coolingRecommendation: res.sumLoad,
                         notes: 'Aus Schnellrechner erstellt – finaler Preis nach Besichtigung.'
                     });
                     overlay.remove();
-                    showToast(`Kunde & Angebot ${num} angelegt.`, 'success');
-                    app.navigate('offers');
+                    showToast(`Kunde, Projekt & Angebot ${num} angelegt – Räume übernommen.`, 'success');
+                    app.navigate('projects', projId);
                 }, 'Anlegen');
             },
 
