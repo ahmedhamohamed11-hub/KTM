@@ -539,9 +539,24 @@ async function backgroundSyncPushInner() {
                 // vergeben (siehe DatabaseManager.add). Ein upsert mit onConflict=id
                 // funktioniert daher sowohl für's erste Einfügen als auch für Updates -
                 // es gibt keinen Fall mehr, in dem die ID nach dem Sync wechselt.
-                const { data, error } = await sb.from(sbTable(t))
+                let { data, error } = await sb.from(sbTable(t))
                     .upsert(p, { onConflict: t === 'settings' ? 'key' : 'id' })
                     .select();
+
+                // SELBSTHEILUNG: Kennt die Datenbank eine Spalte noch nicht
+                // ("Could not find the 'xy' column"), entfernen wir genau dieses
+                // Feld und versuchen es erneut - so lange, bis der Datensatz passt.
+                // Dadurch synchronisiert die App auch mit einer DB, der einzelne
+                // (neue) Spalten fehlen, statt den ganzen Datensatz abzulehnen.
+                let guard = 0;
+                while (error && /Could not find the '(\w+)' column/.test(error.message) && guard < 25) {
+                    guard++;
+                    const miss = error.message.match(/Could not find the '(\w+)' column/)[1];
+                    delete p[miss];
+                    ({ data, error } = await sb.from(sbTable(t))
+                        .upsert(p, { onConflict: t === 'settings' ? 'key' : 'id' })
+                        .select());
+                }
 
                 if (!error && data?.length) {
                     // WICHTIG: Nicht blind zurückschreiben - der Datensatz kann sich
