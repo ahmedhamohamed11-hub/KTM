@@ -748,8 +748,8 @@
             },
             async calcToOffer() {
                 const res = await calcCompute();
-                const modal = showModal('Angebot aus Schnellrechner', `
-                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">Es wird ein Kunde angelegt und daraus direkt ein Angebot über <strong>${formatCurrency(res.brutto)}</strong> erstellt.</div>
+                const modal = showModal('Als Projekt übernehmen', `
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">Es wird ein <strong>Kunde</strong> und ein <strong>Projekt</strong> (Status „Besichtigung offen") mit den Rechner-Daten und Räumen angelegt. Nach der Besichtigung ergänzt du vor Ort die genauen Maße, Größen und Fotos – und erstellst dann daraus das Angebot.</div>
                     <div class="form-row">
                         <div class="form-group"><label>Vorname</label><input type="text" id="calcFirst"></div>
                         <div class="form-group"><label>Nachname *</label><input type="text" id="calcLast"></div>
@@ -778,9 +778,10 @@
                     };
                     const projId = await db.add('projects', {
                         title: `Klima ${last}`, customerId: custId,
-                        status: 'Telefonische Schnellberechnung – Besichtigung ausständig',
+                        status: 'Besichtigung offen',
                         coolingRecommendation: res.sumLoad,
-                        source: 'Schnellrechner', calcData: calcSnapshot
+                        source: 'Schnellrechner', calcData: calcSnapshot,
+                        notes: 'Aus Schnellrechner – vor Ort Maße, Größen und Fotos ergänzen, dann Angebot erstellen.'
                     });
                     // Räume anlegen (Fläche als quadratische Näherung -> Länge/Breite), damit
                     // nach der Besichtigung nichts neu eingegeben werden muss
@@ -799,30 +800,13 @@
                             }
                         });
                     }
-                    // Positionen aus dem Rechner
-                    const positions = [];
-                    res.rooms.forEach((x, i) => {
-                        if (x.dev) positions.push({ materialId: x.dev.id, name: x.dev.name, category: x.dev.category, description: `Raum ${i + 1} · ${x.dev.size}`, quantity: 1, unit: 'Stk', price: Number(x.dev.sellingPrice) || 0 });
-                    });
-                    if (res.outdoor) positions.push({ materialId: res.outdoor.id, name: res.outdoor.name, category: res.outdoor.category || 'Außengeräte', description: `${res.multi ? 'Multi-Außengerät' : 'Außengerät'} · ${res.outdoor.size || ''}`, quantity: 1, unit: 'Stk', price: Number(res.outdoor.sellingPrice) || 0 });
-                    positions.push({ name: 'Montage & Inbetriebnahme', quantity: 1, unit: 'Pauschale', price: res.montage });
-                    positions.push({ name: 'Leitungen & Kabelkanal', quantity: 1, unit: 'Pauschale', price: res.leitungen });
-                    if (res.durchbruch) positions.push({ name: 'Wanddurchbruch', quantity: 1, unit: 'Pauschale', price: res.durchbruch });
-                    if (res.extra) positions.push({ name: 'Zusatzleistungen (Demontage/Gerüst)', quantity: 1, unit: 'Pauschale', price: res.extra });
-                    const net = positions.reduce((s, p) => s + p.price * p.quantity, 0);
-                    const vatRate = res.vatRate ?? 0.2;
-                    const withVat = res.showVat !== false;
-                    const num = (typeof getNextAutoNumber === 'function') ? await getNextAutoNumber() : `A-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
-                    await db.add('offers', {
-                        offerNumber: num, customerId: custId, projectId: projId, positions,
-                        netPrice: net, vatAmount: withVat ? net * vatRate : 0, totalPrice: withVat ? net * (1 + vatRate) : net,
-                        vatRate, vatEnabled: withVat, status: 'Angebot offen', coolingRecommendation: res.sumLoad,
-                        notes: 'Aus Schnellrechner erstellt – finaler Preis nach Besichtigung.'
-                    });
+                    // KEIN Angebot mehr automatisch erstellen: Erst Besichtigung
+                    // (Maße, Größen, Fotos), dann Angebot aus dem Projekt heraus.
+                    // Die Rechner-Positionen bleiben als Vorschlag im calcData erhalten.
                     overlay.remove();
-                    showToast(`Kunde, Projekt & Angebot ${num} angelegt – Räume übernommen.`, 'success');
+                    showToast(`Kunde & Projekt angelegt – jetzt besichtigen, dann Angebot erstellen.`, 'success');
                     app.navigate('projects', projId);
-                }, 'Anlegen');
+                }, 'Als Projekt anlegen');
             },
 
             // ---------- Material-Katalog: Navigation ----------

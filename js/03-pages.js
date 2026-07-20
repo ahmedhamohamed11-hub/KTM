@@ -207,11 +207,11 @@
                                 ${res.showVat ? `<div class="calc-line calc-line-total"><span class="calc-line-label">Unverbindlicher Richtpreis</span><span class="calc-line-price">${cur(res.brutto)}</span></div>` : ''}
                             </div>
                             <div class="calc-actions">
-                                <button class="btn btn-primary" onclick="app.calcToOffer()">${icon('file')} Angebot + Kunde anlegen</button>
+                                <button class="btn btn-primary" onclick="app.calcToOffer()">${icon('file')} Als Projekt übernehmen</button>
                                 <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v16</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v17</span></div>
                         </div>
                     </div>`;
             })();
