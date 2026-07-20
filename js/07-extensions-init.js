@@ -3586,13 +3586,18 @@ async exportOfferPDF(offerId) {
         }
 
         let appStarted = false;
-        const startupWatchdog = setTimeout(() => {
-            if (!appStarted) {
-                app.showSplashError('Der Start dauert ungewöhnlich lange. Möglicherweise ist die Datenbank blockiert oder es liegt ein Verbindungsproblem vor.');
-            }
-        }, 8000);
+        let startupWatchdog = null;
 
-        document.addEventListener('DOMContentLoaded', () => {
+        // Die App startet NICHT mehr automatisch beim Laden, sondern erst wenn
+        // das Auth-Modul (js/00-auth.js) einen angemeldeten Benutzer bestätigt.
+        // Es ruft dann window.__ktmStartApp() auf.
+        window.__ktmStartApp = function () {
+            // Watchdog erst jetzt starten (nicht während der Anmeldung)
+            startupWatchdog = setTimeout(() => {
+                if (!appStarted) {
+                    app.showSplashError('Der Start dauert ungewöhnlich lange. Möglicherweise ist die Datenbank blockiert oder es liegt ein Verbindungsproblem vor.');
+                }
+            }, 8000);
             Object.assign(app, ktmV2Extensions);
             app.init().then(() => {
                 appStarted = true;
@@ -3603,7 +3608,7 @@ async exportOfferPDF(offerId) {
                 console.error('Initialisierung fehlgeschlagen:', err);
                 app.showSplashError(err && err.message ? err.message : 'Unbekannter Fehler beim Start der Anwendung.');
             });
-        });
+        };
 
         if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
             window.addEventListener('load', () => {

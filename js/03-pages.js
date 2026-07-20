@@ -211,7 +211,7 @@
                                 <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v17</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v18</span></div>
                         </div>
                     </div>`;
             })();
@@ -1246,6 +1246,17 @@
 
                 contentArea.innerHTML = `
                     <div class="panel settings-form" style="margin-bottom:18px;">
+                        <div class="panel-title">👤 Mein Konto</div>
+                        <div class="account-box">
+                            <div class="account-info">
+                                <div class="account-email">${escapeHtml((window.__ktmAuth && window.__ktmAuth.email) || 'Angemeldet')}</div>
+                                ${window.__ktmAuth && window.__ktmAuth.company ? `<div class="account-company">${escapeHtml(window.__ktmAuth.company)}</div>` : ''}
+                            </div>
+                            <button class="btn btn-outline" id="stgLogoutBtn">Abmelden</button>
+                        </div>
+                    </div>
+
+                    <div class="panel settings-form" style="margin-bottom:18px;">
                         <div class="panel-title">Firmendaten</div>
                         <div class="form-group"><label>Firmenname</label><input type="text" id="stgName" value="${escapeHtml(companyName)}"></div>
                         <div class="form-row-3">
@@ -1333,6 +1344,21 @@
 
                 const st = document.getElementById('stgSyncState');
                 if (st) st.textContent = supabaseAvailable ? (navigator.onLine ? '🟢 aktiv' : '🔴 offline') : '⚪ nicht verbunden';
+
+                const logoutBtn = document.getElementById('stgLogoutBtn');
+                if (logoutBtn) logoutBtn.addEventListener('click', () => {
+                    showModal('Abmelden?',
+                        '<div style="font-size:13.5px;line-height:1.5;">Möchtest du dich wirklich abmelden? Deine Daten bleiben sicher in der Cloud gespeichert und sind nach dem nächsten Login wieder da.</div>',
+                        async () => {
+                            if (window.__ktmAuth && window.__ktmAuth.signOut) {
+                                await window.__ktmAuth.signOut();
+                            } else {
+                                window.location.reload();
+                            }
+                        },
+                        'Abmelden'
+                    );
+                });
 
                 document.getElementById('stgSaveBtn').addEventListener('click', async () => {
                     const name = document.getElementById('stgName').value.trim();

@@ -27,7 +27,7 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 
-    <link rel="stylesheet" href="styles/app.css?v=c7a0cbcfbe">
+    <link rel="stylesheet" href="styles/app.css?v=56164fe3ed">
 </head>
 <body data-theme="light">
 
@@ -38,6 +38,40 @@
     </div>
 
     <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ===== Login / Registrierung ===== -->
+    <div class="auth-screen" id="authScreen" style="display:none;">
+        <div class="auth-card">
+            <img src="logo-192.png" alt="KTM" class="auth-logo" onerror="this.style.display='none'">
+            <div class="auth-title">KTM</div>
+            <div class="auth-subtitle" id="authSubtitle">Anmelden</div>
+
+            <div id="authError" class="auth-error" style="display:none;"></div>
+
+            <div class="auth-fields">
+                <div class="auth-field" id="authNameWrap" style="display:none;">
+                    <label>Firmenname</label>
+                    <input type="text" id="authName" autocomplete="organization" placeholder="z. B. Kältetechnik Muster">
+                </div>
+                <div class="auth-field">
+                    <label>E-Mail</label>
+                    <input type="email" id="authEmail" autocomplete="email" placeholder="name@firma.at">
+                </div>
+                <div class="auth-field" id="authPassWrap">
+                    <label>Passwort</label>
+                    <input type="password" id="authPass" autocomplete="current-password" placeholder="••••••••">
+                </div>
+            </div>
+
+            <button class="auth-btn" id="authSubmit">Anmelden</button>
+
+            <div class="auth-links">
+                <a href="#" id="authToRegister">Neu hier? Konto erstellen</a>
+                <a href="#" id="authToLogin" style="display:none;">Zurück zum Login</a>
+                <a href="#" id="authToReset">Passwort vergessen?</a>
+            </div>
+        </div>
+    </div>
 
     <div class="app-shell">
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -150,13 +184,14 @@
 
     <div id="modalContainer"></div>
 
-    <script defer src="js/01-core-db-sync.js?v=08b0a77662"></script>
+    <script defer src="js/00-auth.js"></script>
+    <script defer src="js/01-core-db-sync.js?v=65a2375c4d"></script>
     <script defer src="js/02-ui-helpers.js?v=a11d09eb7d"></script>
-    <script defer src="js/03-pages.js?v=25c367c645"></script>
+    <script defer src="js/03-pages.js?v=a40c0ba84a"></script>
     <script defer src="js/04-projekt-technik.js?v=079ee75a00"></script>
     <script defer src="js/05-plan-editor.js?v=de890fc4b2"></script>
     <script defer src="js/06-lernen-rechnungen.js?v=d0a39bdbfe"></script>
-    <script defer src="js/07-extensions-init.js?v=5f7080555b"></script>
+    <script defer src="js/07-extensions-init.js?v=e8c696626b"></script>
 
 </body>
 </html>

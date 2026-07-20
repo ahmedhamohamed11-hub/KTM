@@ -535,6 +535,12 @@ async function backgroundSyncPushInner() {
 
                 const p = toSnake(rec);
 
+                // Mandantentrennung: jeden Datensatz dem angemeldeten Benutzer
+                // zuordnen, damit die RLS-Policy (tenant_id = auth.uid()) greift.
+                if (window.__ktmAuth && window.__ktmAuth.userId) {
+                    p.tenant_id = window.__ktmAuth.userId;
+                }
+
                 // Die ID wird seit der UUID-Umstellung immer schon beim Erstellen lokal
                 // vergeben (siehe DatabaseManager.add). Ein upsert mit onConflict=id
                 // funktioniert daher sowohl für's erste Einfügen als auch für Updates -
@@ -552,6 +558,13 @@ async function backgroundSyncPushInner() {
                 while (error && /Could not find the '(\w+)' column/.test(error.message) && guard < 25) {
                     guard++;
                     const miss = error.message.match(/Could not find the '(\w+)' column/)[1];
+                    // tenant_id darf NIE entfernt werden - ohne sie greift die
+                    // Mandantentrennung nicht. Fehlt die Spalte, ist das RLS-Setup
+                    // noch nicht ausgeführt -> mit klarer Meldung abbrechen.
+                    if (miss === 'tenant_id') {
+                        console.error('Spalte tenant_id fehlt in Supabase. Bitte das SQL "ktm_auth_rls_setup.sql" ausführen.');
+                        break;
+                    }
                     delete p[miss];
                     ({ data, error } = await sb.from(sbTable(t))
                         .upsert(p, { onConflict: t === 'settings' ? 'key' : 'id' })
