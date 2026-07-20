@@ -59,6 +59,9 @@
   discountAmount: 'discount_amount',
 
   netAfterDiscount: 'net_after_discount',
+  netPrice: 'net_price',
+  calcData: 'calc_data',
+  variantOf: 'variant_of',
 
   totalPrice: 'total_price',
   coolingRecommendation: 'cooling_recommendation',
