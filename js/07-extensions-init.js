@@ -2146,6 +2146,9 @@
                     const customers = await db.getAll('customers');
                     const projects = await db.getAll('projects');
                     const materials = await db.getAll('materials');
+                    const equipment = await db.getAll('equipment');
+                    const offers = await db.getAll('offers');
+                    const invoices = await db.getAll('invoices');
 
                     const results = [
                         ...customers.filter(c =>
@@ -2158,8 +2161,17 @@
                             (p.title || '').toLowerCase().includes(query) ||
                             (p.status || '').toLowerCase().includes(query)
                         ).map(p => ({ type: 'Projekt', title: p.title, id: p.id, link: 'projects' })),
+                        ...equipment.filter(e =>
+                            `${e.manufacturer || ''} ${e.model || ''} ${e.serialNumber || ''} ${e.location || ''} ${e.refrigerant || ''}`.toLowerCase().includes(query)
+                        ).map(e => ({ type: 'Anlage', title: `${e.manufacturer || ''} ${e.model || 'Anlage'}`.trim() + (e.serialNumber ? ' · SN ' + e.serialNumber : ''), id: e.id, link: 'equipment' })),
+                        ...offers.filter(o =>
+                            `${o.offerNumber || ''} ${o.title || ''} ${o.status || ''}`.toLowerCase().includes(query)
+                        ).map(o => ({ type: 'Angebot', title: `${o.offerNumber || 'Angebot'}${o.title ? ' · ' + o.title : ''}`, id: o.id, link: 'offers' })),
+                        ...invoices.filter(inv =>
+                            `${inv.invoiceNumber || ''} ${inv.status || ''}`.toLowerCase().includes(query)
+                        ).map(inv => ({ type: 'Rechnung', title: `${inv.invoiceNumber || 'Rechnung'}`, id: inv.id, link: 'invoices' })),
                         ...materials.filter(m =>
-                            (m.name || '').toLowerCase().includes(query)
+                            `${m.name || ''} ${m.manufacturer || ''} ${m.series || ''} ${m.articleNumber || ''}`.toLowerCase().includes(query)
                         ).map(m => ({ type: 'Material', title: m.name, id: m.id, link: 'materials' })),
                     ];
 
@@ -2171,7 +2183,7 @@
                                 <tbody>
                                     ${results.length > 0 ? results.map(r => `
                                         <tr>
-                                            <td><span class="status-badge ${r.type === 'Kunde' ? 'status-neu' : r.type === 'Projekt' ? 'status-aktiv' : 'status-offen'}">${r.type}</span></td>
+                                            <td><span class="status-badge ${r.type === 'Kunde' ? 'status-neu' : r.type === 'Projekt' ? 'status-aktiv' : r.type === 'Anlage' ? 'status-offen' : r.type === 'Rechnung' ? 'status-bezahlt' : 'status-offen'}">${r.type}</span></td>
                                             <td><strong>${escapeHtml(r.title)}</strong></td>
                                             <td><button class="btn btn-sm btn-primary" onclick="app.navigate('${r.link}', ${idJS(r.id)})">Öffnen</button></td>
                                         </tr>
