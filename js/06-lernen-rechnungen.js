@@ -130,6 +130,7 @@
                                             ${st !== 'Bezahlt' && st !== 'Storniert' ? `<button class="btn btn-sm btn-primary" onclick="app.openPaymentModal(${idJS(inv.id)})">€ Zahlung</button>` : ''}
                                             ${st === 'Überfällig' ? `<button class="btn btn-sm btn-warning" onclick="app.exportInvoicePDF(${idJS(inv.id)}, true)">📨 Mahnung</button>` : ''}
                                             <button class="btn btn-sm btn-outline" onclick="app.exportInvoicePDF(${idJS(inv.id)})">${icon('pdf')} PDF</button>
+                                            <button class="btn btn-sm btn-outline" onclick="app.exportEInvoice(${idJS(inv.id)})" title="XRechnung (EN 16931) für Behörden & Firmen">🧾 E-Rechnung</button>
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteInvoice(${idJS(inv.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>`;
@@ -359,5 +360,96 @@
                 pdfFooterOnce(doc, co);
                 doc.save(`${asReminder ? 'Mahnung_' : ''}${inv.invoiceNumber}_${customer?.lastName || 'Kunde'}.pdf`);
                 showToast(asReminder ? 'Zahlungserinnerung als PDF erstellt.' : 'Rechnung als PDF exportiert.', 'success');
+            },
+
+            // ===== E-RECHNUNG (XRechnung / EN 16931, UBL 2.1) =====
+            async exportEInvoice(invoiceId) {
+                const inv = await db.get('invoices', invoiceId);
+                if (!inv) return;
+                const offer = inv.offerId ? await db.get('offers', inv.offerId) : null;
+                const customer = inv.customerId ? await db.get('customers', inv.customerId) : null;
+                const co = await pdfCompany();
+
+                // Positionen aus dem Angebot (oder leer)
+                const positions = (offer && Array.isArray(offer.positions)) ? offer.positions : [];
+                const vatRate = (inv.vatRate || offer?.vatRate || 0.2);
+                const net = inv.subtotal || offer?.subtotal || (inv.totalPrice / (1 + vatRate)) || 0;
+                const vat = inv.vatAmount || (net * vatRate);
+                const gross = inv.totalPrice || (net + vat);
+
+                const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                const num = (n) => (Number(n) || 0).toFixed(2);
+                const vatPct = Math.round(vatRate * 100);
+
+                // Verkäufer-Adresse grob zerlegen
+                const sellerAddr = (co.address || '').split(/,|\n/).map(s => s.trim()).filter(Boolean);
+                const custName = customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : 'Kunde';
+                const custAddr = (customer?.address || customer?.street || '').split(/,|\n/).map(s => s.trim()).filter(Boolean);
+
+                // UBL 2.1 Invoice (XRechnung-Profil, EN 16931)
+                const lines = positions.map((p, i) => {
+                    const qty = Number(p.quantity) || 1;
+                    const price = Number(p.price) || 0;
+                    const lineNet = qty * price;
+                    return `  <cac:InvoiceLine>
+    <cbc:ID>${i + 1}</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">${num(qty)}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">${num(lineNet)}</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>${esc(p.name || p.description || 'Position')}</cbc:Name>
+      <cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>${vatPct}</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="EUR">${num(price)}</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>`;
+                }).join('\n');
+
+                const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_2.3</cbc:CustomizationID>
+  <cbc:ID>${esc(inv.invoiceNumber)}</cbc:ID>
+  <cbc:IssueDate>${esc(inv.date)}</cbc:IssueDate>
+  <cbc:DueDate>${esc(inv.dueDate)}</cbc:DueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty><cac:Party>
+    <cac:PartyName><cbc:Name>${esc(co.name)}</cbc:Name></cac:PartyName>
+    <cac:PostalAddress><cbc:StreetName>${esc(sellerAddr[0] || '')}</cbc:StreetName><cbc:CityName>${esc(sellerAddr[1] || '')}</cbc:CityName><cac:Country><cbc:IdentificationCode>AT</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+    ${co.uid ? `<cac:PartyTaxScheme><cbc:CompanyID>${esc(co.uid)}</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>` : ''}
+    <cac:PartyLegalEntity><cbc:RegistrationName>${esc(co.name)}</cbc:RegistrationName></cac:PartyLegalEntity>
+    <cac:Contact><cbc:Telephone>${esc(co.phone)}</cbc:Telephone><cbc:ElectronicMail>${esc(co.email)}</cbc:ElectronicMail></cac:Contact>
+  </cac:Party></cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty><cac:Party>
+    <cac:PartyName><cbc:Name>${esc(custName)}</cbc:Name></cac:PartyName>
+    <cac:PostalAddress><cbc:StreetName>${esc(custAddr[0] || '')}</cbc:StreetName><cbc:CityName>${esc(custAddr[1] || '')}</cbc:CityName><cac:Country><cbc:IdentificationCode>AT</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+    <cac:PartyLegalEntity><cbc:RegistrationName>${esc(custName)}</cbc:RegistrationName></cac:PartyLegalEntity>
+  </cac:Party></cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">${num(vat)}</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${num(net)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${num(vat)}</cbc:TaxAmount>
+      <cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>${vatPct}</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">${num(net)}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">${num(net)}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">${num(gross)}</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">${num(gross)}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+${lines || '  <!-- keine Positionen -->'}
+</Invoice>`;
+
+                // Download als .xml
+                const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${inv.invoiceNumber || 'Rechnung'}_XRechnung.xml`;
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                showToast('E-Rechnung (XRechnung) erstellt.', 'success');
             }
         };
