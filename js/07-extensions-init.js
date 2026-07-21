@@ -1969,22 +1969,36 @@
             currentProjectId: null,
 
             async init() {
-                await db.init();
-
-                this.setupNavigation();
-                this.setupSearch();
-                this.setupTheme();
-                // QR-Code einer Anlage gescannt? -> direkt öffnen
-                const anlageId = new URLSearchParams(window.location.search).get('anlage');
-                if (anlageId) {
-                    this.navigate('equipment');
-                    setTimeout(() => this.openEquipment(anlageId), 200);
-                } else {
-                    this.navigate('dashboard');
+                try {
+                    await db.init();
+                } catch (dbErr) {
+                    // DB-Start fehlgeschlagen (z. B. blockiert/Zeitüberschreitung).
+                    // App trotzdem starten - lieber eingeschränkt als gar nicht.
+                    console.error('Datenbank-Start fehlgeschlagen, starte im Notbetrieb:', dbErr);
+                    showToast('Datenbank konnte nicht vollständig geladen werden. Bitte App neu starten, falls Daten fehlen.', 'error');
                 }
-                this.setupResponsive();
 
+                try { this.setupNavigation(); } catch (e) { console.warn(e); }
+                try { this.setupSearch(); } catch (e) { console.warn(e); }
+                try { this.setupTheme(); } catch (e) { console.warn(e); }
+                // QR-Code einer Anlage gescannt? -> direkt öffnen
+                // Splash SOFORT ausblenden - egal was danach kommt, der Nutzer
+                // sieht die App und bleibt nicht im Ladebildschirm hängen.
                 this.hideSplash();
+
+                try { this.setupResponsive(); } catch (e) { console.warn(e); }
+
+                const anlageId = new URLSearchParams(window.location.search).get('anlage');
+                try {
+                    if (anlageId) {
+                        this.navigate('equipment');
+                        setTimeout(() => this.openEquipment(anlageId), 200);
+                    } else {
+                        this.navigate('dashboard');
+                    }
+                } catch (navErr) {
+                    console.error('Seitenaufbau fehlgeschlagen:', navErr);
+                }
 
                 try { await repairLegacyIds(); } catch (e) { console.warn('ID-Reparatur fehlgeschlagen:', e); }
                 try { await loadCustomization(); } catch (e) { console.warn('Anpassungen konnten nicht geladen werden:', e); }

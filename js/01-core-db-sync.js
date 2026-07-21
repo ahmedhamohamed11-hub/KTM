@@ -112,6 +112,15 @@ function toSnake(o) {
                         reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
                         return;
                     }
+                    // Sicherheitsnetz: Wenn IndexedDB nicht innerhalb von 6 Sekunden
+                    // antwortet (kein success/error/blocked), brechen wir ab, damit
+                    // die App nicht ewig im Ladebildschirm hängt.
+                    let settled = false;
+                    const done = (fn, arg) => { if (settled) return; settled = true; clearTimeout(watchdog); fn(arg); };
+                    const watchdog = setTimeout(() => {
+                        done(reject, new Error('Datenbank antwortet nicht (Zeitüberschreitung).'));
+                    }, 6000);
+
                     const req = indexedDB.open('KTM_DB', 8);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
@@ -119,16 +128,16 @@ function toSnake(o) {
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
                     };
-                    req.onsuccess = (e) => { this.db = e.target.result; resolve(); };
+                    req.onsuccess = (e) => { this.db = e.target.result; done(resolve); };
                     req.onerror = (e) => {
                         const err = e.target.error;
                         if (err && err.name === 'VersionError') {
-                            reject(new Error('Es existiert bereits eine neuere lokale Datenbank in diesem Browser. Bitte lade die aktuellste Version der App, oder leere im Zweifel die Website-Daten für diese Seite (Browser-Einstellungen).'));
+                            done(reject, new Error('Es existiert bereits eine neuere lokale Datenbank in diesem Browser. Bitte lade die aktuellste Version der App, oder leere im Zweifel die Website-Daten für diese Seite (Browser-Einstellungen).'));
                             return;
                         }
-                        reject(err || new Error('IndexedDB konnte nicht geöffnet werden.'));
+                        done(reject, err || new Error('IndexedDB konnte nicht geöffnet werden.'));
                     };
-                    req.onblocked = () => reject(new Error('Datenbank-Upgrade blockiert. Bitte alle anderen Tabs dieser App schließen.'));
+                    req.onblocked = () => done(reject, new Error('Datenbank-Upgrade blockiert. Bitte alle anderen Tabs dieser App schließen.'));
                 });
             }
 
