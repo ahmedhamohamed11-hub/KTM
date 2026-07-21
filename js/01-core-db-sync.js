@@ -558,13 +558,8 @@ async function backgroundSyncPushInner() {
                 while (error && /Could not find the '(\w+)' column/.test(error.message) && guard < 25) {
                     guard++;
                     const miss = error.message.match(/Could not find the '(\w+)' column/)[1];
-                    // tenant_id darf NIE entfernt werden - ohne sie greift die
-                    // Mandantentrennung nicht. Fehlt die Spalte, ist das RLS-Setup
-                    // noch nicht ausgeführt -> mit klarer Meldung abbrechen.
-                    if (miss === 'tenant_id') {
-                        console.error('Spalte tenant_id fehlt in Supabase. Bitte das SQL "ktm_auth_rls_setup.sql" ausführen.');
-                        break;
-                    }
+                    // Im Einzelnutzer-Modus ist tenant_id nicht nötig - fehlt die
+                    // Spalte, einfach weglassen und weitermachen.
                     delete p[miss];
                     ({ data, error } = await sb.from(sbTable(t))
                         .upsert(p, { onConflict: t === 'settings' ? 'key' : 'id' })

@@ -193,13 +193,38 @@
         $('authToReset').addEventListener('click', (e) => { e.preventDefault(); setMode('reset'); });
     }
 
-    // Beim Laden: gibt es schon eine gültige Session?
+    // Beim Laden: Einzelnutzer-Modus -> App startet direkt ohne Anmeldung.
+    // Für Team-/Mehrbenutzer-Betrieb kann SINGLE_USER auf false gesetzt werden;
+    // dann greift wieder der Login-Bildschirm.
+    const SINGLE_USER = true;
+
     async function boot() {
         wireEvents();
+
+        if (SINGLE_USER) {
+            // Kein Login nötig - direkt starten und ALLE Daten anzeigen.
+            hideAuthScreen();
+            // Falls trotzdem eine Session existiert, deren userId übernehmen
+            // (schadet nicht); sonst ohne tenant-Filter arbeiten.
+            try {
+                if (authClient) {
+                    const { data: { session } } = await authClient.auth.getSession();
+                    if (session) {
+                        window.__ktmAuth = {
+                            client: authClient,
+                            userId: session.user.id,
+                            email: session.user.email,
+                            company: session.user.user_metadata?.company_name || null,
+                            signOut: async () => { try { await authClient.auth.signOut(); } catch (e) {} window.location.reload(); }
+                        };
+                    }
+                }
+            } catch (e) { /* egal */ }
+            if (typeof window.__ktmStartApp === 'function') window.__ktmStartApp();
+            return;
+        }
+
         if (!authClient) {
-            // Kein Supabase (offline beim allerersten Start) -> App trotzdem lokal starten,
-            // damit bereits angemeldete Offline-Nutzer weiterarbeiten können.
-            // Ohne je eingeloggt gewesen zu sein, gibt es aber keine Daten.
             const hadSession = localStorage.getItem('ktm-auth');
             if (hadSession) {
                 if (typeof window.__ktmStartApp === 'function') window.__ktmStartApp();
