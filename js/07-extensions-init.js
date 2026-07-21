@@ -2403,6 +2403,66 @@
             },
 
             // ===== WARTUNG =====
+            insertChecklistTemplate(type) {
+                const templates = {
+                    split: [
+                        'Innengerät: Filter reinigen/tauschen',
+                        'Verdampfer-Lamellen reinigen',
+                        'Kondensatablauf und -wanne prüfen/reinigen',
+                        'Kältemitteldruck / Betriebsdruck prüfen',
+                        'Sichtprüfung auf Leckagen (Verschraubungen)',
+                        'Außengerät: Verflüssiger reinigen',
+                        'Lüfter/Ventilator prüfen',
+                        'Elektrische Anschlüsse/Klemmen kontrollieren',
+                        'Funktionstest Heizen/Kühlen',
+                        'Temperaturen messen und protokollieren'
+                    ],
+                    vrf: [
+                        'Alle Innengeräte: Filter reinigen',
+                        'Kondensatpumpen/-ablauf je Gerät prüfen',
+                        'Außeneinheit(en): Wärmetauscher reinigen',
+                        'Kältemittelfüllung / Unterkühlung prüfen',
+                        'Dichtheitsprüfung nach F-Gase-VO',
+                        'Kommunikation/Adressierung der Geräte prüfen',
+                        'Verdichter-Betriebsstunden auslesen',
+                        'Fehlerspeicher auslesen',
+                        'Elektrik und Absicherung kontrollieren',
+                        'Funktionstest aller Zonen'
+                    ],
+                    waermepumpe: [
+                        'Wärmequelle prüfen (Luft/Sole/Wasser)',
+                        'Verdampfer/Verflüssiger reinigen',
+                        'Kältemitteldruck und Unterkühlung prüfen',
+                        'Heizungswasserdruck kontrollieren',
+                        'Umwälzpumpen prüfen',
+                        'Pufferspeicher / Warmwasser prüfen',
+                        'Sicherheitsventil und Ausdehnungsgefäß prüfen',
+                        'JAZ / Betriebsdaten auslesen',
+                        'Elektrik und Reglereinstellungen prüfen',
+                        'Dichtheitsprüfung nach F-Gase-VO'
+                    ],
+                    kaelte: [
+                        'Verflüssiger und Verdampfer reinigen',
+                        'Kältemittelfüllung / Schauglas prüfen',
+                        'Verdichter: Öl, Druck, Betriebsstunden',
+                        'Abtausystem prüfen (Funktion/Zeiten)',
+                        'Dichtheitsprüfung nach F-Gase-VO (Protokoll!)',
+                        'Temperaturen Kühlraum/Kühlmöbel messen',
+                        'Türen/Dichtungen der Kühlstellen prüfen',
+                        'Regelung und Alarme testen',
+                        'Elektrik, Schütze, Klemmen prüfen',
+                        'Ergebnisse dokumentieren'
+                    ]
+                };
+                const list = templates[type];
+                if (!list) return;
+                const ta = document.getElementById('mntCheck');
+                if (!ta) return;
+                const text = list.map(x => '☐ ' + x).join('\n');
+                ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + text) : text;
+                showToast('Vorlage eingefügt – du kannst sie anpassen.', 'success');
+            },
+
             async openMaintenance(id = null) {
                 const m = id ? await db.get('maintenance', id) : null;
                 const equipment = await db.getAll('equipment');
@@ -2419,12 +2479,16 @@
                         <div class="form-group"><label>Intervall</label><select id="mntInt">${intOpts}</select></div>
                         <div class="form-group"><label>Nächste Wartung</label><input type="date" id="mntNext" value="${escapeHtml(m?.nextDue || '')}"></div>
                     </div>
-                    <div class="form-group"><label>Wartungs-Checkliste</label><textarea id="mntCheck" rows="4" placeholder="z. B.
-- Filter reinigen/tauschen
-- Kältemitteldruck prüfen
-- Dichtheitsprüfung
-- Kondensatablauf prüfen
-- Elektrik/Klemmen kontrollieren">${escapeHtml(m?.checklist || '')}</textarea></div>
+                    <div class="form-group"><label>Wartungs-Checkliste</label>
+                        <div class="mnt-templates">
+                            <span class="mnt-tpl-label">Vorlage einfügen:</span>
+                            <button type="button" class="btn btn-sm btn-outline" onclick="app.insertChecklistTemplate('split')">Split-Klima</button>
+                            <button type="button" class="btn btn-sm btn-outline" onclick="app.insertChecklistTemplate('vrf')">VRF / Multisplit</button>
+                            <button type="button" class="btn btn-sm btn-outline" onclick="app.insertChecklistTemplate('waermepumpe')">Wärmepumpe</button>
+                            <button type="button" class="btn btn-sm btn-outline" onclick="app.insertChecklistTemplate('kaelte')">Gewerbekälte</button>
+                        </div>
+                        <textarea id="mntCheck" rows="6" placeholder="Vorlage oben wählen oder eigene Punkte eingeben (eine Zeile pro Punkt)">${escapeHtml(m?.checklist || '')}</textarea>
+                    </div>
                     <div class="form-group"><label>Notizen</label><textarea id="mntNotes" rows="2">${escapeHtml(m?.notes || '')}</textarea></div>
                 `;
 
