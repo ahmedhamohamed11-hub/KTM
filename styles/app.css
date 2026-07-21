@@ -1040,3 +1040,39 @@
         .dash-banner.over { background: linear-gradient(135deg, #fef3f2, #fee4e2); border: 1px solid #f5a5a0; color: #912018; }
         .dash-banner.soon { background: linear-gradient(135deg, #fff8ec, #fff3d6); border: 1px solid #f0cf9a; color: #92600a; }
         .dash-banner-icon { font-size: 22px; }
+
+        /* ===== Premium-Feinschliff: Loader, Animationen ===== */
+        /* Skeleton-Ladeplatzhalter */
+        .skeleton-wrap { padding: 4px; }
+        .skeleton { position: relative; overflow: hidden; background: var(--border, #e5eaf0); border-radius: 10px; }
+        .skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent); animation: shimmer 1.3s infinite; }
+        @keyframes shimmer { 100% { transform: translateX(100%); } }
+        .sk-card { height: 74px; margin-bottom: 10px; border-radius: var(--radius-lg); }
+        .sk-line { height: 14px; margin-bottom: 9px; }
+        .sk-line.short { width: 45%; }
+        .sk-line.med { width: 70%; }
+
+        /* Inline-Spinner */
+        .spinner { width: 18px; height: 18px; border: 2.5px solid var(--accent-light); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; }
+        .spinner-lg { width: 34px; height: 34px; border-width: 3.5px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-center { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 50px 20px; color: var(--text-muted); }
+
+        /* Button-Druck-Effekt (haptisches Feedback) */
+        .btn:active { transform: scale(0.96); }
+        .stat-card:active, .eq-card:active, .mnt-row:active { transform: scale(0.985); }
+
+        /* Sanftes Einblenden von Listen/Karten */
+        .fade-in { animation: fadeIn .3s ease both; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .stat-grid > * { animation: fadeIn .35s ease both; }
+        .stat-grid > *:nth-child(2) { animation-delay: .04s; }
+        .stat-grid > *:nth-child(3) { animation-delay: .08s; }
+        .stat-grid > *:nth-child(4) { animation-delay: .12s; }
+        .stat-grid > *:nth-child(5) { animation-delay: .16s; }
+        .stat-grid > *:nth-child(6) { animation-delay: .20s; }
+        .stat-grid > *:nth-child(7) { animation-delay: .24s; }
+
+        /* Erfolgs-Häkchen (kurze Bestätigung) */
+        @keyframes checkPop { 0% { transform: scale(0); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
+        .check-pop { animation: checkPop .35s ease; }

@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v23</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v24</span></div>
                         </div>
                     </div>`;
             })();
@@ -484,7 +484,7 @@
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteCustomer(${idJS(c.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>
-                                `).join('') || '<tr><td colspan="6" class="empty-note">Keine Kunden vorhanden</td></tr>'}
+                                `).join('') || `<tr><td colspan="6" style="padding:0;">${filtered.length === 0 && !listFilters.customers.q ? `<div class="empty-state"><div style="font-size:40px;">👥</div><p>Noch keine Kunden.<br>Lege deinen ersten Kunden an – Name, Kontakt und Adresse genügen.</p><button class="btn btn-primary" onclick="app.openCustomerModal()">${icon('plus')} Ersten Kunden anlegen</button></div>` : '<div class="empty-note" style="padding:20px;">Keine Treffer für die Suche.</div>'}</td></tr>`}
                             </tbody>
                         </table>
                     </div>
@@ -1173,7 +1173,7 @@
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteOffer(${idJS(o.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>`;
-                                }).join('') || '<tr><td colspan="6" class="empty-note">Keine Angebote</td></tr>'}
+                                }).join('') || `<tr><td colspan="6" style="padding:0;"><div class="empty-state"><div style="font-size:40px;">📄</div><p>Noch keine Angebote.<br>Angebote erstellst du aus einem Projekt – oder direkt über den Schnellrechner.</p><button class="btn btn-primary" onclick="app.navigate('calc')">🔢 Zum Schnellrechner</button></div></td></tr>`}
                             </tbody>
                         </table>
                     </div>
@@ -1247,7 +1247,7 @@
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteOrder(${idJS(o.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>`;
-                                }).join('') || '<tr><td colspan="6" class="empty-note">Keine Bestellungen vorhanden</td></tr>'}
+                                }).join('') || `<tr><td colspan="6" style="padding:0;"><div class="empty-state"><div style="font-size:40px;">🛒</div><p>Noch keine Bestellungen.<br>Aus einem Projekt kannst du benötigtes Material direkt bestellen.</p></div></td></tr>`}
                             </tbody>
                         </table>
                     </div>

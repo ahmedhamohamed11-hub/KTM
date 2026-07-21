@@ -150,3 +150,31 @@
                 `;
             })();
         }
+
+        // ===== Lade-Anzeigen (Premium-Feinschliff) =====
+        // Skeleton-Platzhalter in den Content-Bereich setzen, während eine Seite lädt.
+        function showLoadingSkeleton(kind) {
+            const el = document.getElementById('contentArea');
+            if (!el) return;
+            if (kind === 'cards') {
+                el.innerHTML = `<div class="skeleton-wrap">
+                    <div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>
+                    <div class="skeleton sk-card"></div><div class="skeleton sk-card"></div></div>`;
+            } else if (kind === 'list') {
+                el.innerHTML = `<div class="skeleton-wrap">
+                    <div class="skeleton sk-line med"></div><div class="skeleton sk-line short"></div>
+                    <div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>
+                    <div class="skeleton sk-card"></div></div>`;
+            } else {
+                el.innerHTML = `<div class="loading-center"><div class="spinner spinner-lg"></div><div>Wird geladen…</div></div>`;
+            }
+        }
+
+        // Kurzer Spinner-Overlay für Aktionen (z. B. PDF, Sync)
+        function withButtonSpinner(btn, label) {
+            if (!btn) return () => {};
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<span class="spinner"></span> ${label || ''}`.trim();
+            return () => { btn.disabled = false; btn.innerHTML = orig; };
+        }

@@ -134,7 +134,7 @@
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteInvoice(${idJS(inv.id)})">${icon('trash')}</button>
                                         </td>
                                     </tr>`;
-                                }).join('') || '<tr><td colspan="8" class="empty-note">Noch keine Rechnungen – erzeuge eine direkt aus einem Angebot (Angebote → „Rechnung").</td></tr>'}
+                                }).join('') || `<tr><td colspan="8" style="padding:0;"><div class="empty-state"><div style="font-size:40px;">🧾</div><p>Noch keine Rechnungen.<br>Erzeuge eine Rechnung mit einem Klick aus einem Angebot.</p><button class="btn btn-primary" onclick="app.navigate('offers')">Zu den Angeboten</button></div></td></tr>`}
                             </tbody>
                         </table>
                     </div>

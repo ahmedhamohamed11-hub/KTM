@@ -2090,6 +2090,10 @@
                 setPageTitle(page);
                 updateBottomNav(page);
 
+                // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
+
                 switch (page) {
                     case 'dashboard': renderDashboard(); break;
                     case 'calc': renderCalc(); break;
