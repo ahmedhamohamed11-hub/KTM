@@ -20,7 +20,7 @@
             console.warn('Supabase-Initialisierung fehlgeschlagen:', e);
         }
 // Lokale Store-Namen -> Supabase-Tabellennamen (snake_case)
-        const TABLE_MAP = { projectMaterials: 'project_materials' };
+        const TABLE_MAP = { projectMaterials: 'project_materials', refrigerantLog: 'refrigerant_log' };
         const sbTable = (t) => TABLE_MAP[t] || t;
         const localStore = (t) => Object.keys(TABLE_MAP).find(k => TABLE_MAP[k] === t) || t;
 
@@ -112,10 +112,10 @@ function toSnake(o) {
                         reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
                         return;
                     }
-                    const req = indexedDB.open('KTM_DB', 7);
+                    const req = indexedDB.open('KTM_DB', 8);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
-                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'invoices', 'settings', 'events'].forEach(s => {
+                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'invoices', 'settings', 'events', 'equipment', 'refrigerantLog', 'maintenance'].forEach(s => {
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
                     };
@@ -301,7 +301,7 @@ async put(storeName, data) {
             }
 
             async importAllData(data) {
-                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','settings','events']) await this.clear(s);
+                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','settings','events','equipment','refrigerantLog','maintenance']) await this.clear(s);
                 for (const c of data.customers || []) await this.addLocalOnly('customers', c);
                 for (const p of data.projects || []) await this.addLocalOnly('projects', p);
                 for (const r of data.rooms || []) await this.addLocalOnly('rooms', r);
@@ -383,7 +383,7 @@ await db.putLocalOnly(table, localData);
                 await backgroundSyncPush();
 
                 const failedTables = [];
-                for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','settings']) {
+                for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','equipment','refrigerantLog','maintenance','settings']) {
                     const { data, error } = await sb.from(sbTable(t)).select('*');
                     if (!error && data) {
                         const remoteIds = new Set(data.map(r => String(t === 'settings' ? r.key : r.id)));
@@ -510,7 +510,7 @@ async function backgroundSyncPushInner() {
         // einen späteren Push versehentlich wieder auftauchen).
         await flushPendingDeletes();
 
-        for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','settings']) {
+        for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','equipment','refrigerantLog','maintenance','settings']) {
 
             const unsynced = (await db.getAll(t)).filter(r => {
                 if (r._synced) return false;

@@ -1974,7 +1974,14 @@
                 this.setupNavigation();
                 this.setupSearch();
                 this.setupTheme();
-                this.navigate('dashboard');
+                // QR-Code einer Anlage gescannt? -> direkt öffnen
+                const anlageId = new URLSearchParams(window.location.search).get('anlage');
+                if (anlageId) {
+                    this.navigate('equipment');
+                    setTimeout(() => this.openEquipment(anlageId), 200);
+                } else {
+                    this.navigate('dashboard');
+                }
                 this.setupResponsive();
 
                 this.hideSplash();
@@ -2092,6 +2099,8 @@
                     case 'materials': renderMaterials(); break;
                     case 'offers': renderOffers(); break;
                     case 'orders': renderOrders(); break;
+                    case 'equipment': renderEquipment(this.currentProjectId); break;
+                    case 'maintenance': renderMaintenance(); break;
                     case 'invoices': renderInvoices(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
@@ -2193,6 +2202,137 @@
                         document.getElementById('sidebarOverlay').classList.remove('show');
                     }
                 });
+            },
+
+            // ===== ANLAGEN =====
+            async openEquipment(id = null) {
+                const e = id ? await db.get('equipment', id) : null;
+                const customers = await db.getAll('customers');
+                const F = window.KTM_FGAS;
+                const custOpts = customers.map(c => `<option value="${c.id}" ${e && String(e.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml((c.firstName || '') + ' ' + (c.lastName || ''))}</option>`).join('');
+                const refOpts = (F ? F.REFRIGERANTS : []).map(r => `<option value="${r}" ${e && e.refrigerant === r ? 'selected' : ''}>${r} (GWP ${F.GWP[r]})</option>`).join('');
+
+                const body = `
+                    <div class="form-row">
+                        <div class="form-group"><label>Hersteller</label><input type="text" id="eqManu" value="${escapeHtml(e?.manufacturer || '')}" placeholder="z. B. Daikin"></div>
+                        <div class="form-group"><label>Modell</label><input type="text" id="eqModel" value="${escapeHtml(e?.model || '')}" placeholder="z. B. FTXM35R"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Seriennummer</label><input type="text" id="eqSerial" value="${escapeHtml(e?.serialNumber || '')}"></div>
+                        <div class="form-group"><label>Baujahr</label><input type="number" id="eqYear" value="${escapeHtml(e?.year || '')}" placeholder="2024"></div>
+                    </div>
+                    <div class="form-group"><label>Kunde</label><select id="eqCust"><option value="">– kein Kunde –</option>${custOpts}</select></div>
+                    <div class="form-group"><label>Standort / Aufstellort</label><input type="text" id="eqLoc" value="${escapeHtml(e?.location || '')}" placeholder="z. B. Serverraum EG"></div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Kältemittel</label><select id="eqRef" onchange="app._eqUpdateFgas()"><option value="">–</option>${refOpts}</select></div>
+                        <div class="form-group"><label>Füllmenge (kg)</label><input type="number" step="0.01" id="eqFill" value="${escapeHtml(e?.fillKg || '')}" oninput="app._eqUpdateFgas()"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Leistung (kW)</label><input type="number" step="0.1" id="eqPower" value="${escapeHtml(e?.power || '')}"></div>
+                        <div class="form-group"><label>Letzte Dichtheitsprüfung</label><input type="date" id="eqLeak" value="${escapeHtml(e?.lastLeakCheck || '')}"></div>
+                    </div>
+                    <div id="eqFgasInfo" class="eq-fgas-info"></div>
+                    <div class="form-group"><label>Garantie bis</label><input type="date" id="eqWarranty" value="${escapeHtml(e?.warrantyUntil || '')}"></div>
+                    <div class="form-group"><label>Notizen</label><textarea id="eqNotes" rows="2">${escapeHtml(e?.notes || '')}</textarea></div>
+                    ${id ? `<div class="form-group"><label>Anlagen-QR-Code</label><div id="eqQr" class="eq-qr"></div><div style="font-size:12px;color:var(--text-muted);">Scannen öffnet diese Anlagenakte.</div></div>` : ''}
+                `;
+
+                const modal = showModal(id ? 'Anlage bearbeiten' : 'Neue Anlage', body, async (overlay) => {
+                    const data = {
+                        manufacturer: document.getElementById('eqManu').value.trim(),
+                        model: document.getElementById('eqModel').value.trim(),
+                        serialNumber: document.getElementById('eqSerial').value.trim(),
+                        year: document.getElementById('eqYear').value.trim(),
+                        customerId: document.getElementById('eqCust').value || null,
+                        location: document.getElementById('eqLoc').value.trim(),
+                        refrigerant: document.getElementById('eqRef').value || null,
+                        fillKg: parseFloat(document.getElementById('eqFill').value) || null,
+                        power: parseFloat(document.getElementById('eqPower').value) || null,
+                        lastLeakCheck: document.getElementById('eqLeak').value || null,
+                        warrantyUntil: document.getElementById('eqWarranty').value || null,
+                        notes: document.getElementById('eqNotes').value.trim()
+                    };
+                    if (!data.manufacturer && !data.model) { showToast('Bitte Hersteller oder Modell angeben.', 'error'); return; }
+                    if (id) { data.id = id; data.createdAt = e.createdAt; await db.put('equipment', data); }
+                    else await db.add('equipment', data);
+                    overlay.remove();
+                    showToast('Anlage gespeichert.', 'success');
+                    this.navigate('equipment');
+                }, 'Speichern');
+
+                setTimeout(() => { this._eqUpdateFgas(); if (id) this._eqRenderQr(id); }, 30);
+            },
+
+            _eqUpdateFgas() {
+                const F = window.KTM_FGAS; if (!F) return;
+                const ref = document.getElementById('eqRef')?.value;
+                const fill = parseFloat(document.getElementById('eqFill')?.value) || 0;
+                const box = document.getElementById('eqFgasInfo');
+                if (!box) return;
+                if (!ref || !fill) { box.innerHTML = ''; return; }
+                const t = F.co2eq(ref, fill);
+                const gwp = F.GWP[ref] || 0;
+                const pflicht = t >= 5;
+                box.innerHTML = `
+                    <div class="fgas-line"><span>GWP ${ref}</span><strong>${gwp}</strong></div>
+                    <div class="fgas-line"><span>CO₂-Äquivalent</span><strong>${t.toFixed(2)} t</strong></div>
+                    <div class="fgas-line"><span>Dichtheitsprüfung</span><strong>${F.intervalLabel(t)}</strong></div>
+                    ${pflicht ? '<div class="fgas-note">Diese Anlage ist nach F-Gase-VO prüf- und dokumentationspflichtig.</div>' : '<div class="fgas-note ok">Keine gesetzliche Prüfpflicht (unter 5 t CO₂e).</div>'}
+                `;
+            },
+
+            _eqRenderQr(id) {
+                const box = document.getElementById('eqQr');
+                if (!box || typeof qrcode === 'undefined') return;
+                try {
+                    const url = window.location.origin + '/?anlage=' + id;
+                    const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+                    box.innerHTML = qr.createImgTag(4, 8);
+                } catch (e) { box.textContent = 'QR-Code konnte nicht erzeugt werden.'; }
+            },
+
+            // ===== WARTUNG =====
+            async openMaintenance(id = null) {
+                const m = id ? await db.get('maintenance', id) : null;
+                const equipment = await db.getAll('equipment');
+                const customers = await db.getAll('customers');
+                const eqOpts = equipment.map(e => `<option value="${e.id}" ${m && String(m.equipmentId) === String(e.id) ? 'selected' : ''}>${escapeHtml((e.manufacturer || '') + ' ' + (e.model || 'Anlage'))}</option>`).join('');
+                const custOpts = customers.map(c => `<option value="${c.id}" ${m && String(m.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml((c.firstName || '') + ' ' + (c.lastName || ''))}</option>`).join('');
+                const intervals = ['monatlich', 'vierteljährlich', 'halbjährlich', 'jährlich', '2-jährlich'];
+                const intOpts = intervals.map(i => `<option value="${i}" ${m && m.interval === i ? 'selected' : ''}>${i}</option>`).join('');
+
+                const body = `
+                    <div class="form-group"><label>Anlage</label><select id="mntEq"><option value="">– Anlage wählen –</option>${eqOpts}</select></div>
+                    <div class="form-group"><label>Kunde</label><select id="mntCust"><option value="">– kein Kunde –</option>${custOpts}</select></div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Intervall</label><select id="mntInt">${intOpts}</select></div>
+                        <div class="form-group"><label>Nächste Wartung</label><input type="date" id="mntNext" value="${escapeHtml(m?.nextDue || '')}"></div>
+                    </div>
+                    <div class="form-group"><label>Wartungs-Checkliste</label><textarea id="mntCheck" rows="4" placeholder="z. B.
+- Filter reinigen/tauschen
+- Kältemitteldruck prüfen
+- Dichtheitsprüfung
+- Kondensatablauf prüfen
+- Elektrik/Klemmen kontrollieren">${escapeHtml(m?.checklist || '')}</textarea></div>
+                    <div class="form-group"><label>Notizen</label><textarea id="mntNotes" rows="2">${escapeHtml(m?.notes || '')}</textarea></div>
+                `;
+
+                showModal(id ? 'Wartungsplan bearbeiten' : 'Neuer Wartungsplan', body, async (overlay) => {
+                    const data = {
+                        equipmentId: document.getElementById('mntEq').value || null,
+                        customerId: document.getElementById('mntCust').value || null,
+                        interval: document.getElementById('mntInt').value,
+                        nextDue: document.getElementById('mntNext').value || null,
+                        checklist: document.getElementById('mntCheck').value.trim(),
+                        notes: document.getElementById('mntNotes').value.trim()
+                    };
+                    if (!data.equipmentId && !data.customerId) { showToast('Bitte Anlage oder Kunde wählen.', 'error'); return; }
+                    if (id) { data.id = id; data.createdAt = m.createdAt; await db.put('maintenance', data); }
+                    else await db.add('maintenance', data);
+                    overlay.remove();
+                    showToast('Wartungsplan gespeichert.', 'success');
+                    this.navigate('maintenance');
+                }, 'Speichern');
             },
 
             async openCustomerModal(id = null) {

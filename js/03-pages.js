@@ -211,7 +211,7 @@
                                 <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v18</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v19</span></div>
                         </div>
                     </div>`;
             })();
@@ -1555,3 +1555,94 @@
         // ============ EINHEITEN & BESICHTIGUNG ======================
         // ============================================================
         const UNITS = ['Stk', 'm', 'm²', 'lfm', 'Rolle', 'Karton', 'Paket', 'l', 'kg', 'Paar', 'Set', 'Std', 'Pauschal'];
+
+        // ============================================================
+        // ============ ANLAGENVERWALTUNG (Equipment) =================
+        // ============================================================
+        // Anlagen mit Hersteller, Kältemittel, F-Gase-Protokoll, QR-Code.
+
+        async function renderEquipment(customerFilter) {
+            const all = await db.getAll('equipment');
+            const customers = await db.getAll('customers');
+            const custName = (id) => { const c = customers.find(x => String(x.id) === String(id)); return c ? `${c.firstName || ''} ${c.lastName || ''}`.trim() : '–'; };
+            const list = customerFilter ? all.filter(e => String(e.customerId) === String(customerFilter)) : all;
+
+            const F = window.KTM_FGAS;
+            const card = (e) => {
+                const t = F ? F.co2eq(e.refrigerant, e.fillKg) : 0;
+                const due = F ? F.nextCheckDate(e.lastLeakCheck, t) : null;
+                const overdue = due && due < new Date();
+                const soon = due && !overdue && (due - new Date()) < 30 * 864e5;
+                const badge = t >= 5
+                    ? `<span class="eq-fgas ${overdue ? 'eq-fgas-over' : soon ? 'eq-fgas-soon' : ''}">${overdue ? '⚠️ Prüfung überfällig' : soon ? '🔔 Prüfung bald fällig' : '🧊 F-Gase-pflichtig'}</span>`
+                    : '';
+                return `
+                <div class="eq-card" onclick="app.openEquipment('${e.id}')">
+                    <div class="eq-card-top">
+                        <div class="eq-title">${escapeHtml(e.manufacturer || '')} ${escapeHtml(e.model || 'Anlage')}</div>
+                        ${badge}
+                    </div>
+                    <div class="eq-meta">
+                        ${e.refrigerant ? `<span>❄️ ${escapeHtml(e.refrigerant)}${e.fillKg ? ' · ' + e.fillKg + ' kg' : ''}</span>` : ''}
+                        ${t ? `<span>${t.toFixed(1)} t CO₂e</span>` : ''}
+                        ${e.location ? `<span>📍 ${escapeHtml(e.location)}</span>` : ''}
+                    </div>
+                    <div class="eq-cust">${escapeHtml(custName(e.customerId))}${e.serialNumber ? ' · SN ' + escapeHtml(e.serialNumber) : ''}</div>
+                </div>`;
+            };
+
+            contentArea.innerHTML = `
+                <div class="page-head">
+                    <div>
+                        <h2 style="margin:0;">Anlagen</h2>
+                        <div class="page-sub">${list.length} Anlage${list.length !== 1 ? 'n' : ''}${customerFilter ? ' · gefiltert' : ''}</div>
+                    </div>
+                    <button class="btn btn-primary" onclick="app.openEquipment()">${icon('plus')} Neue Anlage</button>
+                </div>
+                ${list.length ? `<div class="eq-grid">${list.map(card).join('')}</div>`
+                    : `<div class="empty-state"><div style="font-size:40px;">🧊</div><p>Noch keine Anlagen erfasst.<br>Lege die erste Anlage an – mit Kältemittel, Füllmenge und automatischem F-Gase-Protokoll.</p><button class="btn btn-primary" onclick="app.openEquipment()">${icon('plus')} Erste Anlage anlegen</button></div>`}
+            `;
+        }
+
+        // ============================================================
+        // ============ WARTUNG (Maintenance) =========================
+        // ============================================================
+        async function renderMaintenance() {
+            const all = await db.getAll('maintenance');
+            const equipment = await db.getAll('equipment');
+            const customers = await db.getAll('customers');
+            const eqName = (id) => { const e = equipment.find(x => String(x.id) === String(id)); return e ? `${e.manufacturer || ''} ${e.model || 'Anlage'}`.trim() : 'Anlage'; };
+            const custName = (id) => { const c = customers.find(x => String(x.id) === String(id)); return c ? `${c.firstName || ''} ${c.lastName || ''}`.trim() : ''; };
+
+            // Fällige Wartungen (nächster Termin <= heute+30 Tage)
+            const now = new Date();
+            const withDue = all.map(m => ({ ...m, dueDate: m.nextDue ? new Date(m.nextDue) : null }));
+            const upcoming = withDue.filter(m => m.dueDate).sort((a, b) => a.dueDate - b.dueDate);
+            const overdue = upcoming.filter(m => m.dueDate < now);
+            const soon = upcoming.filter(m => m.dueDate >= now && (m.dueDate - now) < 30 * 864e5);
+
+            const row = (m) => {
+                const od = m.dueDate && m.dueDate < now;
+                const sn = m.dueDate && !od && (m.dueDate - now) < 30 * 864e5;
+                return `
+                <div class="mnt-row" onclick="app.openMaintenance('${m.id}')">
+                    <div class="mnt-status ${od ? 'over' : sn ? 'soon' : 'ok'}"></div>
+                    <div class="mnt-body">
+                        <div class="mnt-title">${escapeHtml(eqName(m.equipmentId))}</div>
+                        <div class="mnt-sub">${escapeHtml(custName(m.customerId))}${m.interval ? ' · ' + escapeHtml(m.interval) : ''}</div>
+                    </div>
+                    <div class="mnt-due ${od ? 'over' : sn ? 'soon' : ''}">${m.dueDate ? m.dueDate.toLocaleDateString('de-AT') : '–'}</div>
+                </div>`;
+            };
+
+            contentArea.innerHTML = `
+                <div class="page-head">
+                    <div><h2 style="margin:0;">Wartung</h2><div class="page-sub">${all.length} Wartungsplan${all.length !== 1 ? '·e' : ''}</div></div>
+                    <button class="btn btn-primary" onclick="app.openMaintenance()">${icon('plus')} Wartungsplan</button>
+                </div>
+                ${overdue.length ? `<div class="mnt-banner over">⚠️ ${overdue.length} Wartung${overdue.length !== 1 ? 'en' : ''} überfällig</div>` : ''}
+                ${soon.length ? `<div class="mnt-banner soon">🔔 ${soon.length} Wartung${soon.length !== 1 ? 'en' : ''} in den nächsten 30 Tagen</div>` : ''}
+                ${all.length ? `<div class="mnt-list">${upcoming.map(row).join('')}</div>`
+                    : `<div class="empty-state"><div style="font-size:40px;">🔧</div><p>Noch keine Wartungspläne.<br>Erstelle einen Plan mit Intervall – KTM erinnert dich automatisch an fällige Wartungen.</p><button class="btn btn-primary" onclick="app.openMaintenance()">${icon('plus')} Ersten Plan anlegen</button></div>`}
+            `;
+        }

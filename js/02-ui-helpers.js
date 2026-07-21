@@ -4,7 +4,7 @@
             dashboard: 'Dashboard', customers: 'Kunden', projects: 'Projekte',
             calendar: 'Kalender', materials: 'Materialien', offers: 'Angebote',
             orders: 'Bestellungen', invoices: 'Rechnungen', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien',
-            calc: 'Schnellrechner'
+            calc: 'Schnellrechner', equipment: 'Anlagen', maintenance: 'Wartung'
         };
         function setPageTitle(page) {
             const el = document.getElementById('pageTitle');

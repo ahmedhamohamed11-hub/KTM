@@ -983,3 +983,43 @@
         .account-info { min-width: 0; }
         .account-email { font-weight: 700; font-size: 15px; color: var(--text-primary); word-break: break-all; }
         .account-company { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+        /* ===== Anlagen & Wartung ===== */
+        .page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .page-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+        .empty-state p { margin: 12px 0 18px; line-height: 1.5; }
+
+        .eq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+        .eq-card { background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; cursor: pointer; transition: all var(--transition); }
+        .eq-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .eq-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+        .eq-title { font-weight: 700; font-size: 14.5px; }
+        .eq-fgas { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: var(--radius-pill); background: var(--accent-light); color: var(--accent); white-space: nowrap; }
+        .eq-fgas-soon { background: #fff4e5; color: #b7791f; }
+        .eq-fgas-over { background: #fef2f2; color: #c0392b; }
+        .eq-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 6px; }
+        .eq-cust { font-size: 12px; color: var(--text-muted); }
+        .eq-fgas-info { background: var(--accent-light); border-radius: var(--radius); padding: 12px 14px; margin: 4px 0 14px; }
+        .fgas-line { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+        .fgas-note { font-size: 12px; color: #b7791f; margin-top: 8px; line-height: 1.4; }
+        .fgas-note.ok { color: var(--accent); }
+        .eq-qr { display: flex; justify-content: center; padding: 10px; background: #fff; border-radius: var(--radius); }
+        .eq-qr img { width: 160px; height: 160px; }
+
+        .mnt-banner { padding: 12px 15px; border-radius: var(--radius-lg); margin-bottom: 12px; font-weight: 600; font-size: 13.5px; }
+        .mnt-banner.over { background: #fef2f2; color: #912018; border: 1px solid #f5b5b0; }
+        .mnt-banner.soon { background: #fff4e5; color: #92600a; border: 1px solid #f0cf9a; }
+        .mnt-list { display: flex; flex-direction: column; gap: 8px; }
+        .mnt-row { display: flex; align-items: center; gap: 12px; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; cursor: pointer; transition: all var(--transition); }
+        .mnt-row:hover { box-shadow: var(--shadow-md); }
+        .mnt-status { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+        .mnt-status.ok { background: #22a06b; }
+        .mnt-status.soon { background: #e0a02e; }
+        .mnt-status.over { background: #d0402c; }
+        .mnt-body { flex: 1 1 auto; min-width: 0; }
+        .mnt-title { font-weight: 600; font-size: 14px; }
+        .mnt-sub { font-size: 12.5px; color: var(--text-muted); }
+        .mnt-due { font-size: 13px; font-weight: 600; white-space: nowrap; }
+        .mnt-due.over { color: #d0402c; }
+        .mnt-due.soon { color: #e0a02e; }
