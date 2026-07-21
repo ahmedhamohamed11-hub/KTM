@@ -2574,6 +2574,8 @@
                     }
 
                     const sum = positions.reduce((a, p) => a + p.preis * p.menge, 0);
+                    // Positionen für den Kopieren-Knopf merken
+                    this._lastMaterialList = { positions, sum };
                     box.innerHTML = `
                         <div class="calc-ai-head">🧰 Materialliste (circa)</div>
                         <div class="calc-lines">
@@ -2583,10 +2585,31 @@
                             </div>`).join('')}
                             <div class="calc-line calc-line-sum"><span class="calc-line-label">Material gesamt (circa)</span><span class="calc-line-price">${formatCurrency(sum)}</span></div>
                         </div>
+                        <button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="app.copyMaterialList()">📋 Materialliste kopieren</button>
                         <div class="calc-ai-note">Positionen mit „Richtwert" sind (noch) nicht in deinem Katalog – lege sie dort an, dann wird automatisch dein echter Preis verwendet. Mengen aus Leitungslänge (${dist} m) × ${rooms} Raum${rooms !== 1 ? '(e)' : ''}.</div>
                     `;
                 } catch (e) {
                     box.innerHTML = `<div class="calc-ai-err">⚠️ Materialliste konnte nicht erstellt werden (${escapeHtml(String(e.message || e))}).</div>`;
+                }
+            },
+
+            copyMaterialList() {
+                const data = this._lastMaterialList;
+                if (!data || !data.positions.length) { showToast('Keine Materialliste vorhanden.', 'error'); return; }
+                const lines = data.positions.map(p => `${p.name} · ${p.menge} ${p.einheit} · ${formatCurrency(p.preis * p.menge)}`);
+                lines.push(`Material gesamt (circa): ${formatCurrency(data.sum)}`);
+                const text = 'Materialliste:\n' + lines.join('\n');
+                const done = () => showToast('Materialliste kopiert – zum Einfügen ins Angebot bereit.', 'success');
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(done).catch(() => {
+                        const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+                        try { document.execCommand('copy'); done(); } catch (e) { showToast('Kopieren nicht möglich.', 'error'); }
+                        ta.remove();
+                    });
+                } else {
+                    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); done(); } catch (e) { showToast('Kopieren nicht möglich.', 'error'); }
+                    ta.remove();
                 }
             },
 
