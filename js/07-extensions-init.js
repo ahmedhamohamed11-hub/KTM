@@ -2254,6 +2254,7 @@
                     <div id="eqFgasInfo" class="eq-fgas-info"></div>
                     <div class="form-group"><label>Garantie bis</label><input type="date" id="eqWarranty" value="${escapeHtml(e?.warrantyUntil || '')}"></div>
                     <div class="form-group"><label>Notizen</label><textarea id="eqNotes" rows="2">${escapeHtml(e?.notes || '')}</textarea></div>
+                    ${id ? `<div class="form-group"><button type="button" class="btn btn-outline" style="width:100%;" onclick="app.openRefrigerantLog('${id}')">🧊 Kältemittelbuch öffnen</button></div>` : ''}
                     ${id ? `<div class="form-group"><label>Anlagen-QR-Code</label><div id="eqQr" class="eq-qr"></div><div style="font-size:12px;color:var(--text-muted);">Scannen öffnet diese Anlagenakte.</div></div>` : ''}
                 `;
 
@@ -2309,6 +2310,96 @@
                     const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
                     box.innerHTML = qr.createImgTag(4, 8);
                 } catch (e) { box.textContent = 'QR-Code konnte nicht erzeugt werden.'; }
+            },
+
+            // ===== KÄLTEMITTELBUCH (F-Gase-Nachweis) =====
+            async openRefrigerantLog(equipmentId) {
+                const eq = await db.get('equipment', equipmentId);
+                if (!eq) return;
+                const all = await db.getAll('refrigerantLog');
+                const entries = all.filter(e => String(e.equipmentId) === String(equipmentId))
+                    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+                // Bilanz: eingefüllt minus entnommen
+                const filled = entries.filter(e => e.type === 'Einfüllung').reduce((s, e) => s + (Number(e.amountKg) || 0), 0);
+                const removed = entries.filter(e => e.type === 'Entnahme').reduce((s, e) => s + (Number(e.amountKg) || 0), 0);
+                const F = window.KTM_FGAS;
+
+                const rows = entries.map(e => `
+                    <div class="rl-row">
+                        <div class="rl-type ${e.type === 'Einfüllung' ? 'in' : 'out'}">${e.type === 'Einfüllung' ? '➕' : '➖'}</div>
+                        <div class="rl-body">
+                            <div class="rl-main">${(Number(e.amountKg) || 0).toFixed(2)} kg ${escapeHtml(e.refrigerant || eq.refrigerant || '')}</div>
+                            <div class="rl-sub">${e.date ? new Date(e.date).toLocaleDateString('de-AT') : ''}${e.technician ? ' · ' + escapeHtml(e.technician) : ''}${e.reason ? ' · ' + escapeHtml(e.reason) : ''}</div>
+                        </div>
+                        <button class="rl-del" onclick="app.deleteRefrigerantEntry('${e.id}','${equipmentId}')" title="Löschen">×</button>
+                    </div>`).join('');
+
+                showModal(`Kältemittelbuch – ${escapeHtml(eq.manufacturer || '')} ${escapeHtml(eq.model || '')}`, `
+                    <div class="rl-balance">
+                        <div class="rl-bal-item"><span>Eingefüllt</span><strong>${filled.toFixed(2)} kg</strong></div>
+                        <div class="rl-bal-item"><span>Entnommen</span><strong>${removed.toFixed(2)} kg</strong></div>
+                        <div class="rl-bal-item accent"><span>Aktuelle Füllung</span><strong>${(Number(eq.fillKg) || 0).toFixed(2)} kg</strong></div>
+                    </div>
+                    <div class="rl-add">
+                        <div class="form-row">
+                            <div class="form-group"><label>Vorgang</label><select id="rlType"><option value="Einfüllung">➕ Einfüllung / Nachfüllung</option><option value="Entnahme">➖ Entnahme / Absaugung</option></select></div>
+                            <div class="form-group"><label>Menge (kg)</label><input type="number" step="0.01" id="rlAmount" placeholder="z. B. 0,80"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Datum</label><input type="date" id="rlDate" value="${new Date().toISOString().slice(0, 10)}"></div>
+                            <div class="form-group"><label>Techniker</label><input type="text" id="rlTech" placeholder="Name"></div>
+                        </div>
+                        <div class="form-group"><label>Grund / Notiz</label><input type="text" id="rlReason" placeholder="z. B. Erstbefüllung, Leckage-Reparatur"></div>
+                        <button class="btn btn-primary" onclick="app.addRefrigerantEntry('${equipmentId}')">${icon('plus')} Buchung hinzufügen</button>
+                    </div>
+                    <div class="rl-list-title">Buchungen (${entries.length})</div>
+                    <div class="rl-list">${rows || '<div class="empty-note" style="padding:16px;">Noch keine Buchungen. Dokumentiere hier jede Ein- und Ausbuchung von Kältemittel (F-Gase-Nachweis).</div>'}</div>
+                `, null, null);
+            },
+
+            async addRefrigerantEntry(equipmentId) {
+                const type = document.getElementById('rlType').value;
+                const amount = parseFloat(document.getElementById('rlAmount').value);
+                if (!(amount > 0)) { showToast('Bitte eine Menge größer 0 eingeben.', 'error'); return; }
+                const eq = await db.get('equipment', equipmentId);
+                const entry = {
+                    equipmentId,
+                    type,
+                    amountKg: amount,
+                    refrigerant: eq?.refrigerant || '',
+                    date: document.getElementById('rlDate').value || new Date().toISOString().slice(0, 10),
+                    technician: document.getElementById('rlTech').value.trim(),
+                    reason: document.getElementById('rlReason').value.trim()
+                };
+                await db.add('refrigerantLog', entry);
+
+                // Füllmenge der Anlage automatisch anpassen
+                if (eq) {
+                    const delta = type === 'Einfüllung' ? amount : -amount;
+                    eq.fillKg = Math.max(0, (Number(eq.fillKg) || 0) + delta);
+                    await db.put('equipment', eq);
+                }
+                showToast('Buchung gespeichert.', 'success');
+                document.querySelector('.modal-overlay')?.remove();
+                this.openRefrigerantLog(equipmentId);
+            },
+
+            async deleteRefrigerantEntry(entryId, equipmentId) {
+                const entry = await db.get('refrigerantLog', entryId);
+                await db.delete('refrigerantLog', entryId);
+                // Füllmenge zurückrechnen
+                if (entry) {
+                    const eq = await db.get('equipment', equipmentId);
+                    if (eq) {
+                        const delta = entry.type === 'Einfüllung' ? -(Number(entry.amountKg) || 0) : (Number(entry.amountKg) || 0);
+                        eq.fillKg = Math.max(0, (Number(eq.fillKg) || 0) + delta);
+                        await db.put('equipment', eq);
+                    }
+                }
+                showToast('Buchung gelöscht.', 'info');
+                document.querySelector('.modal-overlay')?.remove();
+                this.openRefrigerantLog(equipmentId);
             },
 
             // ===== WARTUNG =====
