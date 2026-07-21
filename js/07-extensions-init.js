@@ -863,7 +863,7 @@
                     escapeHtml(m.name || 'Material'),
                     `
                         <div class="mat-detail">
-                            <div class="mat-detail-img">${m.image ? `<img src="${m.image}">` : `<span>${matCatIcon(m.category)}</span>`}</div>
+                            <div class="mat-detail-img">${(() => { const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []); return imgs.length ? `<img src="${imgs[0]}" onclick="app.viewImage('${imgs[0]}')">` : `<span>${matCatIcon(m.category)}</span>`; })()}</div>
                             <div class="mat-detail-info">
                                 <div class="survey-summary">
                                     ${m.manufacturer ? `<div class="survey-chip"><span>Hersteller</span><strong>${escapeHtml(m.manufacturer)}</strong></div>` : ''}
@@ -878,6 +878,7 @@
                                     <div class="survey-chip"><span>Lagerbestand</span><strong class="${st.cls === 'st-low' ? 'text-danger' : ''}">${m.stock ?? 0} ${escapeHtml(m.unit || 'Stk')}${m.minStock > 0 ? ' (min. ' + m.minStock + ')' : ''}</strong></div>
                                 </div>
                                 ${m.notes ? `<div style="margin-top:12px;font-size:13px;color:var(--text-secondary);"><strong>Technische Daten:</strong><br>${escapeHtml(m.notes)}</div>` : ''}
+                                ${(() => { const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []); return imgs.length > 1 ? `<div class="mat-img-gallery" style="margin-top:12px;">${imgs.map(src => `<div class="mat-img-thumb"><img src="${src}" onclick="app.viewImage('${src}')"></div>`).join('')}</div>` : ''; })()}
                             </div>
                             <div class="mat-detail-side">
                                 ${qrHtml}
@@ -2694,7 +2695,8 @@
 
             async openMaterialModal(id = null) {
                 const mat = id ? await db.get('materials', id) : null;
-                let imgData = mat?.image || '';
+                // Bilder als Array; alte Einzelbilder (mat.image) werden übernommen
+                let images = Array.isArray(mat?.images) ? [...mat.images] : (mat?.image ? [mat.image] : []);
                 const modal = showModal(
                     id ? 'Material bearbeiten' : 'Neues Material',
                     `
@@ -2725,7 +2727,10 @@
                             <div class="form-group"><label>Verkaufspreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"></div>
                         </div>
                         <div class="form-group"><label>Beschreibung (erscheint im Angebot)</label><textarea id="matDescription" rows="2">${escapeHtml(mat?.description || '')}</textarea></div>
-                        <div class="form-group"><label>Produktbild (optional)</label><input type="file" id="matImage" accept="image/*"><div id="matImgPreview" style="margin-top:8px;">${imgData ? `<img src="${imgData}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">` : ''}</div></div>
+                        <div class="form-group"><label>Produktbilder (aus Galerie, mehrere möglich)</label>
+                            <input type="file" id="matImage" accept="image/*" multiple>
+                            <div id="matImgPreview" class="mat-img-gallery"></div>
+                        </div>
                         <div class="form-group"><label>Notizen</label><textarea id="matNotes" rows="2">${escapeHtml(mat?.notes || '')}</textarea></div>
                     `,
                     async (overlay) => {
@@ -2744,7 +2749,8 @@
                             sellingPrice: parseFloat(overlay.querySelector('#matSellingPrice').value) || 0,
                             description: overlay.querySelector('#matDescription').value.trim(),
                             notes: overlay.querySelector('#matNotes').value.trim(),
-                            image: imgData,
+                            images: images,
+                            image: images[0] || '',
                         };
                         if (!data.name) { showToast('Artikelname ist erforderlich.', 'error'); return; }
                         if (id) {
@@ -2759,14 +2765,42 @@
                         this.navigate('materials');
                     }
                 );
-                modal.querySelector('#matImage').addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    compressImage(file, 400, 0.6).then((compressed) => {
-                        imgData = compressed;
-                        modal.querySelector('#matImgPreview').innerHTML = `<img src="${imgData}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
-                    }).catch(() => showToast('Bild konnte nicht komprimiert werden.', 'error'));
+                // Galerie-Vorschau rendern (mit Löschen-Knopf je Bild)
+                const renderGallery = () => {
+                    const box = modal.querySelector('#matImgPreview');
+                    if (!box) return;
+                    box.innerHTML = images.map((src, i) =>
+                        `<div class="mat-img-thumb"><img src="${src}"><button type="button" class="mat-img-del" data-i="${i}" title="Bild entfernen">×</button></div>`
+                    ).join('');
+                    box.querySelectorAll('.mat-img-del').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            images.splice(parseInt(btn.dataset.i), 1);
+                            renderGallery();
+                        });
+                    });
+                };
+                renderGallery();
+                modal.querySelector('#matImage').addEventListener('change', async (e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (!files.length) return;
+                    for (const file of files) {
+                        try {
+                            const compressed = await compressImage(file, 600, 0.65);
+                            images.push(compressed);
+                        } catch (err) { showToast('Ein Bild konnte nicht verarbeitet werden.', 'error'); }
+                    }
+                    renderGallery();
+                    e.target.value = ''; // erlaubt erneutes Wählen derselben Datei
                 });
+            },
+
+            viewImage(src) {
+                if (!src) return;
+                const ov = document.createElement('div');
+                ov.className = 'img-viewer';
+                ov.innerHTML = `<img src="${src}"><button class="img-viewer-close" title="Schließen">×</button>`;
+                ov.addEventListener('click', () => ov.remove());
+                document.body.appendChild(ov);
             },
 
             async deleteMaterial(id) {
