@@ -182,15 +182,15 @@
     }
 
     function wireEvents() {
-        $('authSubmit').addEventListener('click', handleSubmit);
+        const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+        on('authSubmit', 'click', handleSubmit);
         // Enter-Taste im Formular
         ['authEmail', 'authPass', 'authName'].forEach(id => {
-            const el = $(id);
-            if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSubmit(); });
+            on(id, 'keydown', (e) => { if (e.key === 'Enter') handleSubmit(); });
         });
-        $('authToRegister').addEventListener('click', (e) => { e.preventDefault(); setMode('register'); });
-        $('authToLogin').addEventListener('click', (e) => { e.preventDefault(); setMode('login'); });
-        $('authToReset').addEventListener('click', (e) => { e.preventDefault(); setMode('reset'); });
+        on('authToRegister', 'click', (e) => { e.preventDefault(); setMode('register'); });
+        on('authToLogin', 'click', (e) => { e.preventDefault(); setMode('login'); });
+        on('authToReset', 'click', (e) => { e.preventDefault(); setMode('reset'); });
     }
 
     // Beim Laden: Einzelnutzer-Modus -> App startet direkt ohne Anmeldung.
@@ -247,10 +247,36 @@
         }
     }
 
-    // Auth bootet, sobald das DOM steht
+    // Auth bootet, sobald das DOM steht. Absolute Absicherung: Wenn boot()
+    // aus IRGENDEINEM Grund scheitert, wird die App trotzdem gestartet, damit
+    // niemand im Ladebildschirm hängen bleibt.
+    function safeBoot() {
+        try {
+            const r = boot();
+            if (r && typeof r.catch === 'function') {
+                r.catch((e) => { console.error('boot() fehlgeschlagen, starte App direkt:', e); forceStart(); });
+            }
+        } catch (e) {
+            console.error('boot() geworfen, starte App direkt:', e);
+            forceStart();
+        }
+    }
+    function forceStart() {
+        try { const s = document.getElementById('authScreen'); if (s) s.style.display = 'none'; } catch (e) {}
+        if (typeof window.__ktmStartApp === 'function') window.__ktmStartApp();
+    }
+    // Letztes Sicherheitsnetz: Falls nach 4 Sekunden die App immer noch nicht
+    // gestartet wurde, Start erzwingen.
+    setTimeout(() => {
+        if (!window.__ktmAppBooted && typeof window.__ktmStartApp === 'function') {
+            console.warn('Notstart nach Zeitüberschreitung.');
+            forceStart();
+        }
+    }, 4000);
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', boot);
+        document.addEventListener('DOMContentLoaded', safeBoot);
     } else {
-        boot();
+        safeBoot();
     }
 })();

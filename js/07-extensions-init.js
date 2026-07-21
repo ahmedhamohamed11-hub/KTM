@@ -3831,6 +3831,8 @@ async exportOfferPDF(offerId) {
         // das Auth-Modul (js/00-auth.js) einen angemeldeten Benutzer bestätigt.
         // Es ruft dann window.__ktmStartApp() auf.
         window.__ktmStartApp = function () {
+            if (window.__ktmAppBooted) return; // nur einmal starten
+            window.__ktmAppBooted = true;
             // Watchdog erst jetzt starten (nicht während der Anmeldung)
             startupWatchdog = setTimeout(() => {
                 if (!appStarted) {
