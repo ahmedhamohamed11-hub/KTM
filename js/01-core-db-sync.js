@@ -755,6 +755,23 @@ async function backgroundSyncPushInner() {
             div.textContent = str ?? '';
             return div.innerHTML;
         }
+
+        // PDF teilen (natives Teilen-Menü: WhatsApp, E-Mail, ...) oder speichern.
+        async function sharePdfDoc(doc, fileName, title) {
+            try {
+                const blob = doc.output('blob');
+                const file = new File([blob], fileName, { type: 'application/pdf' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: title || fileName });
+                    return;
+                }
+            } catch (e) {
+                if (e && e.name === 'AbortError') return; // Nutzer hat bewusst abgebrochen
+            }
+            try { doc.save(fileName); showToast('PDF gespeichert (Teilen auf diesem Gerät nicht möglich).', 'info'); }
+            catch (e) { showToast('PDF konnte nicht erstellt werden.', 'error'); }
+        }
+
 function compressImage(file, maxWidth = 800, quality = 0.7) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();

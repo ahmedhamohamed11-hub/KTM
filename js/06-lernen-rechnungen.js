@@ -130,6 +130,7 @@
                                             ${st !== 'Bezahlt' && st !== 'Storniert' ? `<button class="btn btn-sm btn-primary" onclick="app.openPaymentModal(${idJS(inv.id)})">€ Zahlung</button>` : ''}
                                             ${st === 'Überfällig' ? `<button class="btn btn-sm btn-warning" onclick="app.exportInvoicePDF(${idJS(inv.id)}, true)">📨 Mahnung</button>` : ''}
                                             <button class="btn btn-sm btn-outline" onclick="app.exportInvoicePDF(${idJS(inv.id)})">${icon('pdf')} PDF</button>
+                                            <button class="btn btn-sm btn-outline" onclick="app.exportInvoicePDF(${idJS(inv.id)}, false, true)" title="Per WhatsApp, E-Mail o. Ä. teilen">📤 Teilen</button>
                                             <button class="btn btn-sm btn-outline" onclick="app.exportEInvoice(${idJS(inv.id)})" title="XRechnung (EN 16931) für Behörden & Firmen">🧾 E-Rechnung</button>
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteInvoice(${idJS(inv.id)})">${icon('trash')}</button>
                                         </td>
@@ -240,7 +241,7 @@
             },
 
             // ============ RECHNUNGS-PDF mit EPC-QR-Code ============
-            async exportInvoicePDF(invoiceId, asReminder = false) {
+            async exportInvoicePDF(invoiceId, asReminder = false, share = false) {
                 if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
                 const inv = await db.get('invoices', invoiceId);
                 if (!inv) return;
@@ -358,8 +359,13 @@
                 doc.text(terms, mx, ty, { maxWidth: pw - mx * 2 });
 
                 pdfFooterOnce(doc, co);
-                doc.save(`${asReminder ? 'Mahnung_' : ''}${inv.invoiceNumber}_${customer?.lastName || 'Kunde'}.pdf`);
-                showToast(asReminder ? 'Zahlungserinnerung als PDF erstellt.' : 'Rechnung als PDF exportiert.', 'success');
+                const fileName = `${asReminder ? 'Mahnung_' : ''}${inv.invoiceNumber}_${customer?.lastName || 'Kunde'}.pdf`;
+                if (share) {
+                    await sharePdfDoc(doc, fileName, asReminder ? 'Zahlungserinnerung' : 'Rechnung ' + inv.invoiceNumber);
+                } else {
+                    doc.save(fileName);
+                    showToast(asReminder ? 'Zahlungserinnerung als PDF erstellt.' : 'Rechnung als PDF exportiert.', 'success');
+                }
             },
 
             // ===== E-RECHNUNG (XRechnung / EN 16931, UBL 2.1) =====

@@ -1495,7 +1495,7 @@
             // ============================================================
             // ============ PDF: ANGEBOT (Redesign) =======================
             // ============================================================
-            async exportOfferPDF(offerId) {
+            async exportOfferPDF(offerId, share = false) {
                 if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
                 const offer = await db.get('offers', offerId);
                 if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
@@ -1621,8 +1621,13 @@
                 }
 
                 pdfFooterOnce(doc, co);
-                doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
-                showToast('Angebot als PDF exportiert.', 'success');
+                const offerFileName = `${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`;
+                if (share) {
+                    await sharePdfDoc(doc, offerFileName, 'Angebot ' + (offer.offerNumber || ''));
+                } else {
+                    doc.save(offerFileName);
+                    showToast('Angebot als PDF exportiert.', 'success');
+                }
             },
 
             // ============================================================
