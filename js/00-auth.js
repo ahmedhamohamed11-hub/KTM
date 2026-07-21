@@ -202,13 +202,15 @@
         wireEvents();
 
         if (SINGLE_USER) {
-            // Kein Login nötig - direkt starten und ALLE Daten anzeigen.
+            // Kein Login nötig - App SOFORT starten, ohne auf Supabase zu warten.
+            // (Das Warten auf getSession() konnte bei schlechtem Netz hängen
+            //  bleiben und die App im Ladebildschirm einfrieren.)
             hideAuthScreen();
-            // Falls trotzdem eine Session existiert, deren userId übernehmen
-            // (schadet nicht); sonst ohne tenant-Filter arbeiten.
-            try {
-                if (authClient) {
-                    const { data: { session } } = await authClient.auth.getSession();
+            if (typeof window.__ktmStartApp === 'function') window.__ktmStartApp();
+
+            // Optionale Session-Übernahme läuft im Hintergrund, blockiert nichts.
+            if (authClient) {
+                authClient.auth.getSession().then(({ data: { session } }) => {
                     if (session) {
                         window.__ktmAuth = {
                             client: authClient,
@@ -218,9 +220,8 @@
                             signOut: async () => { try { await authClient.auth.signOut(); } catch (e) {} window.location.reload(); }
                         };
                     }
-                }
-            } catch (e) { /* egal */ }
-            if (typeof window.__ktmStartApp === 'function') window.__ktmStartApp();
+                }).catch(() => { /* egal */ });
+            }
             return;
         }
 
