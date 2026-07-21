@@ -1120,3 +1120,7 @@
         /* Wartungs-Checklisten-Vorlagen */
         .mnt-templates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
         .mnt-tpl-label { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
+
+        /* Schöner Bestätigungs-Dialog */
+        .modal-confirm { max-width: 380px; }
+        .modal-confirm .modal-actions { margin-top: 8px; }

@@ -332,7 +332,7 @@ async put(storeName, data) {
           try {
             const { eventType, new: newRec, old: oldRec } = payload;
             const table = localStore(payload.table);
-            console.log("Supabase Live Update:", eventType, table);
+
 
             if (eventType === 'DELETE') {
                 await db.deleteLocalOnly(table, oldRec.key || oldRec.id);
@@ -724,6 +724,30 @@ async function backgroundSyncPushInner() {
                 if (e.target === overlay) { overlay.remove(); if (onCancel) onCancel(); }
             });
             return overlay;
+        }
+
+        // Schöne Bestätigungs-Abfrage im App-Design (statt hässlichem System-confirm).
+        function showConfirm(message, opts = {}) {
+            return new Promise((resolve) => {
+                const container = document.getElementById('modalContainer');
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                const danger = opts.danger !== false;
+                overlay.innerHTML = `
+                    <div class="modal modal-confirm">
+                        <h3>${opts.title || 'Bestätigen'}</h3>
+                        <div class="modal-body"><p style="font-size:14px;line-height:1.5;margin:0;">${message}</p></div>
+                        <div class="modal-actions">
+                            <button class="btn btn-outline confirm-no">${opts.cancelText || 'Abbrechen'}</button>
+                            <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} confirm-yes">${opts.okText || 'Löschen'}</button>
+                        </div>
+                    </div>`;
+                container.appendChild(overlay);
+                const close = (val) => { overlay.remove(); resolve(val); };
+                overlay.querySelector('.confirm-no').addEventListener('click', () => close(false));
+                overlay.querySelector('.confirm-yes').addEventListener('click', () => close(true));
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+            });
         }
 
         function escapeHtml(str) {

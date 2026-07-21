@@ -74,7 +74,7 @@
             },
 
             async deleteOrder(id) {
-                if (!confirm('Diese Bestellung wirklich löschen?')) return;
+                if (!await showConfirm('Diese Bestellung wirklich löschen?')) return;
                 await db.delete('orders', id);
                 showToast('Bestellung gelöscht.', 'success');
                 app.navigate('orders');
@@ -1347,7 +1347,7 @@
 
             // ---------- Projekt löschen: ALLE zugehörigen Daten mitnehmen ----------
             async deleteProject(id) {
-                if (!confirm('Projekt und alle zugehörigen Räume, Bilder, Angebote, Materialien, Bestellungen und Termine wirklich löschen?')) return;
+                if (!await showConfirm('Projekt und alle zugehörigen Räume, Bilder, Angebote, Materialien, Bestellungen und Termine wirklich löschen?')) return;
                 try {
                     for (const r of (await db.getByIndex('rooms', 'projectId', id)) || []) await db.delete('rooms', r.id);
                     for (const i of (await db.getByIndex('images', 'projectId', id)) || []) await db.delete('images', i.id);
@@ -2702,7 +2702,7 @@
             },
 
             async deleteCustomer(id) {
-                if (!confirm('Kunden wirklich löschen? Alle zugehörigen Projekte bleiben erhalten.')) return;
+                if (!await showConfirm('Kunden wirklich löschen? Alle zugehörigen Projekte bleiben erhalten.')) return;
                 const rec = await db.get('customers', id);
                 await db.delete('customers', id);
                 this.navigate('customers');
@@ -2773,7 +2773,7 @@
             },
 
             async deleteProject(id) {
-                if (!confirm('Projekt und alle zugehörigen Räume, Bilder und Angebote wirklich löschen?')) return;
+                if (!await showConfirm('Projekt und alle zugehörigen Räume, Bilder und Angebote wirklich löschen?')) return;
                 try {
                     const rooms = await db.getByIndex('rooms', 'projectId', id);
                     const images = await db.getByIndex('images', 'projectId', id);
@@ -2822,7 +2822,7 @@
             },
 
             async deleteRoom(roomId, projectId) {
-                if (!confirm('Raum löschen?')) return;
+                if (!await showConfirm('Raum löschen?')) return;
                 await db.delete('rooms', roomId);
                 showToast('Raum gelöscht.', 'info');
                 this.navigate('projects', projectId);
@@ -2982,7 +2982,7 @@
             },
 
             async deleteMaterial(id) {
-                if (!confirm('Material löschen?')) return;
+                if (!await showConfirm('Material löschen?')) return;
                 await db.delete('materials', id);
                 showToast('Material gelöscht.', 'info');
                 this.navigate('materials');
@@ -3058,7 +3058,7 @@
             },
 
             async deleteEvent(id) {
-                if (!confirm('Termin wirklich löschen?')) return;
+                if (!await showConfirm('Termin wirklich löschen?')) return;
                 await db.delete('events', id);
                 showToast('Termin gelöscht.', 'info');
                 this.navigate('calendar');
@@ -3769,7 +3769,7 @@ async exportOfferPDF(offerId) {
 },
 
             async deleteOffer(id) {
-                if (!confirm('Angebot löschen?')) return;
+                if (!await showConfirm('Angebot löschen?')) return;
                 await db.delete('offers', id);
                 showToast('Angebot gelöscht.', 'info');
                 this.navigate('offers');
