@@ -1033,3 +1033,10 @@
         .calc-ai-est { font-size: 10.5px; background: #fff4e5; color: #b7791f; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
         .calc-ai-note { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
         .calc-ai-err { padding: 14px; background: #fff7ed; border: 1px solid #f0cf9a; border-radius: var(--radius-lg); color: #92600a; font-size: 13.5px; line-height: 1.5; }
+
+        /* Dashboard-Banner (Wartung, F-Gase) */
+        .dash-banner { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 14px 16px; border-radius: var(--radius-lg); margin-bottom: 12px; transition: all var(--transition); }
+        .dash-banner:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .dash-banner.over { background: linear-gradient(135deg, #fef3f2, #fee4e2); border: 1px solid #f5a5a0; color: #912018; }
+        .dash-banner.soon { background: linear-gradient(135deg, #fff8ec, #fff3d6); border: 1px solid #f0cf9a; color: #92600a; }
+        .dash-banner-icon { font-size: 22px; }

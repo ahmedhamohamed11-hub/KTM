@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v22</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v23</span></div>
                         </div>
                     </div>`;
             })();
@@ -229,6 +229,8 @@
                 const events = await db.getAll('events');
                 const invoices = await db.getAll('invoices');
                 const materialsAll = await db.getAll('materials');
+                const equipment = await db.getAll('equipment');
+                const maintenance = await db.getAll('maintenance');
 
                 const offeneProjekte = projects.filter(p => !['Fertig', 'Archiv'].includes(p.status)).length;
                 const offeneAngebote = offers.filter(o => !['Auftrag erhalten', 'Abgelehnt'].includes(o.status)).length;
@@ -262,11 +264,41 @@
                 const overdue = invoices.filter(inv => invoiceStatus(inv) === 'Überfällig');
                 const overdueSum = overdue.reduce((s, inv) => s + invoiceOpen(inv), 0);
 
+                // Fällige Wartungen (nächster Termin <= heute+30 Tage)
+                const now = new Date();
+                const in30 = new Date(); in30.setDate(in30.getDate() + 30);
+                const mntDue = maintenance.filter(m => m.nextDue && new Date(m.nextDue) <= in30);
+                const mntOver = mntDue.filter(m => new Date(m.nextDue) < now);
+
+                // Überfällige/fällige F-Gase-Dichtheitsprüfungen
+                const F = window.KTM_FGAS;
+                let fgasDue = 0, fgasOver = 0;
+                if (F) {
+                    equipment.forEach(e => {
+                        const t = F.co2eq(e.refrigerant, e.fillKg);
+                        const due = F.nextCheckDate(e.lastLeakCheck, t);
+                        if (due) {
+                            if (due < now) fgasOver++;
+                            else if (due <= in30) fgasDue++;
+                        }
+                    });
+                }
+
                 contentArea.innerHTML = `
                     ${overdue.length ? `<div class="overdue-banner" onclick="app.navigate('invoices')">
                         <span class="overdue-icon">⚠️</span>
                         <div><strong>${overdue.length} überfällige Rechnung${overdue.length !== 1 ? 'en' : ''}</strong> · offen ${formatCurrency(overdueSum)}<br>
                         <span style="font-size:12px;opacity:0.85;">Tippen, um die Rechnungen zu öffnen und zu mahnen</span></div>
+                    </div>` : ''}
+                    ${(mntOver.length || mntDue.length) ? `<div class="dash-banner ${mntOver.length ? 'over' : 'soon'}" onclick="app.navigate('maintenance')">
+                        <span class="dash-banner-icon">🔧</span>
+                        <div><strong>${mntOver.length ? mntOver.length + ' Wartung' + (mntOver.length !== 1 ? 'en' : '') + ' überfällig' : mntDue.length + ' Wartung' + (mntDue.length !== 1 ? 'en' : '') + ' fällig'}</strong><br>
+                        <span style="font-size:12px;opacity:0.85;">Tippen, um die Wartungen zu öffnen</span></div>
+                    </div>` : ''}
+                    ${(fgasOver || fgasDue) ? `<div class="dash-banner ${fgasOver ? 'over' : 'soon'}" onclick="app.navigate('equipment')">
+                        <span class="dash-banner-icon">🧊</span>
+                        <div><strong>${fgasOver ? fgasOver + ' F-Gase-Prüfung' + (fgasOver !== 1 ? 'en' : '') + ' überfällig' : fgasDue + ' F-Gase-Prüfung' + (fgasDue !== 1 ? 'en' : '') + ' bald fällig'}</strong><br>
+                        <span style="font-size:12px;opacity:0.85;">Dichtheitsprüfung nach F-Gase-Verordnung · tippen für Anlagen</span></div>
                     </div>` : ''}
                     <div class="stat-grid">
                         <div class="stat-card" onclick="app.navigate('customers')" style="cursor:pointer;">
@@ -288,6 +320,11 @@
                             <div class="stat-ico ico-blue">${icon('cart')}</div>
                             <div class="stat-label">Offene Bestellungen</div>
                             <div class="stat-value">${offeneBestellungen}</div>
+                        </div>
+                        <div class="stat-card" onclick="app.navigate('equipment')" style="cursor:pointer;">
+                            <div class="stat-ico ico-teal">🧊</div>
+                            <div class="stat-label">Anlagen</div>
+                            <div class="stat-value">${equipment.length}</div>
                         </div>
                         <div class="stat-card" onclick="app.navigate('calendar')" style="cursor:pointer;">
                             <div class="stat-ico ico-red">${icon('calendar')}</div>
@@ -441,6 +478,7 @@
                                         <td><span class="status-badge ${getStatusClass(c.status || 'Neu')}">${escapeHtml(c.status || 'Neu')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             <button class="btn btn-sm btn-outline" onclick="app.openCustomerModal(${idJS(c.id)})">${icon('edit')}</button>
+                                            <button class="btn btn-sm btn-outline" title="Anlage für diesen Kunden anlegen" onclick="app.openEquipment(null, ${idJS(c.id)})">🧊</button>
                                             <button class="btn btn-sm btn-outline" onclick="app.duplicateCustomer(${idJS(c.id)})">${icon('copy')}</button>
                                             ${getCustomFields('customers').length ? `<button class="btn btn-sm btn-outline" title="Zusatzfelder" onclick="app.openCustomDataModal('customers', ${idJS(c.id)})">🔧</button>` : ''}
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteCustomer(${idJS(c.id)})">${icon('trash')}</button>

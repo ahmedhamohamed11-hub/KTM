@@ -2205,11 +2205,12 @@
             },
 
             // ===== ANLAGEN =====
-            async openEquipment(id = null) {
+            async openEquipment(id = null, presetCustomerId = null) {
                 const e = id ? await db.get('equipment', id) : null;
                 const customers = await db.getAll('customers');
                 const F = window.KTM_FGAS;
-                const custOpts = customers.map(c => `<option value="${c.id}" ${e && String(e.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml((c.firstName || '') + ' ' + (c.lastName || ''))}</option>`).join('');
+                const selCust = e ? e.customerId : presetCustomerId;
+                const custOpts = customers.map(c => `<option value="${c.id}" ${String(selCust) === String(c.id) ? 'selected' : ''}>${escapeHtml((c.firstName || '') + ' ' + (c.lastName || ''))}</option>`).join('');
                 const refOpts = (F ? F.REFRIGERANTS : []).map(r => `<option value="${r}" ${e && e.refrigerant === r ? 'selected' : ''}>${r} (GWP ${F.GWP[r]})</option>`).join('');
 
                 const body = `
