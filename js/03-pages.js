@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v29</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v30</span></div>
                         </div>
                     </div>`;
             })();
@@ -1011,10 +1011,11 @@
                     const cats = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
                     body = cats.length ? `<div class="mat-grid">${cats.map(c => {
                         const list = groups[c];
-                        const img = list.find(m => m.image)?.image;
+                        const img = list.find(m => (m.images && m.images[0]) || m.image);
+                        const imgSrc = img ? (img.images && img.images[0] ? img.images[0] : img.image) : null;
                         const upd = Math.max(...list.map(m => new Date(m.updatedAt || m.createdAt || 0).getTime() || 0));
                         return `<div class="mat-card mat-cat" onclick="app.matOpenCat('${escapeHtml(c).replace(/'/g, "\\'")}')">
-                            <div class="mat-cat-ico">${img ? `<img src="${img}">` : matCatIcon(c)}</div>
+                            <div class="mat-cat-ico">${imgSrc ? `<img src="${imgSrc}">` : matCatIcon(c)}</div>
                             <div class="mat-card-body">
                                 <div class="mat-card-title">${escapeHtml(c)}</div>
                                 <div class="mat-card-sub">${list.length} Produkt${list.length !== 1 ? 'e' : ''}${upd > 0 ? ' · Stand ' + formatDate(new Date(upd).toISOString()) : ''}</div>
@@ -1069,9 +1070,10 @@
                     const list = inScope.sort((a, b) => (parseFloat(String(a.size).replace(',', '.')) || 0) - (parseFloat(String(b.size).replace(',', '.')) || 0) || (a.name || '').localeCompare(b.name || ''));
                     body = list.length ? `<div class="mat-grid mat-grid-products">${list.map(m => {
                         const st = matStockStatus(m);
+                        const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []);
                         return `<div class="mat-card mat-product" onclick="app.openMaterialDetail(${idJS(m.id)})">
                             <button class="mat-fav ${m.favorite ? 'on' : ''}" onclick="event.stopPropagation(); app.toggleFavorite(${idJS(m.id)})" title="Favorit">${m.favorite ? '★' : '☆'}</button>
-                            <div class="mat-product-img">${m.image ? `<img src="${m.image}">` : `<span>${matCatIcon(m.category)}</span>`}</div>
+                            <div class="mat-product-img">${imgs.length ? `<img src="${imgs[0]}">` : `<span>${matCatIcon(m.category)}</span>`}${imgs.length > 1 ? `<span class="mat-img-count">📷 ${imgs.length}</span>` : ''}</div>
                             <div class="mat-card-body">
                                 <div class="mat-card-title">${escapeHtml(m.name)}</div>
                                 <div class="mat-card-sub">${[m.manufacturer, m.series, m.size].filter(Boolean).map(escapeHtml).join(' · ') || '&nbsp;'}</div>
