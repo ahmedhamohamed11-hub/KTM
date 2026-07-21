@@ -2335,59 +2335,83 @@
                 }, 'Speichern');
             },
 
-            // ===== KI-Materialliste im Schnellrechner =====
+            // ===== Regelbasierte Materialliste im Schnellrechner (ohne KI, offline) =====
             async calcAiMaterials() {
                 const box = document.getElementById('calcAiBox');
                 if (!box) return;
-                box.innerHTML = '<div class="calc-ai-loading">🤖 KI stellt die Materialliste zusammen…</div>';
+                box.innerHTML = '<div class="calc-ai-loading">Stelle Materialliste zusammen…</div>';
 
                 try {
                     const res = await calcCompute();
                     const mats = await db.getAll('materials');
-                    // Katalog kompakt (Name, Kategorie, Einheit, Preis)
-                    const catalog = mats
-                        .filter(m => Number(m.sellingPrice) > 0)
-                        .slice(0, 120)
-                        .map(m => ({ name: m.name, category: m.category, unit: m.unit, price: Number(m.sellingPrice) }));
 
-                    const payload = {
-                        rooms: res.rooms.map(x => ({ area: x.r.area, load: x.load.total.toFixed(1), distance: CALC_STATE.distance })),
-                        indoorDevices: res.rooms.map(x => x.dev ? { name: x.dev.name } : null).filter(Boolean),
-                        outdoorDevice: res.outdoor ? { name: res.outdoor.name } : null,
-                        catalog
+                    // Katalog-Suche: findet den günstigsten passenden Artikel per Stichwörtern
+                    const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+                    const findCat = (keywords, category) => {
+                        const kws = keywords.map(k => k.toLowerCase());
+                        let pool = mats.filter(m => {
+                            if (Number(m.sellingPrice) <= 0) return false;
+                            const hay = ((m.name || '') + ' ' + (m.category || '') + ' ' + (m.notes || '')).toLowerCase();
+                            if (category && m.category !== category) {
+                                // Kategorie ist optional – wenn gesetzt, bevorzugen wir sie, erlauben aber Stichwort-Treffer
+                            }
+                            return kws.some(k => hay.includes(k));
+                        });
+                        if (category) {
+                            const inCat = pool.filter(m => m.category === category);
+                            if (inCat.length) pool = inCat;
+                        }
+                        if (!pool.length) return null;
+                        // günstigsten nehmen (gepflegte Preise)
+                        return pool.sort((a, b) => Number(a.sellingPrice) - Number(b.sellingPrice))[0];
                     };
 
-                    const auth = window.__ktmAuth;
-                    const url = 'https://byajcepqydkyoegztcgj.supabase.co/functions/v1/ki-schnellrechner';
-                    const headers = { 'Content-Type': 'application/json' };
-                    if (auth && auth.client) {
-                        const { data: { session } } = await auth.client.auth.getSession();
-                        if (session) headers['Authorization'] = 'Bearer ' + session.access_token;
+                    const rooms = res.rooms.length || 1;
+                    const dist = Number(CALC_STATE.distance) || 5;      // Leitungslänge je Raum (m)
+                    const totalPipe = dist * rooms;
+                    const duct = Number(CALC_STATE.ductLength) || 0;    // Kabelkanal (m)
+                    const breaks = Number(CALC_STATE.breakthrough) || rooms; // Wanddurchbrüche
+
+                    // Standard-Stückliste einer Split-Montage (Richtwerte, wenn Katalog-Preis fehlt)
+                    const spec = [
+                        { key: ['kältemittelleitung', 'kupferrohr', 'saugleitung', 'flüssigleitung', 'cu-rohr'], cat: 'Kupferrohr', label: 'Kältemittelleitung (Saug + Flüssig)', qty: totalPipe, unit: 'm', fallback: 14 },
+                        { key: ['isolierung', 'armaflex', 'dämmung'], cat: null, label: 'Leitungsisolierung', qty: totalPipe, unit: 'm', fallback: 3.5 },
+                        { key: ['kommunikationskabel', 'steuerkabel', 'kommkabel', 'ölflex', '4x0,75', '4x1,5'], cat: null, label: 'Kommunikationskabel', qty: totalPipe, unit: 'm', fallback: 2.2 },
+                        { key: ['kondensat', 'ablaufschlauch', 'kondensatschlauch'], cat: null, label: 'Kondensatschlauch', qty: totalPipe, unit: 'm', fallback: 1.8 },
+                        { key: ['stromkabel', 'netzkabel', 'nym', '3x1,5', '3x2,5'], cat: null, label: 'Stromzuleitung', qty: dist, unit: 'm', fallback: 2.5 },
+                        { key: ['kabelkanal', 'brüstungskanal'], cat: null, label: 'Kabelkanal', qty: duct || totalPipe, unit: 'm', fallback: 9 },
+                        { key: ['konsole', 'wandkonsole', 'wandhalter', 'halterung'], cat: null, label: 'Wandkonsole Außengerät', qty: res.outdoor ? 1 : 0, unit: 'Set', fallback: 38 },
+                        { key: ['dübel', 'schellen', 'kleinmaterial', 'montagematerial'], cat: null, label: 'Kleinmaterial (Dübel, Schellen, Dichtband)', qty: 1, unit: 'Pauschal', fallback: 45 }
+                    ];
+
+                    const positions = [];
+                    for (const s of spec) {
+                        if (s.qty <= 0) continue;
+                        const hit = findCat(s.key, s.cat);
+                        const unitPrice = hit ? Number(hit.sellingPrice) : s.fallback;
+                        positions.push({
+                            name: hit ? hit.name : s.label,
+                            menge: Math.round(s.qty * 10) / 10,
+                            einheit: hit ? (hit.unit || s.unit) : s.unit,
+                            preis: unitPrice,
+                            ausKatalog: !!hit
+                        });
                     }
 
-                    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
-                    const data = await r.json();
-
-                    if (data.error) { box.innerHTML = `<div class="calc-ai-err">⚠️ ${escapeHtml(data.error)}<br><span style="font-size:12px;">Die normale Berechnung oben funktioniert weiterhin.</span></div>`; return; }
-
-                    const pos = data.positionen || [];
-                    if (!pos.length) { box.innerHTML = '<div class="calc-ai-err">Keine Materialpositionen erhalten.</div>'; return; }
-
-                    const sum = pos.reduce((s, p) => s + (Number(p.preis) || 0) * (Number(p.menge) || 1), 0);
+                    const sum = positions.reduce((a, p) => a + p.preis * p.menge, 0);
                     box.innerHTML = `
-                        <div class="calc-ai-head">🤖 KI-Materialliste (circa)</div>
+                        <div class="calc-ai-head">🧰 Materialliste (circa)</div>
                         <div class="calc-lines">
-                            ${pos.map(p => `<div class="calc-line">
-                                <span class="calc-line-label">${escapeHtml(p.name)} · ${Number(p.menge) || 1} ${escapeHtml(p.einheit || 'Stk')}${p.ausKatalog ? '' : ' <span class="calc-ai-est">geschätzt</span>'}</span>
-                                <span class="calc-line-price">${formatCurrency((Number(p.preis) || 0) * (Number(p.menge) || 1))}</span>
+                            ${positions.map(p => `<div class="calc-line">
+                                <span class="calc-line-label">${escapeHtml(p.name)} · ${p.menge} ${escapeHtml(p.einheit)}${p.ausKatalog ? '' : ' <span class="calc-ai-est">Richtwert</span>'}</span>
+                                <span class="calc-line-price">${formatCurrency(p.preis * p.menge)}</span>
                             </div>`).join('')}
                             <div class="calc-line calc-line-sum"><span class="calc-line-label">Material gesamt (circa)</span><span class="calc-line-price">${formatCurrency(sum)}</span></div>
                         </div>
-                        ${data.hinweis ? `<div class="calc-ai-note">${escapeHtml(data.hinweis)}</div>` : ''}
-                        <div class="calc-ai-note">Positionen mit „geschätzt" sind nicht im Katalog und wurden von der KI kalkuliert. Nach der Besichtigung anpassen.</div>
+                        <div class="calc-ai-note">Positionen mit „Richtwert" sind (noch) nicht in deinem Katalog – lege sie dort an, dann wird automatisch dein echter Preis verwendet. Mengen aus Leitungslänge (${dist} m) × ${rooms} Raum${rooms !== 1 ? '(e)' : ''}.</div>
                     `;
                 } catch (e) {
-                    box.innerHTML = `<div class="calc-ai-err">⚠️ KI nicht erreichbar (${escapeHtml(String(e.message || e))}).<br><span style="font-size:12px;">Die normale Berechnung oben funktioniert weiterhin.</span></div>`;
+                    box.innerHTML = `<div class="calc-ai-err">⚠️ Materialliste konnte nicht erstellt werden (${escapeHtml(String(e.message || e))}).</div>`;
                 }
             },
 
