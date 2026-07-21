@@ -35,7 +35,36 @@
         <img src="logo-192.png" alt="" class="splash-logo-img" onerror="this.style.display='none'">
         <div style="font-weight:700;font-size:20px;font-family:var(--font-display);">KTM</div>
         <div style="color:var(--text-muted);font-size:13px;" id="splashStatus">Wird geladen...</div>
+        <div id="splashRescue" style="display:none;margin-top:22px;text-align:center;max-width:300px;">
+            <div style="font-size:13px;color:#912018;line-height:1.5;margin-bottom:12px;">Der Start dauert zu lange. Meist hilft es, die App-Daten zu leeren und neu zu laden.</div>
+            <button id="splashHardReload" style="background:#12808f;color:#fff;border:none;border-radius:11px;padding:12px 20px;font-size:14px;font-weight:700;cursor:pointer;">App zurücksetzen &amp; neu laden</button>
+        </div>
     </div>
+    <script>
+        // Unabhängiger Notausgang: erscheint nach 10 Sek., falls die App nicht startet.
+        // Läuft ganz ohne die App-Skripte, damit er auch bei einem JS-Fehler greift.
+        (function () {
+            var t = setTimeout(function () {
+                var sp = document.getElementById('splash');
+                var rescue = document.getElementById('splashRescue');
+                if (sp && sp.style.display !== 'none' && rescue) {
+                    rescue.style.display = 'block';
+                }
+            }, 10000);
+            document.addEventListener('DOMContentLoaded', function () {
+                var btn = document.getElementById('splashHardReload');
+                if (btn) btn.addEventListener('click', function () {
+                    // Caches + Service Worker leeren, dann hart neu laden
+                    try {
+                        if (window.caches && caches.keys) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+                        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations)
+                            navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
+                    } catch (e) {}
+                    setTimeout(function () { window.location.reload(true); }, 400);
+                });
+            });
+        })();
+    </script>
 
     <div class="toast-container" id="toastContainer"></div>
 
@@ -195,7 +224,7 @@
     <script defer src="js/00-auth.js"></script>
     <script defer src="js/01-core-db-sync.js?v=721bb105c5"></script>
     <script defer src="js/02-ui-helpers.js?v=d9cf5f2016"></script>
-    <script defer src="js/03-pages.js?v=6d0cc974fc"></script>
+    <script defer src="js/03-pages.js?v=ffd641248b"></script>
     <script defer src="js/04-projekt-technik.js?v=079ee75a00"></script>
     <script defer src="js/05-plan-editor.js?v=de890fc4b2"></script>
     <script defer src="js/06-lernen-rechnungen.js?v=cd01b7b5fd"></script>
