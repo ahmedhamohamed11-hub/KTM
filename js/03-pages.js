@@ -208,10 +208,12 @@
                             </div>
                             <div class="calc-actions">
                                 <button class="btn btn-primary" onclick="app.calcToOffer()">${icon('file')} Als Projekt übernehmen</button>
+                                <button class="btn btn-outline" onclick="app.calcAiMaterials()">🤖 KI-Materialliste</button>
                                 <button class="btn btn-outline" onclick="app.calcCopy()">📋 Zusammenfassung kopieren</button>
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v20</span></div>
+                            <div id="calcAiBox" class="calc-ai-box"></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v21</span></div>
                         </div>
                     </div>`;
             })();

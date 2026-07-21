@@ -2335,6 +2335,62 @@
                 }, 'Speichern');
             },
 
+            // ===== KI-Materialliste im Schnellrechner =====
+            async calcAiMaterials() {
+                const box = document.getElementById('calcAiBox');
+                if (!box) return;
+                box.innerHTML = '<div class="calc-ai-loading">🤖 KI stellt die Materialliste zusammen…</div>';
+
+                try {
+                    const res = await calcCompute();
+                    const mats = await db.getAll('materials');
+                    // Katalog kompakt (Name, Kategorie, Einheit, Preis)
+                    const catalog = mats
+                        .filter(m => Number(m.sellingPrice) > 0)
+                        .slice(0, 120)
+                        .map(m => ({ name: m.name, category: m.category, unit: m.unit, price: Number(m.sellingPrice) }));
+
+                    const payload = {
+                        rooms: res.rooms.map(x => ({ area: x.r.area, load: x.load.total.toFixed(1), distance: CALC_STATE.distance })),
+                        indoorDevices: res.rooms.map(x => x.dev ? { name: x.dev.name } : null).filter(Boolean),
+                        outdoorDevice: res.outdoor ? { name: res.outdoor.name } : null,
+                        catalog
+                    };
+
+                    const auth = window.__ktmAuth;
+                    const url = 'https://byajcepqydkyoegztcgj.supabase.co/functions/v1/ki-schnellrechner';
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (auth && auth.client) {
+                        const { data: { session } } = await auth.client.auth.getSession();
+                        if (session) headers['Authorization'] = 'Bearer ' + session.access_token;
+                    }
+
+                    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+                    const data = await r.json();
+
+                    if (data.error) { box.innerHTML = `<div class="calc-ai-err">⚠️ ${escapeHtml(data.error)}<br><span style="font-size:12px;">Die normale Berechnung oben funktioniert weiterhin.</span></div>`; return; }
+
+                    const pos = data.positionen || [];
+                    if (!pos.length) { box.innerHTML = '<div class="calc-ai-err">Keine Materialpositionen erhalten.</div>'; return; }
+
+                    const sum = pos.reduce((s, p) => s + (Number(p.preis) || 0) * (Number(p.menge) || 1), 0);
+                    box.innerHTML = `
+                        <div class="calc-ai-head">🤖 KI-Materialliste (circa)</div>
+                        <div class="calc-lines">
+                            ${pos.map(p => `<div class="calc-line">
+                                <span class="calc-line-label">${escapeHtml(p.name)} · ${Number(p.menge) || 1} ${escapeHtml(p.einheit || 'Stk')}${p.ausKatalog ? '' : ' <span class="calc-ai-est">geschätzt</span>'}</span>
+                                <span class="calc-line-price">${formatCurrency((Number(p.preis) || 0) * (Number(p.menge) || 1))}</span>
+                            </div>`).join('')}
+                            <div class="calc-line calc-line-sum"><span class="calc-line-label">Material gesamt (circa)</span><span class="calc-line-price">${formatCurrency(sum)}</span></div>
+                        </div>
+                        ${data.hinweis ? `<div class="calc-ai-note">${escapeHtml(data.hinweis)}</div>` : ''}
+                        <div class="calc-ai-note">Positionen mit „geschätzt" sind nicht im Katalog und wurden von der KI kalkuliert. Nach der Besichtigung anpassen.</div>
+                    `;
+                } catch (e) {
+                    box.innerHTML = `<div class="calc-ai-err">⚠️ KI nicht erreichbar (${escapeHtml(String(e.message || e))}).<br><span style="font-size:12px;">Die normale Berechnung oben funktioniert weiterhin.</span></div>`;
+                }
+            },
+
             async openCustomerModal(id = null) {
                 const customer = id ? await db.get('customers', id) : null;
                 const modal = showModal(

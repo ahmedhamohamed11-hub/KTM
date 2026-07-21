@@ -1023,3 +1023,13 @@
         .mnt-due { font-size: 13px; font-weight: 600; white-space: nowrap; }
         .mnt-due.over { color: #d0402c; }
         .mnt-due.soon { color: #e0a02e; }
+
+        /* KI-Materialliste im Schnellrechner */
+        .calc-ai-box { margin-top: 14px; }
+        .calc-ai-box:empty { margin-top: 0; }
+        .calc-ai-loading { padding: 16px; text-align: center; color: var(--text-secondary); font-size: 14px; background: var(--accent-light); border-radius: var(--radius-lg); }
+        .calc-ai-head { font-weight: 700; font-size: 14px; color: var(--accent); margin-bottom: 8px; }
+        .calc-ai-box .calc-lines { background: var(--accent-light); border-radius: var(--radius-lg); padding: 12px 14px; }
+        .calc-ai-est { font-size: 10.5px; background: #fff4e5; color: #b7791f; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
+        .calc-ai-note { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
+        .calc-ai-err { padding: 14px; background: #fff7ed; border: 1px solid #f0cf9a; border-radius: var(--radius-lg); color: #92600a; font-size: 13.5px; line-height: 1.5; }
