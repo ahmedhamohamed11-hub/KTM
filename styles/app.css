@@ -1144,3 +1144,8 @@
         .ms-sub { font-size: 12px; color: var(--text-muted); }
         .ms-price { font-weight: 600; font-size: 13.5px; white-space: nowrap; }
         .ms-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* Material-Bauart-Gruppen (Innen/Außen, Single/Multi) */
+        .mat-bauart-group { margin-bottom: 20px; }
+        .mat-bauart-head { font-weight: 700; font-size: 14px; color: var(--accent); padding: 8px 4px; border-bottom: 2px solid var(--accent-light); margin-bottom: 10px; }
+        .mat-bauart-head span { color: var(--text-muted); font-weight: 500; font-size: 12.5px; }

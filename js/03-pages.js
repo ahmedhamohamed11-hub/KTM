@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v37</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v38</span></div>
                         </div>
                     </div>`;
             })();
@@ -984,7 +984,7 @@
                 // --------- Intelligente Sofort-Suche: springt direkt zu Produkten ---------
                 const searching = q.length >= 2;
                 if (searching) {
-                    pool = pool.filter(m => `${m.name || ''} ${m.manufacturer || ''} ${m.series || ''} ${m.articleNumber || ''} ${m.size || ''} ${m.category || ''} ${m.notes || ''}`.toLowerCase().includes(q));
+                    pool = pool.filter(m => `${m.name || ''} ${m.manufacturer || ''} ${m.series || ''} ${m.articleNumber || ''} ${m.size || ''} ${m.category || ''} ${m.bauart || ''} ${m.notes || ''}`.toLowerCase().includes(q));
                 }
 
                 const inScope = pool.filter(m =>
@@ -1069,7 +1069,7 @@
                 } else {
                     // --------- Ebene 4: Produktkarten ---------
                     const list = inScope.sort((a, b) => (parseFloat(String(a.size).replace(',', '.')) || 0) - (parseFloat(String(b.size).replace(',', '.')) || 0) || (a.name || '').localeCompare(b.name || ''));
-                    body = list.length ? `<div class="mat-grid mat-grid-products">${list.map(m => {
+                    const productCard = (m) => {
                         const st = matStockStatus(m);
                         const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []);
                         return `<div class="mat-card mat-product" onclick="app.openMaterialDetail(${idJS(m.id)})">
@@ -1086,7 +1086,27 @@
                             </div>
                             <button class="btn btn-sm btn-primary mat-add" onclick="event.stopPropagation(); app.addMaterialToProject(${idJS(m.id)})">${icon('plus')} Zum Projekt</button>
                         </div>`;
-                    }).join('')}</div>` : `<div class="empty-note" style="padding:30px;">${searching ? 'Keine Treffer für „' + escapeHtml(q) + '".' : 'Keine Produkte in dieser Auswahl.'}</div>`;
+                    };
+
+                    if (!list.length) {
+                        body = `<div class="empty-note" style="padding:30px;">${searching ? 'Keine Treffer für „' + escapeHtml(q) + '".' : 'Keine Produkte in dieser Auswahl.'}</div>`;
+                    } else if (list.some(m => m.bauart)) {
+                        // Nach Bauart gruppieren (Innen/Außen, Single/Multi ...) – nur wenn gepflegt
+                        const order = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'];
+                        const groups = {};
+                        list.forEach(m => { const b = m.bauart || 'Sonstige'; (groups[b] = groups[b] || []).push(m); });
+                        const keys = Object.keys(groups).sort((a, b) => {
+                            const ia = order.indexOf(a), ib = order.indexOf(b);
+                            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+                        });
+                        body = keys.map(k => `
+                            <div class="mat-bauart-group">
+                                <div class="mat-bauart-head">${escapeHtml(k)} <span>(${groups[k].length})</span></div>
+                                <div class="mat-grid mat-grid-products">${groups[k].map(productCard).join('')}</div>
+                            </div>`).join('');
+                    } else {
+                        body = `<div class="mat-grid mat-grid-products">${list.map(productCard).join('')}</div>`;
+                    }
                 }
 
                 contentArea.innerHTML = `

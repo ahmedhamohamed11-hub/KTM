@@ -3079,6 +3079,11 @@
                             </div>
                             <div class="form-group"><label>Einheit</label><input type="text" id="matUnit" value="${escapeHtml(mat?.unit || 'Stk')}"></div>
                         </div>
+                        <div class="form-group"><label>Bauart (optional – für Sortierung Innen/Außen, Single/Multi)</label>
+                            <select id="matBauart">
+                                ${['', 'Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'].map(b => `<option value="${b}" ${(mat?.bauart || '') === b ? 'selected' : ''}>${b || '– keine –'}</option>`).join('')}
+                            </select>
+                        </div>
                         <div class="form-row">
                             <div class="form-group"><label>Einkaufspreis (€)</label><input type="number" id="matPurchasePrice" step="0.01" value="${mat?.purchasePrice || 0}"></div>
                             <div class="form-group"><label>Verkaufspreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"></div>
@@ -3101,6 +3106,7 @@
                             minStock: parseFloat(String(overlay.querySelector('#matMinStock').value).replace(',', '.')) || 0,
                             bundleLength: parseFloat(String(overlay.querySelector('#matBundle').value).replace(',', '.')) || 0,
                             category: overlay.querySelector('#matCategory').value,
+                            bauart: overlay.querySelector('#matBauart')?.value || '',
                             unit: overlay.querySelector('#matUnit').value.trim() || 'Stk',
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
                             sellingPrice: parseFloat(overlay.querySelector('#matSellingPrice').value) || 0,
