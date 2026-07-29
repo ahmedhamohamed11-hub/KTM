@@ -2792,6 +2792,46 @@
                 else { doc.save(fname); showToast('Materialliste als PDF erstellt.', 'success'); }
             },
 
+            // ===== Hersteller-Katalog importieren (Samsung, Daikin ...) =====
+            async confirmImportKatalog() {
+                const count = (window.KTM_KATALOG || []).length;
+                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung & Daikin) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
+                if (ok) this.importHerstellerKatalog();
+            },
+
+            async importHerstellerKatalog() {
+                const katalog = window.KTM_KATALOG || [];
+                if (!katalog.length) { showToast('Kein Katalog gefunden.', 'error'); return; }
+
+                const existing = await db.getAll('materials');
+                const existingKeys = new Set(existing.map(m => `${(m.manufacturer || '').toLowerCase()}|${(m.articleNumber || m.name || '').toLowerCase()}`));
+
+                let added = 0, skipped = 0;
+                for (const item of katalog) {
+                    const key = `${(item.manufacturer || '').toLowerCase()}|${(item.articleNumber || item.name || '').toLowerCase()}`;
+                    if (existingKeys.has(key)) { skipped++; continue; }
+                    await db.add('materials', {
+                        name: item.name,
+                        manufacturer: item.manufacturer,
+                        series: item.series,
+                        category: item.category || 'Klimageräte',
+                        bauart: item.bauart || '',
+                        articleNumber: item.articleNumber || '',
+                        size: item.size || '',
+                        unit: 'Stk',
+                        purchasePrice: 0,
+                        sellingPrice: Number(item.sellingPrice) || 0,
+                        notes: item.notes || '',
+                        stock: 0,
+                        images: []
+                    });
+                    existingKeys.add(key);
+                    added++;
+                }
+                showToast(`Katalog importiert: ${added} neue Geräte${skipped ? ', ' + skipped + ' schon vorhanden' : ''}.`, 'success');
+                this.navigate('materials');
+            },
+
             async openCustomerModal(id = null) {
                 const customer = id ? await db.get('customers', id) : null;
                 const modal = showModal(
