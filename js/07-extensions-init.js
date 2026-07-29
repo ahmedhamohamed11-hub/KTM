@@ -2125,6 +2125,7 @@
                     case 'orders': renderOrders(); break;
                     case 'equipment': renderEquipment(this.currentProjectId); break;
                     case 'maintenance': renderMaintenance(); break;
+                    case 'katalog': this.renderKatalog(param); break;
                     case 'invoices': renderInvoices(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
@@ -2790,6 +2791,185 @@
                 const fname = 'Materialliste_' + (project?.title || 'Projekt').replace(/[^a-zA-Z0-9]/g, '_') + '.pdf';
                 if (navigator.canShare) { sharePdfDoc(doc, fname, 'Materialliste'); }
                 else { doc.save(fname); showToast('Materialliste als PDF erstellt.', 'success'); }
+            },
+
+            // ===== Digitaler Blätter-Katalog (eigene Seitenbilder) =====
+            async renderKatalog(openBrand) {
+                const area = document.getElementById('contentArea');
+                const pages = (await db.getAll('catalogPages')) || [];
+                // nach Marke gruppieren, innerhalb nach Reihenfolge/Seitennummer
+                const brands = {};
+                pages.forEach(p => { const b = p.brand || 'Ohne Marke'; (brands[b] = brands[b] || []).push(p); });
+                Object.values(brands).forEach(list => list.sort((a, b) => (a.order || 0) - (b.order || 0) || (a.createdAt || 0) - (b.createdAt || 0)));
+                const brandNames = Object.keys(brands).sort();
+
+                area.innerHTML = `
+                    <div class="toolbar" style="gap:8px;flex-wrap:wrap;">
+                        <button class="btn btn-primary" onclick="app.katalogUpload()">${icon('plus')} Seiten hochladen</button>
+                        ${pages.length ? `<button class="btn btn-outline" onclick="app.katalogExportPdf()">${icon('pdf')} Als PDF</button>` : ''}
+                        <span style="flex:1;"></span>
+                        <span style="font-size:13px;color:var(--text-muted);align-self:center;">${pages.length} Seite${pages.length !== 1 ? 'n' : ''}</span>
+                    </div>
+                    <input type="file" id="katalogFile" accept="image/*" multiple style="display:none;">
+                    ${pages.length === 0 ? `
+                        <div class="empty-note" style="padding:40px 20px;text-align:center;">
+                            <div style="font-size:40px;margin-bottom:10px;">📖</div>
+                            <div style="font-weight:600;margin-bottom:6px;">Noch keine Katalogseiten</div>
+                            <div style="font-size:13px;color:var(--text-muted);max-width:340px;margin:0 auto;">Lade Fotos oder Scans deiner Katalogseiten hoch. Tipp: Mit einer Scanner-App (z. B. in Google Drive) werden die Seiten gerade und der Hintergrund weiß.</div>
+                        </div>` : `
+                        <div class="katalog-brands">
+                            ${brandNames.map(b => `
+                                <div class="katalog-brand">
+                                    <div class="katalog-brand-head">${escapeHtml(b)} <span>(${brands[b].length})</span></div>
+                                    <div class="katalog-thumbs">
+                                        ${brands[b].map(p => `
+                                            <div class="katalog-thumb" onclick="app.katalogOpen('${p.id}')">
+                                                <img src="${p.image}" loading="lazy">
+                                                <button class="katalog-thumb-del" onclick="event.stopPropagation(); app.katalogDelete('${p.id}')" title="Seite löschen">×</button>
+                                            </div>`).join('')}
+                                    </div>
+                                </div>`).join('')}
+                        </div>`}
+                `;
+                const fileInput = document.getElementById('katalogFile');
+                if (fileInput) fileInput.addEventListener('change', (e) => this._katalogHandleFiles(e));
+                // Falls direkt eine Marke geöffnet werden soll
+                if (openBrand && brands[openBrand] && brands[openBrand][0]) this.katalogOpen(brands[openBrand][0].id);
+            },
+
+            katalogUpload() {
+                const inp = document.getElementById('katalogFile');
+                if (inp) inp.click();
+            },
+
+            async _katalogHandleFiles(e) {
+                const files = Array.from(e.target.files || []);
+                if (!files.length) return;
+                // Marke abfragen (einmal für alle hochgeladenen Seiten)
+                const brand = await this._katalogAskBrand();
+                if (brand === null) { e.target.value = ''; return; }
+                showToast(`${files.length} Seite(n) werden verarbeitet…`, 'info');
+                const existing = (await db.getAll('catalogPages')) || [];
+                let maxOrder = existing.filter(p => p.brand === brand).reduce((m, p) => Math.max(m, p.order || 0), 0);
+                for (const file of files) {
+                    try {
+                        // hohe Qualität, damit man zoomen kann (max 1600px, 82%)
+                        const img = await compressImage(file, 1600, 0.82);
+                        maxOrder += 1;
+                        await db.add('catalogPages', { brand, image: img, order: maxOrder, createdAt: Date.now() });
+                    } catch (err) { showToast('Eine Seite konnte nicht verarbeitet werden.', 'error'); }
+                }
+                e.target.value = '';
+                showToast('Katalogseiten hinzugefügt.', 'success');
+                this.renderKatalog();
+            },
+
+            _katalogAskBrand() {
+                return new Promise((resolve) => {
+                    const brands = ['Samsung', 'LG', 'Daikin', 'Hisense', 'Mitsubishi', 'Panasonic', 'Toshiba', 'Sonstige'];
+                    const overlay = document.createElement('div');
+                    overlay.className = 'modal-overlay';
+                    overlay.innerHTML = `
+                        <div class="modal" style="max-width:380px;">
+                            <h3>Zu welcher Marke gehören die Seiten?</h3>
+                            <div class="modal-body">
+                                <div class="form-group"><label>Marke / Kategorie</label>
+                                    <input type="text" id="katBrandInput" list="dl_katBrands" placeholder="z. B. Samsung" value="Samsung">
+                                    <datalist id="dl_katBrands">${brands.map(b => `<option value="${b}">`).join('')}</datalist>
+                                </div>
+                            </div>
+                            <div class="modal-actions">
+                                <button class="btn btn-outline" id="katBrandCancel">Abbrechen</button>
+                                <button class="btn btn-primary" id="katBrandOk">Weiter</button>
+                            </div>
+                        </div>`;
+                    document.getElementById('modalContainer').appendChild(overlay);
+                    const close = (val) => { overlay.remove(); resolve(val); };
+                    overlay.querySelector('#katBrandCancel').addEventListener('click', () => close(null));
+                    overlay.querySelector('#katBrandOk').addEventListener('click', () => {
+                        const v = overlay.querySelector('#katBrandInput').value.trim();
+                        close(v || 'Sonstige');
+                    });
+                    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(null); });
+                });
+            },
+
+            async katalogOpen(pageId) {
+                const pages = (await db.getAll('catalogPages')) || [];
+                const page = pages.find(p => String(p.id) === String(pageId));
+                if (!page) return;
+                // Blätter-Reihenfolge: alle Seiten derselben Marke
+                const brandPages = pages.filter(p => (p.brand || 'Ohne Marke') === (page.brand || 'Ohne Marke'))
+                    .sort((a, b) => (a.order || 0) - (b.order || 0) || (a.createdAt || 0) - (b.createdAt || 0));
+                let idx = brandPages.findIndex(p => String(p.id) === String(pageId));
+
+                const overlay = document.createElement('div');
+                overlay.className = 'katalog-viewer';
+                const render = () => {
+                    const p = brandPages[idx];
+                    overlay.innerHTML = `
+                        <div class="katalog-viewer-top">
+                            <span>${escapeHtml(p.brand || '')} · Seite ${idx + 1}/${brandPages.length}</span>
+                            <button class="katalog-viewer-close" title="Schließen">×</button>
+                        </div>
+                        <div class="katalog-viewer-img" id="katViewImg"><img src="${p.image}"></div>
+                        <div class="katalog-viewer-nav">
+                            <button class="katalog-nav-btn" id="katPrev" ${idx === 0 ? 'disabled' : ''}>‹ Zurück</button>
+                            <button class="katalog-nav-btn" id="katNext" ${idx === brandPages.length - 1 ? 'disabled' : ''}>Weiter ›</button>
+                        </div>`;
+                    overlay.querySelector('.katalog-viewer-close').addEventListener('click', () => overlay.remove());
+                    const prev = overlay.querySelector('#katPrev'), next = overlay.querySelector('#katNext');
+                    if (prev) prev.addEventListener('click', () => { if (idx > 0) { idx--; render(); } });
+                    if (next) next.addEventListener('click', () => { if (idx < brandPages.length - 1) { idx++; render(); } });
+                    // Doppeltippen zoomt
+                    const imgBox = overlay.querySelector('#katViewImg');
+                    const imgEl = imgBox.querySelector('img');
+                    imgEl.addEventListener('click', () => imgBox.classList.toggle('zoomed'));
+                };
+                render();
+
+                // Wischgesten (links/rechts blättern)
+                let startX = 0;
+                overlay.addEventListener('touchstart', (ev) => { startX = ev.touches[0].clientX; }, { passive: true });
+                overlay.addEventListener('touchend', (ev) => {
+                    const dx = ev.changedTouches[0].clientX - startX;
+                    if (Math.abs(dx) < 50) return;
+                    if (dx < 0 && idx < brandPages.length - 1) { idx++; render(); }
+                    else if (dx > 0 && idx > 0) { idx--; render(); }
+                }, { passive: true });
+
+                document.body.appendChild(overlay);
+            },
+
+            async katalogDelete(pageId) {
+                const ok = await showConfirm('Diese Katalogseite löschen?');
+                if (!ok) return;
+                await db.deleteLocalOnly('catalogPages', parseId(pageId));
+                showToast('Seite gelöscht.', 'info');
+                this.renderKatalog();
+            },
+
+            async katalogExportPdf() {
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek nicht geladen.', 'error'); return; }
+                const pages = (await db.getAll('catalogPages')) || [];
+                if (!pages.length) { showToast('Keine Seiten vorhanden.', 'info'); return; }
+                pages.sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || (a.order || 0) - (b.order || 0));
+                showToast('PDF wird erstellt…', 'info');
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pw = 210, ph = 297;
+                for (let i = 0; i < pages.length; i++) {
+                    if (i > 0) doc.addPage();
+                    try {
+                        const props = doc.getImageProperties(pages[i].image);
+                        const ratio = Math.min((pw - 10) / props.width, (ph - 10) / props.height);
+                        const w = props.width * ratio, h = props.height * ratio;
+                        doc.addImage(pages[i].image, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h);
+                    } catch (e) { /* Seite überspringen */ }
+                }
+                const fname = 'Produktkatalog.pdf';
+                if (navigator.canShare) sharePdfDoc(doc, fname, 'Produktkatalog');
+                else { doc.save(fname); showToast('Katalog als PDF erstellt.', 'success'); }
             },
 
             // ===== Hersteller-Katalog importieren (Samsung, Daikin ...) =====

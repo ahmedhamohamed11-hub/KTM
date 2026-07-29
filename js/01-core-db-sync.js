@@ -121,10 +121,10 @@ function toSnake(o) {
                         done(reject, new Error('Datenbank antwortet nicht (Zeitüberschreitung).'));
                     }, 6000);
 
-                    const req = indexedDB.open('KTM_DB', 8);
+                    const req = indexedDB.open('KTM_DB', 9);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
-                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'invoices', 'settings', 'events', 'equipment', 'refrigerantLog', 'maintenance'].forEach(s => {
+                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'invoices', 'settings', 'events', 'equipment', 'refrigerantLog', 'maintenance', 'catalogPages'].forEach(s => {
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
                     };
@@ -310,7 +310,7 @@ async put(storeName, data) {
             }
 
             async importAllData(data) {
-                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','settings','events','equipment','refrigerantLog','maintenance']) await this.clear(s);
+                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','settings','events','equipment','refrigerantLog','maintenance','catalogPages']) await this.clear(s);
                 for (const c of data.customers || []) await this.addLocalOnly('customers', c);
                 for (const p of data.projects || []) await this.addLocalOnly('projects', p);
                 for (const r of data.rooms || []) await this.addLocalOnly('rooms', r);
