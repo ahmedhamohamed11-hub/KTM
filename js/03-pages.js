@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v36</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v37</span></div>
                         </div>
                     </div>`;
             })();
@@ -669,6 +669,7 @@
                                         <h4>📦 Material aller Räume (${pm.length})</h4>
                                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                                             <button class="btn btn-sm btn-primary" onclick="app.openProjectMaterialModal(null, ${idJS(project.id)})">${icon('plus')} Material</button>
+                                            ${pm.length > 0 ? `<button class="btn btn-sm btn-outline" onclick="app.openMaterialSend(${idJS(project.id)})" title="Materialliste auswählen und an Händler oder Kunde senden">📤 Liste senden</button>` : ''}
                                             ${pm.length > 0 ? `<select class="filter-select" style="padding:6px 8px;" onchange="app.pmSetGroup(this.value)" title="Gruppieren nach">
                                                 <option value="raum" ${(window.__pmView?.groupBy || 'raum') === 'raum' ? 'selected' : ''}>Gruppieren: Raum</option>
                                                 <option value="material" ${window.__pmView?.groupBy === 'material' ? 'selected' : ''}>Gruppieren: Material</option>

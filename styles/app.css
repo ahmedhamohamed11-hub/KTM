@@ -1124,3 +1124,23 @@
         /* Schöner Bestätigungs-Dialog */
         .modal-confirm { max-width: 380px; }
         .modal-confirm .modal-actions { margin-top: 8px; }
+
+        /* ===== Materialliste senden ===== */
+        .ms-options { background: var(--bg-tertiary); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 14px; }
+        .ms-opt-title { font-weight: 700; font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
+        .ms-toggle { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding: 5px 0; cursor: pointer; }
+        .ms-toggle input { width: 18px; height: 18px; }
+        .ms-discount { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .ms-discount label { font-size: 13.5px; }
+        .ms-discount select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+        .ms-list-title { font-weight: 700; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+        .ms-selectall { display: flex; gap: 6px; margin-bottom: 8px; }
+        .ms-list { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; margin-bottom: 14px; }
+        .ms-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+        .ms-row:hover { background: var(--bg-tertiary); }
+        .ms-check { width: 20px; height: 20px; flex: 0 0 auto; }
+        .ms-info { flex: 1; min-width: 0; }
+        .ms-name { font-weight: 600; font-size: 13.5px; }
+        .ms-sub { font-size: 12px; color: var(--text-muted); }
+        .ms-price { font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+        .ms-actions { display: flex; gap: 8px; flex-wrap: wrap; }

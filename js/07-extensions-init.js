@@ -2630,6 +2630,168 @@
                 }
             },
 
+            // ===== Materialliste auswählen & senden (Händler/Kunde) =====
+            async openMaterialSend(projectId) {
+                const project = await db.get('projects', projectId);
+                const pm = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+                if (!pm.length) { showToast('Keine Materialien im Projekt.', 'info'); return; }
+                const customer = project?.customerId ? await db.get('customers', project.customerId) : null;
+
+                // Alle Positionen initial ausgewählt
+                const state = {
+                    selected: new Set(pm.map(p => p.id)),
+                    showCustomer: true,
+                    showPrices: true,
+                    showModel: true,
+                    discountMode: 'none', // none | percent | amount
+                    discountValue: 0
+                };
+                this._matSendState = state;
+                this._matSendData = { project, pm, customer };
+
+                const rows = pm.map(p => `
+                    <label class="ms-row">
+                        <input type="checkbox" class="ms-check" data-id="${p.id}" checked>
+                        <div class="ms-info">
+                            <div class="ms-name">${escapeHtml(p.name)}</div>
+                            <div class="ms-sub">${p.articleNumber ? 'Modell: ' + escapeHtml(p.articleNumber) + ' · ' : ''}${p.quantity || 1} ${escapeHtml(p.unit || 'Stk')}</div>
+                        </div>
+                        <div class="ms-price">${formatCurrency((Number(p.price) || 0) * (Number(p.quantity) || 1))}</div>
+                    </label>`).join('');
+
+                showModal('Materialliste senden', `
+                    <div class="ms-options">
+                        <div class="ms-opt-title">Optionen</div>
+                        <label class="ms-toggle"><input type="checkbox" id="msCustomer" checked> Kundenname anzeigen</label>
+                        <label class="ms-toggle"><input type="checkbox" id="msPrices" checked> Preise anzeigen <span style="color:var(--text-muted);font-size:11px;">(aus für Händler-Anfrage)</span></label>
+                        <label class="ms-toggle"><input type="checkbox" id="msModel" checked> Modellnummern anzeigen</label>
+                        <div class="ms-discount">
+                            <label>Rabatt:</label>
+                            <select id="msDiscMode">
+                                <option value="none">kein Rabatt</option>
+                                <option value="percent">Prozent (%)</option>
+                                <option value="amount">Betrag (€)</option>
+                            </select>
+                            <input type="number" id="msDiscVal" step="0.01" placeholder="0" style="width:80px;" disabled>
+                        </div>
+                    </div>
+                    <div class="ms-list-title">Positionen auswählen (${pm.length})</div>
+                    <div class="ms-selectall"><button type="button" class="btn btn-sm btn-outline" id="msAll">Alle</button><button type="button" class="btn btn-sm btn-outline" id="msNone">Keine</button></div>
+                    <div class="ms-list">${rows}</div>
+                    <div class="ms-actions">
+                        <button type="button" class="btn btn-primary" id="msPdf">${icon('pdf')} Als PDF</button>
+                        <button type="button" class="btn btn-outline" id="msCopy">📋 Als Text kopieren</button>
+                    </div>
+                `, null, null);
+
+                // Verdrahtung
+                setTimeout(() => {
+                    const q = (s) => document.querySelector(s);
+                    q('#msDiscMode')?.addEventListener('change', (e) => { document.getElementById('msDiscVal').disabled = e.target.value === 'none'; });
+                    q('#msAll')?.addEventListener('click', () => document.querySelectorAll('.ms-check').forEach(c => c.checked = true));
+                    q('#msNone')?.addEventListener('click', () => document.querySelectorAll('.ms-check').forEach(c => c.checked = false));
+                    q('#msPdf')?.addEventListener('click', () => this._matSendExport('pdf'));
+                    q('#msCopy')?.addEventListener('click', () => this._matSendExport('text'));
+                }, 30);
+            },
+
+            _matSendCollect() {
+                const { pm } = this._matSendData;
+                const selIds = new Set(Array.from(document.querySelectorAll('.ms-check')).filter(c => c.checked).map(c => c.dataset.id));
+                const items = pm.filter(p => selIds.has(String(p.id)));
+                const showCustomer = document.getElementById('msCustomer')?.checked;
+                const showPrices = document.getElementById('msPrices')?.checked;
+                const showModel = document.getElementById('msModel')?.checked;
+                const discMode = document.getElementById('msDiscMode')?.value || 'none';
+                const discVal = parseFloat(document.getElementById('msDiscVal')?.value) || 0;
+                return { items, showCustomer, showPrices, showModel, discMode, discVal };
+            },
+
+            _matSendTotals(items, discMode, discVal) {
+                const sub = items.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 1), 0);
+                let discount = 0;
+                if (discMode === 'percent') discount = sub * (discVal / 100);
+                else if (discMode === 'amount') discount = discVal;
+                discount = Math.min(discount, sub);
+                return { sub, discount, total: sub - discount };
+            },
+
+            _matSendExport(format) {
+                const opt = this._matSendCollect();
+                if (!opt.items.length) { showToast('Bitte mindestens eine Position auswählen.', 'error'); return; }
+                const { project, customer } = this._matSendData;
+                const t = this._matSendTotals(opt.items, opt.discMode, opt.discVal);
+
+                if (format === 'text') {
+                    const lines = [];
+                    lines.push('Materialliste' + (project?.title ? ' – ' + project.title : ''));
+                    if (opt.showCustomer && customer) lines.push('Kunde: ' + (customer.firstName || '') + ' ' + (customer.lastName || ''));
+                    lines.push('');
+                    opt.items.forEach(p => {
+                        let line = `- ${p.name}`;
+                        if (opt.showModel && p.articleNumber) line += ` (Modell ${p.articleNumber})`;
+                        line += ` · ${p.quantity || 1} ${p.unit || 'Stk'}`;
+                        if (opt.showPrices) line += ` · ${formatCurrency((Number(p.price) || 0) * (Number(p.quantity) || 1))}`;
+                        lines.push(line);
+                    });
+                    if (opt.showPrices) {
+                        lines.push('');
+                        if (opt.discMode !== 'none' && t.discount > 0) {
+                            lines.push('Zwischensumme: ' + formatCurrency(t.sub));
+                            lines.push('Rabatt: -' + formatCurrency(t.discount));
+                        }
+                        lines.push('Gesamt: ' + formatCurrency(t.total));
+                    }
+                    const text = lines.join('\n');
+                    const done = () => showToast('Materialliste kopiert.', 'success');
+                    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => {
+                        const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove();
+                    });
+                    return;
+                }
+
+                // PDF
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek nicht geladen.', 'error'); return; }
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const mx = 15; let y = 20;
+                doc.setFontSize(16); doc.setFont(undefined, 'bold');
+                doc.text('Materialliste', mx, y); y += 7;
+                doc.setFontSize(10); doc.setFont(undefined, 'normal');
+                if (project?.title) { doc.text('Projekt: ' + project.title, mx, y); y += 5; }
+                if (opt.showCustomer && customer) { doc.text('Kunde: ' + (customer.firstName || '') + ' ' + (customer.lastName || ''), mx, y); y += 5; }
+                doc.text('Datum: ' + new Date().toLocaleDateString('de-AT'), mx, y); y += 8;
+
+                const head = ['Pos', 'Bezeichnung'];
+                if (opt.showModel) head.push('Modell');
+                head.push('Menge');
+                if (opt.showPrices) { head.push('Einzel'); head.push('Gesamt'); }
+                const body = opt.items.map((p, i) => {
+                    const row = [String(i + 1), p.name];
+                    if (opt.showModel) row.push(p.articleNumber || '–');
+                    row.push(`${p.quantity || 1} ${p.unit || 'Stk'}`);
+                    if (opt.showPrices) { row.push(formatCurrency(Number(p.price) || 0)); row.push(formatCurrency((Number(p.price) || 0) * (Number(p.quantity) || 1))); }
+                    return row;
+                });
+                doc.autoTable({ startY: y, head: [head], body, styles: { fontSize: 9 }, headStyles: { fillColor: [18, 128, 143] }, margin: { left: mx, right: mx } });
+                let fy = doc.lastAutoTable.finalY + 8;
+                if (opt.showPrices) {
+                    doc.setFontSize(10);
+                    if (opt.discMode !== 'none' && t.discount > 0) {
+                        doc.text('Zwischensumme:', 130, fy); doc.text(formatCurrency(t.sub), 195, fy, { align: 'right' }); fy += 5;
+                        doc.text('Rabatt:', 130, fy); doc.text('-' + formatCurrency(t.discount), 195, fy, { align: 'right' }); fy += 5;
+                    }
+                    doc.setFont(undefined, 'bold');
+                    doc.text('Gesamt:', 130, fy); doc.text(formatCurrency(t.total), 195, fy, { align: 'right' });
+                } else {
+                    doc.setFontSize(9); doc.setTextColor(120);
+                    doc.text('Bitte Preise eintragen und zurücksenden.', mx, fy);
+                }
+                const fname = 'Materialliste_' + (project?.title || 'Projekt').replace(/[^a-zA-Z0-9]/g, '_') + '.pdf';
+                if (navigator.canShare) { sharePdfDoc(doc, fname, 'Materialliste'); }
+                else { doc.save(fname); showToast('Materialliste als PDF erstellt.', 'success'); }
+            },
+
             async openCustomerModal(id = null) {
                 const customer = id ? await db.get('customers', id) : null;
                 const modal = showModal(
