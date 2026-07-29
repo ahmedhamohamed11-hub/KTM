@@ -2795,7 +2795,7 @@
             // ===== Hersteller-Katalog importieren (Samsung, Daikin ...) =====
             async confirmImportKatalog() {
                 const count = (window.KTM_KATALOG || []).length;
-                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung & Daikin) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
+                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung, Daikin, LG, Hisense + Zubehör wie SUMO-Standfüße, Verteilerboxen) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
                 if (ok) this.importHerstellerKatalog();
             },
 
