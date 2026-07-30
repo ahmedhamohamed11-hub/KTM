@@ -1652,7 +1652,14 @@
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(9.2);
                 doc.setTextColor(...PDF_INK);
-                const summaryRows = [['Nettobetrag', formatCurrency(offer.subtotal || 0)]];
+                const _grossPdf = (offer.positions || []).reduce((s, p) => s + (p.price || 0) * (p.quantity || 0), 0);
+                const _posDiscPdf = _grossPdf - (offer.subtotal || 0);
+                const summaryRows = [];
+                if (_posDiscPdf > 0.005) {
+                    summaryRows.push(['Zwischensumme', formatCurrency(_grossPdf)]);
+                    summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_posDiscPdf)}`]);
+                }
+                summaryRows.push(['Nettobetrag', formatCurrency(offer.subtotal || 0)]);
                 if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
                     const _dr = (offer.discountRate || 0) > 1 ? (offer.discountRate || 0) / 100 : (offer.discountRate || 0);
                     summaryRows.push([`Rabatt (${(_dr * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
@@ -3891,18 +3898,20 @@
     );
 
     function computeOfferTotals() {
-        const subtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
-        // Positions-Rabatte (pro Zeile) zuerst abziehen
-        const afterPosDisc = selected.reduce((s, it) => s + it.price * it.quantity * (1 - (Number(it.discount) || 0) / 100), 0);
-        const posDiscountAmount = subtotal - afterPosDisc;
-        // danach optionaler Gesamt-Rabatt
+        // Bruttosumme der Positionen OHNE jeden Rabatt (nur zur Info)
+        const grossSubtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
+        // Nettobetrag = Summe der Positionen NACH Positions-Rabatt.
+        // Das ist genau die Summe der "Gesamt"-Spalte im PDF -> keine Widersprüche.
+        const subtotal = selected.reduce((s, it) => s + it.price * it.quantity * (1 - (Number(it.discount) || 0) / 100), 0);
+        const posDiscountAmount = grossSubtotal - subtotal;
+        // danach optionaler Gesamt-Rabatt auf den Nettobetrag
         const discountRateVal = offerSettings.discountEnabled ? (offerSettings.discountRate / 100) : 0;
-        const globalDiscountAmount = afterPosDisc * discountRateVal;
-        const netAfterDiscount = afterPosDisc - globalDiscountAmount;
-        const discountAmount = posDiscountAmount + globalDiscountAmount;
+        const globalDiscountAmount = subtotal * discountRateVal;
+        const netAfterDiscount = subtotal - globalDiscountAmount;
+        const discountAmount = globalDiscountAmount;   // der ausgewiesene "Rabatt (x%)" bezieht sich auf den Nettobetrag
         const vatAmount = offerSettings.vatEnabled ? netAfterDiscount * offerSettings.vatRate : 0;
         const total = netAfterDiscount + vatAmount;
-        return { subtotal, afterPosDisc, posDiscountAmount, discountRate: discountRateVal, globalDiscountAmount, discountAmount, netAfterDiscount, vatAmount, total };
+        return { grossSubtotal, subtotal, posDiscountAmount, discountRate: discountRateVal, globalDiscountAmount, discountAmount, netAfterDiscount, vatAmount, total };
     }
 
     function updateSettingsFromUI() {
@@ -4058,14 +4067,17 @@
     function renderSummary() {
         updateSettingsFromUI();
         const calc = computeOfferTotals();
-        let html = `
-            <div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>
-        `;
+        let html = '';
         if (calc.posDiscountAmount > 0.001) {
+            // Es gibt Positions-Rabatte -> transparent aufschlüsseln
+            html += `<div class="offer-summary-row"><span>Zwischensumme</span><span>${formatCurrency(calc.grossSubtotal)}</span></div>`;
             html += `<div class="offer-summary-row"><span>Positions-Rabatte</span><span>- ${formatCurrency(calc.posDiscountAmount)}</span></div>`;
+            html += `<div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>`;
+        } else {
+            html += `<div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>`;
         }
         if (offerSettings.discountEnabled && calc.globalDiscountAmount > 0) {
-            html += `<div class="offer-summary-row"><span>Gesamt-Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
+            html += `<div class="offer-summary-row"><span>Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
         }
         if (offerSettings.vatEnabled) {
             html += `<div class="offer-summary-row"><span>MwSt. (${(offerSettings.vatRate*100).toFixed(0)}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
@@ -4310,15 +4322,19 @@ async exportOfferPDF(offerId) {
     custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
     y += 6;
 
-    const rows = (offer.positions || []).map((p, i) => [
-        String(i + 1),
-        p.name || '',
-        p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : ''),
-        String(p.quantity),
-        p.unit || 'Stk',
-        formatCurrency(p.price),
-        formatCurrency(p.price * p.quantity)
-    ]);
+    const rows = (offer.positions || []).map((p, i) => {
+        const disc = Number(p.discount) || 0;
+        const lineTotal = p.price * p.quantity * (1 - disc / 100);
+        return [
+            String(i + 1),
+            p.name || '',
+            (p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : '')) + (disc > 0 ? ` (−${disc}% Rabatt)` : ''),
+            String(p.quantity),
+            p.unit || 'Stk',
+            formatCurrency(p.price),
+            formatCurrency(lineTotal)
+        ];
+    });
 
     doc.autoTable({
         startY: y,
@@ -4347,7 +4363,14 @@ async exportOfferPDF(offerId) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(60, 64, 72);
 
-    const summaryRows = [['Nettobetrag', formatCurrency(offer.subtotal || 0)]];
+    const _gross2 = (offer.positions || []).reduce((s, p) => s + (p.price || 0) * (p.quantity || 0), 0);
+    const _posDisc2 = _gross2 - (offer.subtotal || 0);
+    const summaryRows = [];
+    if (_posDisc2 > 0.005) {
+        summaryRows.push(['Zwischensumme', formatCurrency(_gross2)]);
+        summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_posDisc2)}`]);
+    }
+    summaryRows.push(['Nettobetrag', formatCurrency(offer.subtotal || 0)]);
 
     if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
         summaryRows.push([`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
