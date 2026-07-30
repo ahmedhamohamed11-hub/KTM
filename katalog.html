@@ -519,13 +519,22 @@ body[data-view="reader"] #view-reader {
 </head>
 <body data-view="home">
 <style>
-/* Wenn der Katalog eingebettet in der KTM-App läuft (iframe), die Seiten
-   groß und ohne doppelten Leerraum zeigen. */
+/* Wenn der Katalog eingebettet in der KTM-App läuft (iframe):
+   Die eigene Kopfzeile des Katalogs NICHT mehr fixiert/klebend machen,
+   sondern normal mitscrollen – so überlappt sie nicht mit der KTM-
+   Kopfzeile und der obere Seitenbereich ist sichtbar. */
 html.embedded { --header-h: 0px; }
+html.embedded .app-header {
+  position: static !important;
+  height: auto !important;
+  padding-top: 8px; padding-bottom: 8px;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background: #fff;
+}
 html.embedded .reader-stage { min-height: auto; }
 html.embedded .stage-canvas { padding: 4px; }
-html.embedded .app-header { position: sticky; top: 0; }
-html.embedded .stage-bar { top: 0; }
+html.embedded .stage-bar { position: static; }
+html.embedded .reader-nav { top: 0; }
 </style>
 <script>
   // Erkennen, ob wir in einem Rahmen (iframe) der KTM-App laufen.

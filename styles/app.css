@@ -1175,7 +1175,7 @@
         .katalog-nav-btn:not(:disabled):active { background: rgba(255,255,255,0.3); }
 
         /* Katalog-Rahmen (fertige Katalog-Seite) */
-        .katalog-frame-wrap { position: fixed; inset: 0; top: var(--header-h, 60px); z-index: 50; background: #fff; }
+        .katalog-frame-wrap { position: fixed; inset: 0; top: var(--topbar-height, 66px); z-index: 50; background: #fff; }
         .katalog-frame { width: 100%; height: 100%; border: none; display: block; }
         @media (min-width: 900px) {
             .katalog-frame-wrap { left: var(--sidebar-w, 240px); }

@@ -2800,7 +2800,7 @@
                 // (iframe) geöffnet. Er bringt seine eigenen Bilder und sein Design mit.
                 area.innerHTML = `
                     <div class="katalog-frame-wrap">
-                        <iframe src="katalog.html?v=43c" class="katalog-frame" title="Produktkatalog" loading="lazy"></iframe>
+                        <iframe src="katalog.html?v=44d" class="katalog-frame" title="Produktkatalog" loading="lazy"></iframe>
                     </div>`;
             },
 
