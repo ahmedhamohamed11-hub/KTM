@@ -815,6 +815,26 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             if (typeof id === 'number') return String(id);
             return "'" + String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
         }
+        // Rechnet ein Angebot IMMER frisch aus den Positionen durch – unabhängig
+        // von evtl. veralteten gespeicherten Summen (behebt falsche Nettobeträge
+        // in alten Angeboten und Varianten).
+        function recomputeOffer(offer) {
+            const positions = offer.positions || [];
+            const gross = positions.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
+            const net = positions.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0) * (1 - (Number(p.discount) || 0) / 100), 0);
+            const posDiscount = gross - net;
+            // Rabatt-Rate robust normalisieren (mal als 0,15 mal als 15 gespeichert)
+            let rate = Number(offer.discountRate) || 0;
+            if (rate > 1) rate = rate / 100;
+            const discountEnabled = !!offer.discountEnabled && rate > 0;
+            const globalDiscount = discountEnabled ? net * rate : 0;
+            const netAfter = net - globalDiscount;
+            const vatRate = Number(offer.vatRate) || 0;
+            const vatAmount = offer.vatEnabled ? netAfter * vatRate : 0;
+            const total = netAfter + vatAmount;
+            return { gross, net, posDiscount, rate, discountEnabled, globalDiscount, netAfter, vatRate, vatAmount, total };
+        }
+
         function parseId(value) {
             if (value === null || value === undefined || value === '') return null;
             return /^\d+$/.test(value) ? Number(value) : value;

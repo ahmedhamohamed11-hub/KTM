@@ -608,6 +608,7 @@
                             ...offer,
                             offerNumber: num,
                             positions: newPositions,
+                            subtotal: net,
                             netPrice: net,
                             discountAmount: dAmount,
                             netAfterDiscount: netAfter,
@@ -1652,20 +1653,18 @@
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(9.2);
                 doc.setTextColor(...PDF_INK);
-                const _grossPdf = (offer.positions || []).reduce((s, p) => s + (p.price || 0) * (p.quantity || 0), 0);
-                const _posDiscPdf = _grossPdf - (offer.subtotal || 0);
+                const _R = recomputeOffer(offer);
                 const summaryRows = [];
-                if (_posDiscPdf > 0.005) {
-                    summaryRows.push(['Zwischensumme', formatCurrency(_grossPdf)]);
-                    summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_posDiscPdf)}`]);
+                if (_R.posDiscount > 0.005) {
+                    summaryRows.push(['Zwischensumme', formatCurrency(_R.gross)]);
+                    summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R.posDiscount)}`]);
                 }
-                summaryRows.push(['Nettobetrag', formatCurrency(offer.subtotal || 0)]);
-                if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
-                    const _dr = (offer.discountRate || 0) > 1 ? (offer.discountRate || 0) / 100 : (offer.discountRate || 0);
-                    summaryRows.push([`Rabatt (${(_dr * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
+                summaryRows.push(['Nettobetrag', formatCurrency(_R.net)]);
+                if (_R.discountEnabled && _R.globalDiscount > 0) {
+                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(_R.globalDiscount)}`]);
                 }
                 if (offer.vatEnabled) {
-                    summaryRows.push([`MwSt. (${((offer.vatRate || 0) * 100).toFixed(0)}%)`, formatCurrency(offer.vatAmount || 0)]);
+                    summaryRows.push([`MwSt. (${(_R.vatRate * 100).toFixed(0)}%)`, formatCurrency(_R.vatAmount)]);
                 }
                 summaryRows.forEach(([label, val]) => {
                     doc.text(label, boxX, fy);
@@ -1679,7 +1678,7 @@
                 doc.setFontSize(11.5);
                 doc.setTextColor(255, 255, 255);
                 doc.text('Gesamtbetrag', boxX + 4, fy + 2.3);
-                doc.text(formatCurrency(offer.totalPrice || 0), pw - mx - 4, fy + 2.3, { align: 'right' });
+                doc.text(formatCurrency(_R.total), pw - mx - 4, fy + 2.3, { align: 'right' });
                 fy += 15;
 
                 // Zahlungshinweis + Zusatzfelder des Projekts
@@ -1717,9 +1716,35 @@
                 if (share) {
                     await sharePdfDoc(doc, offerFileName, 'Angebot ' + (offer.offerNumber || ''));
                 } else {
-                    doc.save(offerFileName);
-                    showToast('Angebot als PDF exportiert.', 'success');
+                    this._showPdfPreview(doc, offerFileName, 'Angebot ' + (offer.offerNumber || ''));
                 }
+            },
+
+            // Zeigt ein PDF als Vorschau (ohne Download-Zwang) mit Buttons zum
+            // Herunterladen und Teilen.
+            _showPdfPreview(doc, fileName, title) {
+                let url;
+                try { url = doc.output('bloburl'); } catch (e) { doc.save(fileName); return; }
+                const overlay = document.createElement('div');
+                overlay.className = 'pdf-preview-overlay';
+                overlay.innerHTML = `
+                    <div class="pdf-preview">
+                        <div class="pdf-preview-bar">
+                            <span class="pdf-preview-title">${escapeHtml(title || 'Vorschau')}</span>
+                            <div class="pdf-preview-actions">
+                                <button class="btn btn-sm btn-outline" data-act="download">${icon('pdf')} Speichern</button>
+                                <button class="btn btn-sm btn-outline" data-act="share">📤 Teilen</button>
+                                <button class="btn btn-sm btn-danger" data-act="close">✕</button>
+                            </div>
+                        </div>
+                        <iframe class="pdf-preview-frame" src="${url}" title="PDF-Vorschau"></iframe>
+                    </div>`;
+                document.body.appendChild(overlay);
+                const close = () => { overlay.remove(); setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 500); };
+                overlay.querySelector('[data-act="close"]').addEventListener('click', close);
+                overlay.querySelector('[data-act="download"]').addEventListener('click', () => doc.save(fileName));
+                overlay.querySelector('[data-act="share"]').addEventListener('click', () => sharePdfDoc(doc, fileName, title));
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
             },
 
             // ============================================================
@@ -4363,20 +4388,19 @@ async exportOfferPDF(offerId) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(60, 64, 72);
 
-    const _gross2 = (offer.positions || []).reduce((s, p) => s + (p.price || 0) * (p.quantity || 0), 0);
-    const _posDisc2 = _gross2 - (offer.subtotal || 0);
+    const _R2 = recomputeOffer(offer);
     const summaryRows = [];
-    if (_posDisc2 > 0.005) {
-        summaryRows.push(['Zwischensumme', formatCurrency(_gross2)]);
-        summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_posDisc2)}`]);
+    if (_R2.posDiscount > 0.005) {
+        summaryRows.push(['Zwischensumme', formatCurrency(_R2.gross)]);
+        summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R2.posDiscount)}`]);
     }
-    summaryRows.push(['Nettobetrag', formatCurrency(offer.subtotal || 0)]);
+    summaryRows.push(['Nettobetrag', formatCurrency(_R2.net)]);
 
-    if (offer.discountEnabled && offer.discountRate > 0 && offer.discountAmount > 0) {
-        summaryRows.push([`Rabatt (${((offer.discountRate||0)*100).toFixed(1)}%)`, `- ${formatCurrency(offer.discountAmount || 0)}`]);
+    if (_R2.discountEnabled && _R2.globalDiscount > 0) {
+        summaryRows.push([`Rabatt (${(_R2.rate*100).toFixed(1)}%)`, `- ${formatCurrency(_R2.globalDiscount)}`]);
     }
     if (offer.vatEnabled) {
-        summaryRows.push([`MwSt. (${((offer.vatRate||0)*100).toFixed(0)}%)`, formatCurrency(offer.vatAmount || 0)]);
+        summaryRows.push([`MwSt. (${(_R2.vatRate*100).toFixed(0)}%)`, formatCurrency(_R2.vatAmount)]);
     }
 
     summaryRows.forEach(([label, val]) => {
@@ -4392,7 +4416,7 @@ async exportOfferPDF(offerId) {
     doc.setFontSize(12);
     doc.setTextColor(255, 255, 255);
     doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
-    doc.text(formatCurrency(offer.totalPrice || 0), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
+    doc.text(formatCurrency(_R2.total), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
 
     function drawFooter() {
         const ph = doc.internal.pageSize.getHeight();
