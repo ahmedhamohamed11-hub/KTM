@@ -1578,15 +1578,19 @@
                 if (projLines.length === 0) projLines.push('–');
                 y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Projekt / Baustelle', projLines);
 
-                const rows = (offer.positions || []).map((p, i) => [
-                    String(i + 1),
-                    p.name || '',
-                    p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : ''),
-                    String(p.quantity),
-                    p.unit || 'Stk',
-                    formatCurrency(p.price),
-                    formatCurrency(p.price * p.quantity)
-                ]);
+                const rows = (offer.positions || []).map((p, i) => {
+                    const disc = Number(p.discount) || 0;
+                    const lineTotal = p.price * p.quantity * (1 - disc / 100);
+                    return [
+                        String(i + 1),
+                        p.name || '',
+                        (p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : '')) + (disc > 0 ? ` (−${disc}% Rabatt)` : ''),
+                        String(p.quantity),
+                        p.unit || 'Stk',
+                        formatCurrency(p.price),
+                        formatCurrency(lineTotal)
+                    ];
+                });
 
                 doc.autoTable({
                     startY: y,
@@ -3841,12 +3845,17 @@
 
     function computeOfferTotals() {
         const subtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
+        // Positions-Rabatte (pro Zeile) zuerst abziehen
+        const afterPosDisc = selected.reduce((s, it) => s + it.price * it.quantity * (1 - (Number(it.discount) || 0) / 100), 0);
+        const posDiscountAmount = subtotal - afterPosDisc;
+        // danach optionaler Gesamt-Rabatt
         const discountRateVal = offerSettings.discountEnabled ? (offerSettings.discountRate / 100) : 0;
-        const discountAmount = subtotal * discountRateVal;
-        const netAfterDiscount = subtotal - discountAmount;
+        const globalDiscountAmount = afterPosDisc * discountRateVal;
+        const netAfterDiscount = afterPosDisc - globalDiscountAmount;
+        const discountAmount = posDiscountAmount + globalDiscountAmount;
         const vatAmount = offerSettings.vatEnabled ? netAfterDiscount * offerSettings.vatRate : 0;
         const total = netAfterDiscount + vatAmount;
-        return { subtotal, discountRate: discountRateVal, discountAmount, netAfterDiscount, vatAmount, total };
+        return { subtotal, afterPosDisc, posDiscountAmount, discountRate: discountRateVal, globalDiscountAmount, discountAmount, netAfterDiscount, vatAmount, total };
     }
 
     function updateSettingsFromUI() {
@@ -3946,17 +3955,39 @@
 
     function renderPosList() {
         const list = modal.querySelector('#offerPosList');
-        list.innerHTML = selected.map((s, idx) => `
+        list.innerHTML = selected.map((s, idx) => {
+            const lineNet = s.price * s.quantity;
+            const disc = Number(s.discount) || 0;
+            const lineAfter = lineNet * (1 - disc / 100);
+            return `
             <div class="offer-pos-item">
                 <div>
                     <div class="pos-name">${escapeHtml(s.name)}</div>
                     <div class="pos-meta">${escapeHtml(s.manufacturer || '')} ${s.articleNumber ? '· ' + escapeHtml(s.articleNumber) : ''}</div>
                 </div>
-                <input type="number" min="1" value="${s.quantity}" data-idx="${idx}" class="offer-qty-input">
-                <div style="text-align:right;font-weight:600;">${formatCurrency(s.price * s.quantity)}</div>
+                <input type="number" min="1" value="${s.quantity}" data-idx="${idx}" class="offer-qty-input" title="Menge">
+                <div class="offer-pos-disc"><input type="number" min="0" max="100" step="1" value="${disc || ''}" placeholder="0" data-disc="${idx}" class="offer-disc-input" title="Rabatt auf diese Position in %"><span>%</span></div>
+                <div style="text-align:right;font-weight:600;">${formatCurrency(lineAfter)}${disc > 0 ? `<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(lineNet)}</div>` : ''}</div>
                 <button class="btn btn-sm btn-danger" data-remove="${idx}" style="padding:4px 8px;">✕</button>
             </div>
-        `).join('') || '<div style="color:var(--text-muted);font-size:13px;padding:12px;text-align:center;">Noch keine Positionen ausgewählt.</div>';
+        `;
+        }).join('') || '<div style="color:var(--text-muted);font-size:13px;padding:12px;text-align:center;">Noch keine Positionen ausgewählt.</div>';
+
+        list.querySelectorAll('.offer-disc-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+                const idx = parseInt(e.target.dataset.disc);
+                let v = parseFloat(e.target.value);
+                if (isNaN(v) || v < 0) v = 0; if (v > 100) v = 100;
+                selected[idx].discount = v;
+                updateSettingsFromUI();
+                renderSummary();
+                // Zeilensumme live aktualisieren ohne Neuaufbau (Fokus behalten)
+                const cell = e.target.closest('.offer-pos-item').querySelector('div[style*="text-align:right"]');
+                const lineNet = selected[idx].price * selected[idx].quantity;
+                const lineAfter = lineNet * (1 - v / 100);
+                if (cell) cell.innerHTML = `${formatCurrency(lineAfter)}${v > 0 ? `<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(lineNet)}</div>` : ''}`;
+            });
+        });
 
         list.querySelectorAll('.offer-qty-input').forEach(inp => {
             inp.addEventListener('input', (e) => {
@@ -3983,8 +4014,11 @@
         let html = `
             <div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>
         `;
-        if (offerSettings.discountEnabled && calc.discountAmount > 0) {
-            html += `<div class="offer-summary-row"><span>Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.discountAmount)}</span></div>`;
+        if (calc.posDiscountAmount > 0.001) {
+            html += `<div class="offer-summary-row"><span>Positions-Rabatte</span><span>- ${formatCurrency(calc.posDiscountAmount)}</span></div>`;
+        }
+        if (offerSettings.discountEnabled && calc.globalDiscountAmount > 0) {
+            html += `<div class="offer-summary-row"><span>Gesamt-Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
         }
         if (offerSettings.vatEnabled) {
             html += `<div class="offer-summary-row"><span>MwSt. (${(offerSettings.vatRate*100).toFixed(0)}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
