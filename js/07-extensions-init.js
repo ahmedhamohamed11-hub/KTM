@@ -115,7 +115,20 @@
                     `
                         <div class="form-group"><label>Material (aus Datenbank) *</label>
                             <select id="pmMaterial">
-                                ${materials.map(m => `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" data-size="${escapeHtml(m.size || '')}" ${String(pm?.materialId) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}${m.category ? ' (' + escapeHtml(m.category) + ')' : ''}</option>`).join('')}
+                                ${(() => {
+                                    const groupOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'];
+                                    const groups = {};
+                                    materials.forEach(m => { const g = m.bauart || (m.category || 'Sonstiges'); (groups[g] = groups[g] || []).push(m); });
+                                    const keys = Object.keys(groups).sort((a, b) => {
+                                        const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b);
+                                        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
+                                    });
+                                    const optOf = (m) => {
+                                        const ek = Number(m.purchasePrice) > 0 ? ` · EK ${formatCurrency(m.purchasePrice)}` : '';
+                                        return `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" data-size="${escapeHtml(m.size || '')}" ${String(pm?.materialId) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}${ek}</option>`;
+                                    };
+                                    return keys.map(k => `<optgroup label="${escapeHtml(k)}">${groups[k].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(optOf).join('')}</optgroup>`).join('');
+                                })()}
                             </select>
                             <div style="font-size:12px;color:var(--text-muted);margin-top:5px;">Fehlt etwas? <a href="#" id="pmNewMat" style="color:var(--accent);font-weight:600;">Neues Material anlegen</a></div>
                         </div>
@@ -128,6 +141,7 @@
                             <div class="form-group"><label>Preis je Einheit (€)</label><input type="number" inputmode="decimal" step="any" min="0" id="pmPrice" value="${pm?.price ?? ''}" placeholder="Standard aus Katalog"></div>
                             <div class="form-group"><label>Bemerkung</label><input type="text" id="pmNote" value="${escapeHtml(pm?.note || '')}"></div>
                         </div>
+                        <div id="pmEkInfo" class="pm-ek-info"></div>
                         <div class="form-card" style="margin-top:2px;">
                             <div class="form-card-title">🏠 ${id ? 'Raum' : 'Räume zuordnen'}</div>
                             ${id
@@ -207,6 +221,24 @@
                     const m = materials.find(x => String(x.id) === String(sel.value));
                     const pf = modal.querySelector('#pmPrice');
                     if (pf && m) pf.value = matUnitPrice(m, unit) || '';
+                    updateEkInfo();
+                };
+                const updateEkInfo = () => {
+                    const box = modal.querySelector('#pmEkInfo');
+                    if (!box) return;
+                    const m = materials.find(x => String(x.id) === String(sel.value));
+                    const vk = parseFloat(modal.querySelector('#pmPrice')?.value) || 0;
+                    const qty = parseFloat(String(modal.querySelector('#pmQty')?.value).replace(',', '.')) || 1;
+                    const ek = Number(m?.purchasePrice) || 0;
+                    if (ek > 0) {
+                        const profit = (vk - ek) * qty;
+                        box.innerHTML = `<div class="pm-ek-in">
+                            <span>Einkauf: <strong>${formatCurrency(ek)}</strong>${qty !== 1 ? ' × ' + qty : ''} = <strong>${formatCurrency(ek * qty)}</strong></span>
+                            <span class="pm-ek-profit ${profit >= 0 ? 'pos' : 'neg'}">Gewinn: ${formatCurrency(profit)}</span>
+                        </div>`;
+                    } else {
+                        box.innerHTML = `<div class="pm-ek-in"><span style="color:var(--text-muted);">Kein Einkaufspreis hinterlegt – trag ihn beim Material ein (Händlerrabatt), dann siehst du hier deinen Gewinn.</span></div>`;
+                    }
                 };
                 sel.addEventListener('change', applyUnit);
                 modal.querySelector('#pmUnit')?.addEventListener('change', () => {
@@ -216,6 +248,9 @@
                     if (pf && m) pf.value = matUnitPrice(m, modal.querySelector('#pmUnit').value) || '';
                 });
                 if (!pm) applyUnit();
+                modal.querySelector('#pmPrice')?.addEventListener('input', updateEkInfo);
+                modal.querySelector('#pmQty')?.addEventListener('input', updateEkInfo);
+                updateEkInfo();
 
                 // Raum-Chips (Mehrfachauswahl)
                 modal.querySelectorAll('#pmRoomChips .room-chip').forEach(b => b.addEventListener('click', () => {
