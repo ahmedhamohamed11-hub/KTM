@@ -928,6 +928,8 @@
                         });
                         overlay.remove();
                         showToast(`${qty} ${overlay.querySelector('#amp_unit')?.value || ''} ${m.name} zum Projekt hinzugefügt.`.trim(), 'success');
+                        // Set-Vorschlag: passendes Gegenstück (Innen<->Außen) anbieten
+                        this._suggestSetPartner(m, projectId, roomId ? parseId(roomId) : null, qty);
                     }
                 );
                 // Räume des gewählten Projekts nachladen
@@ -942,6 +944,50 @@
             },
 
             // ---------- Raum mit Material anlegen/bearbeiten ----------
+            // Sucht das passende Innen-/Außengerät zum gerade hinzugefügten Split-Gerät.
+            async _suggestSetPartner(m, projectId, roomId, qty) {
+                const b = m.bauart || '';
+                // Nur bei Single-Split-Geräten (ein Innen gehört zu genau einem Außen)
+                const isInnen = b === 'Innengerät Single-Split';
+                const isAussen = b === 'Außengerät Single-Split';
+                if (!isInnen && !isAussen) return;
+
+                const wantBauart = isInnen ? 'Außengerät Single-Split' : 'Innengerät Single-Split';
+                const mats = await db.getAll('materials');
+                // Match: gleiche Marke + gleiche Serie + gleiche Größe, passende Bauart
+                const norm = s => String(s || '').trim().toLowerCase();
+                let partners = mats.filter(x => x.bauart === wantBauart
+                    && norm(x.manufacturer) === norm(m.manufacturer)
+                    && norm(x.series) === norm(m.series)
+                    && norm(x.size) === norm(m.size));
+                // Wenn Größe nicht eindeutig, wenigstens Marke+Serie
+                if (partners.length === 0) {
+                    partners = mats.filter(x => x.bauart === wantBauart
+                        && norm(x.manufacturer) === norm(m.manufacturer)
+                        && norm(x.series) === norm(m.series)
+                        && norm(x.size) === norm(m.size));
+                }
+                if (partners.length !== 1) return; // nur bei eindeutigem Treffer vorschlagen
+                const partner = partners[0];
+
+                // Schon im Projekt? Dann nicht nochmal fragen
+                const existing = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
+                if (existing.some(pm => String(pm.materialId) === String(partner.id) && String(pm.roomId || '') === String(roomId || ''))) return;
+
+                const ok = await showConfirm(
+                    `Dazu passt <strong>${escapeHtml(partner.name)}</strong> (${escapeHtml(wantBauart)}). Als Set gleich mit hinzufügen?`,
+                    { title: 'Passendes Gerät gefunden', okText: 'Ja, hinzufügen', danger: false }
+                );
+                if (!ok) return;
+                await db.add('projectMaterials', {
+                    projectId, materialId: partner.id, roomId: roomId || null,
+                    quantity: qty, unit: partner.unit || 'Stk',
+                    size: partner.size || '', price: matUnitPrice(partner, partner.unit || 'Stk'), note: 'Set-Ergänzung'
+                });
+                showToast(`${partner.name} als Set ergänzt.`, 'success');
+                if (this.currentPage === 'projects' && this.currentProjectId === projectId) this.navigate('projects', projectId);
+            },
+
             async openRoomModal(projectId, roomId = null) {
                 await loadLearned();
                 const room = roomId ? await db.get('rooms', roomId) : null;
