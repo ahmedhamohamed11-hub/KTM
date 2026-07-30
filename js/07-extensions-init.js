@@ -1720,11 +1720,23 @@
                 }
             },
 
-            // Zeigt ein PDF als Vorschau (ohne Download-Zwang) mit Buttons zum
-            // Herunterladen und Teilen.
+            // Zeigt ein PDF an. Am Handy zuverlässig über einen neuen Tab
+            // (iframe-PDF-Vorschau funktioniert auf Android/iOS oft nicht),
+            // am Desktop als eingebettete Vorschau.
             _showPdfPreview(doc, fileName, title) {
-                let url;
-                try { url = doc.output('bloburl'); } catch (e) { doc.save(fileName); return; }
+                let blob, url;
+                try { blob = doc.output('blob'); url = URL.createObjectURL(blob); }
+                catch (e) { try { doc.save(fileName); } catch (e2) {} return; }
+
+                const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+                if (isMobile) {
+                    // Am Handy zuverlässig über einen echten Öffnen-Link (window.open
+                    // wird nach dem PDF-Erzeugen meist blockiert).
+                    this._pdfLinkFallback(url, doc, fileName, title);
+                    return;
+                }
+
+                // Desktop: eingebettete Vorschau
                 const overlay = document.createElement('div');
                 overlay.className = 'pdf-preview-overlay';
                 overlay.innerHTML = `
@@ -1732,6 +1744,7 @@
                         <div class="pdf-preview-bar">
                             <span class="pdf-preview-title">${escapeHtml(title || 'Vorschau')}</span>
                             <div class="pdf-preview-actions">
+                                <button class="btn btn-sm btn-outline" data-act="open">↗ In neuem Tab</button>
                                 <button class="btn btn-sm btn-outline" data-act="download">${icon('pdf')} Speichern</button>
                                 <button class="btn btn-sm btn-outline" data-act="share">📤 Teilen</button>
                                 <button class="btn btn-sm btn-danger" data-act="close">✕</button>
@@ -1742,8 +1755,29 @@
                 document.body.appendChild(overlay);
                 const close = () => { overlay.remove(); setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 500); };
                 overlay.querySelector('[data-act="close"]').addEventListener('click', close);
+                overlay.querySelector('[data-act="open"]').addEventListener('click', () => window.open(url, '_blank'));
                 overlay.querySelector('[data-act="download"]').addEventListener('click', () => doc.save(fileName));
                 overlay.querySelector('[data-act="share"]').addEventListener('click', () => sharePdfDoc(doc, fileName, title));
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+            },
+
+            // Fallback, wenn window.open blockiert wird: klarer Knopf zum Öffnen.
+            _pdfLinkFallback(url, doc, fileName, title) {
+                const overlay = document.createElement('div');
+                overlay.className = 'pdf-preview-overlay';
+                overlay.innerHTML = `
+                    <div class="pdf-link-box">
+                        <div class="pdf-link-title">${escapeHtml(title || 'Angebot')}</div>
+                        <a class="btn btn-primary" href="${url}" target="_blank" rel="noopener" data-act="open" style="width:100%;justify-content:center;">📄 Angebot öffnen</a>
+                        <button class="btn btn-outline" data-act="download" style="width:100%;justify-content:center;">${icon('pdf')} Als Datei speichern</button>
+                        <button class="btn btn-outline" data-act="share" style="width:100%;justify-content:center;">📤 Teilen (WhatsApp, E-Mail)</button>
+                        <button class="btn btn-outline" data-act="close" style="width:100%;justify-content:center;">Schließen</button>
+                    </div>`;
+                document.body.appendChild(overlay);
+                const close = () => { overlay.remove(); setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000); };
+                overlay.querySelector('[data-act="download"]').addEventListener('click', () => doc.save(fileName));
+                overlay.querySelector('[data-act="share"]').addEventListener('click', () => sharePdfDoc(doc, fileName, title));
+                overlay.querySelector('[data-act="close"]').addEventListener('click', close);
                 overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
             },
 
