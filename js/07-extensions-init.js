@@ -2157,6 +2157,13 @@
                     });
                 });
 
+                // Menü-Gruppen auf-/zuklappen
+                document.querySelectorAll('.nav-group-head').forEach(head => {
+                    head.addEventListener('click', () => {
+                        head.closest('.nav-group')?.classList.toggle('open');
+                    });
+                });
+
                 document.getElementById('syncBtn').addEventListener('click', async () => {
                     if (!navigator.onLine) {
                         showToast('Keine Internetverbindung.', 'error');
@@ -2187,7 +2194,12 @@
 
                 document.querySelectorAll('.nav-item[data-page]').forEach(item => {
                     item.classList.remove('active');
-                    if (item.dataset.page === page) item.classList.add('active');
+                    if (item.dataset.page === page) {
+                        item.classList.add('active');
+                        // Falls die aktive Seite in einer Gruppe liegt, Gruppe aufklappen
+                        const grp = item.closest('.nav-group');
+                        if (grp) grp.classList.add('open');
+                    }
                 });
 
                 document.getElementById('sidebar').classList.remove('open');
