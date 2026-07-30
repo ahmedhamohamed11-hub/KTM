@@ -329,8 +329,8 @@ body[data-view="reader"] #view-reader {
 
 .stage-canvas {
   flex: 1; display: grid; place-items: center;
-  padding: clamp(18px, 3vw, 40px);
-  overflow: hidden; position: relative;
+  padding: clamp(6px, 1.5vw, 40px);
+  overflow: auto; position: relative;
 }
 .page-frame {
   position: relative; max-width: 100%; max-height: 100%;
@@ -340,9 +340,16 @@ body[data-view="reader"] #view-reader {
   cursor: zoom-in;
 }
 .page-frame img {
-  width: auto; height: auto; max-width: 100%;
-  max-height: calc(100vh - var(--header-h) - 52px - clamp(36px,6vw,80px));
+  width: 100%; height: auto; max-width: 100%;
   image-rendering: -webkit-optimize-contrast;
+}
+/* Auf größeren Schirmen (Tablet/Desktop) die Höhe begrenzen, damit die
+   Seite nicht riesig wird; auf dem Handy volle Breite nutzen. */
+@media (min-width: 760px) {
+  .page-frame img {
+    width: auto;
+    max-height: calc(100vh - var(--header-h) - 52px - clamp(36px,6vw,80px));
+  }
 }
 .page-frame.flip-next { animation: flipNext .42s var(--ease); }
 .page-frame.flip-prev { animation: flipPrev .42s var(--ease); }
@@ -511,6 +518,19 @@ body[data-view="reader"] #view-reader {
 </style>
 </head>
 <body data-view="home">
+<style>
+/* Wenn der Katalog eingebettet in der KTM-App läuft (iframe), die Seiten
+   groß und ohne doppelten Leerraum zeigen. */
+html.embedded { --header-h: 0px; }
+html.embedded .reader-stage { min-height: auto; }
+html.embedded .stage-canvas { padding: 4px; }
+html.embedded .app-header { position: sticky; top: 0; }
+html.embedded .stage-bar { top: 0; }
+</style>
+<script>
+  // Erkennen, ob wir in einem Rahmen (iframe) der KTM-App laufen.
+  try { if (window.self !== window.top) document.documentElement.classList.add('embedded'); } catch (e) { document.documentElement.classList.add('embedded'); }
+</script>
 
 <!-- ============================== HEADER ============================== -->
 <header class="app-header">
