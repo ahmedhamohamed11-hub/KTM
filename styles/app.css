@@ -1213,3 +1213,20 @@
         .pm-ek-profit { font-weight: 700; }
         .pm-ek-profit.pos { color: var(--success); }
         .pm-ek-profit.neg { color: var(--danger); }
+
+        /* ===== To-do-Zentrale auf dem Dashboard ===== */
+        .todo-center { background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 18px; box-shadow: var(--shadow-sm); }
+        .todo-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 10px; }
+        .todo-item { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: var(--radius); cursor: pointer; transition: background var(--transition); margin-bottom: 6px; border-left: 3px solid transparent; }
+        .todo-item:last-child { margin-bottom: 0; }
+        .todo-item:hover { background: var(--bg-tertiary); }
+        .todo-item.over { background: var(--danger-light); border-left-color: var(--danger); }
+        .todo-item.soon { background: var(--warning-light); border-left-color: var(--warning); }
+        .todo-item.info { background: var(--accent-light); border-left-color: var(--accent); }
+        .todo-ico { font-size: 22px; flex: 0 0 auto; }
+        .todo-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+        .todo-txt strong { font-size: 14.5px; }
+        .todo-txt span { font-size: 12px; color: var(--text-secondary); }
+        .todo-arrow { font-size: 22px; color: var(--text-muted); flex: 0 0 auto; }
+        .todo-clear { display: flex; align-items: center; gap: 12px; }
+        .todo-clear .todo-txt strong { color: var(--success); }

@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v50</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v51</span></div>
                         </div>
                     </div>`;
             })();
@@ -284,22 +284,44 @@
                     });
                 }
 
+                // Angebote ohne Antwort (verschickt vor > 7 Tagen, noch offen)
+                const offenStatus = (s) => !['Auftrag erhalten', 'Abgelehnt', 'Storniert'].includes(s || 'Angebot offen');
+                const sevenAgo = new Date(); sevenAgo.setDate(sevenAgo.getDate() - 7);
+                const pendingOffers = offers.filter(o => offenStatus(o.status) && new Date(o.createdAt || 0) < sevenAgo);
+
+                // Offene Anzahlungen / Restbeträge (vereinbart − Anzahlung > 0, wenn Anzahlung erfasst)
+                const openDeposits = offers.filter(o => {
+                    const dep = Number(o.depositAmount) || 0;
+                    if (dep <= 0) return false;
+                    const agreed = (o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : Number(o.totalPrice || 0);
+                    return (agreed - dep) > 0.5;
+                });
+                const openDepositsSum = openDeposits.reduce((s, o) => {
+                    const dep = Number(o.depositAmount) || 0;
+                    const agreed = (o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : Number(o.totalPrice || 0);
+                    return s + Math.max(0, agreed - dep);
+                }, 0);
+
+                // To-do-Zeilen zusammenstellen (nur was wirklich ansteht)
+                const todos = [];
+                if (overdue.length) todos.push({ cls: 'over', icon: '⚠️', title: `${overdue.length} überfällige Rechnung${overdue.length !== 1 ? 'en' : ''}`, sub: `offen ${formatCurrency(overdueSum)} · zum Mahnen tippen`, link: 'invoices' });
+                if (pendingOffers.length) todos.push({ cls: 'soon', icon: '📨', title: `${pendingOffers.length} Angebot${pendingOffers.length !== 1 ? 'e' : ''} ohne Antwort`, sub: 'seit über 1 Woche verschickt · nachhaken', link: 'offers' });
+                if (mntOver.length || mntDue.length) todos.push({ cls: mntOver.length ? 'over' : 'soon', icon: '🔧', title: mntOver.length ? `${mntOver.length} Wartung${mntOver.length !== 1 ? 'en' : ''} überfällig` : `${mntDue.length} Wartung${mntDue.length !== 1 ? 'en' : ''} fällig`, sub: 'zum Öffnen tippen', link: 'maintenance' });
+                if (fgasOver || fgasDue) todos.push({ cls: fgasOver ? 'over' : 'soon', icon: '🧊', title: fgasOver ? `${fgasOver} F-Gase-Prüfung${fgasOver !== 1 ? 'en' : ''} überfällig` : `${fgasDue} F-Gase-Prüfung${fgasDue !== 1 ? 'en' : ''} bald fällig`, sub: 'Dichtheitsprüfung · tippen für Anlagen', link: 'equipment' });
+                if (openDeposits.length) todos.push({ cls: 'info', icon: '💶', title: `${openDeposits.length} offene${openDeposits.length !== 1 ? '' : 'r'} Restbetrag${openDeposits.length !== 1 ? '¨e' : ''}`.replace('¨e', 'e'), sub: `noch ${formatCurrency(openDepositsSum)} ausständig · tippen`, link: 'offers' });
+
                 contentArea.innerHTML = `
-                    ${overdue.length ? `<div class="overdue-banner" onclick="app.navigate('invoices')">
-                        <span class="overdue-icon">⚠️</span>
-                        <div><strong>${overdue.length} überfällige Rechnung${overdue.length !== 1 ? 'en' : ''}</strong> · offen ${formatCurrency(overdueSum)}<br>
-                        <span style="font-size:12px;opacity:0.85;">Tippen, um die Rechnungen zu öffnen und zu mahnen</span></div>
-                    </div>` : ''}
-                    ${(mntOver.length || mntDue.length) ? `<div class="dash-banner ${mntOver.length ? 'over' : 'soon'}" onclick="app.navigate('maintenance')">
-                        <span class="dash-banner-icon">🔧</span>
-                        <div><strong>${mntOver.length ? mntOver.length + ' Wartung' + (mntOver.length !== 1 ? 'en' : '') + ' überfällig' : mntDue.length + ' Wartung' + (mntDue.length !== 1 ? 'en' : '') + ' fällig'}</strong><br>
-                        <span style="font-size:12px;opacity:0.85;">Tippen, um die Wartungen zu öffnen</span></div>
-                    </div>` : ''}
-                    ${(fgasOver || fgasDue) ? `<div class="dash-banner ${fgasOver ? 'over' : 'soon'}" onclick="app.navigate('equipment')">
-                        <span class="dash-banner-icon">🧊</span>
-                        <div><strong>${fgasOver ? fgasOver + ' F-Gase-Prüfung' + (fgasOver !== 1 ? 'en' : '') + ' überfällig' : fgasDue + ' F-Gase-Prüfung' + (fgasDue !== 1 ? 'en' : '') + ' bald fällig'}</strong><br>
-                        <span style="font-size:12px;opacity:0.85;">Dichtheitsprüfung nach F-Gase-Verordnung · tippen für Anlagen</span></div>
-                    </div>` : ''}
+                    ${todos.length ? `<div class="todo-center">
+                        <div class="todo-head">Das steht an</div>
+                        ${todos.map(t => `<div class="todo-item ${t.cls}" onclick="app.navigate('${t.link}')">
+                            <span class="todo-ico">${t.icon}</span>
+                            <div class="todo-txt"><strong>${t.title}</strong><span>${t.sub}</span></div>
+                            <span class="todo-arrow">›</span>
+                        </div>`).join('')}
+                    </div>` : `<div class="todo-center todo-clear">
+                        <span class="todo-ico">✅</span>
+                        <div class="todo-txt"><strong>Alles erledigt</strong><span>Keine offenen Rechnungen, Wartungen oder Angebote.</span></div>
+                    </div>`}
                     <div class="stat-grid">
                         <div class="stat-card" onclick="app.navigate('customers')" style="cursor:pointer;">
                             <div class="stat-ico ico-teal">${icon('users')}</div>
