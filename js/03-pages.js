@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v45</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v46</span></div>
                         </div>
                     </div>`;
             })();
@@ -1187,12 +1187,13 @@
                                         <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong></td>
                                         <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}${proj ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(proj.title || '')}</div>` : ''}</td>
                                         <td>${formatDate(o.createdAt)}</td>
-                                        <td><strong>${formatCurrency(o.totalPrice || 0)}</strong></td>
+                                        <td><strong>${formatCurrency((o.agreedPrice != null && o.agreedPrice !== '') ? o.agreedPrice : (o.totalPrice || 0))}</strong>${(o.agreedPrice != null && o.agreedPrice !== '' && Number(o.agreedPrice) !== Number(o.totalPrice)) ? `<div style="font-size:11px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(o.totalPrice || 0)}</div>` : ''}${(Number(o.depositAmount) > 0) ? `<div style="font-size:11px;color:var(--success);">Anz. ${formatCurrency(o.depositAmount)} · Rest ${formatCurrency(Math.max(0, ((o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : Number(o.totalPrice || 0)) - Number(o.depositAmount)))}</div>` : ''}</td>
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             <button class="btn btn-sm btn-primary" onclick="app.exportOfferPDF(${idJS(o.id)})">${icon('pdf')} PDF</button>
                                             <button class="btn btn-sm btn-outline" onclick="app.exportOfferPDF(${idJS(o.id)}, true)" title="Per WhatsApp, E-Mail o. Ä. teilen">📤 Teilen</button>
                                             <button class="btn btn-sm btn-outline" title="Variante mit anderer Klimamarke – alles andere bleibt gleich" onclick="app.createOfferVariant(${idJS(o.id)})">⇄ Variante</button>
+                                            <button class="btn btn-sm btn-outline" title="Anzahlung & vereinbarter Preis" onclick="app.openOfferPayment(${idJS(o.id)})">💶 Zahlung</button>
                                             <button class="btn btn-sm btn-outline" title="Rechnung aus diesem Angebot erzeugen" onclick="app.createInvoiceFromOffer(${idJS(o.id)})">🧾 Rechnung</button>
                                             <button class="btn btn-sm btn-danger" onclick="app.deleteOffer(${idJS(o.id)})">${icon('trash')}</button>
                                         </td>

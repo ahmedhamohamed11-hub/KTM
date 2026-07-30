@@ -1180,3 +1180,11 @@
         @media (min-width: 900px) {
             .katalog-frame-wrap { left: var(--sidebar-w, 240px); }
         }
+
+        /* ===== Anzahlung / vereinbarter Preis ===== */
+        .pay-summary { background: var(--bg-tertiary); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 14px; }
+        .pay-result { background: var(--bg-tertiary); border-radius: var(--radius-lg); padding: 12px 14px; margin-top: 8px; }
+        .pay-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 14px; }
+        .pay-row span { color: var(--text-secondary); }
+        .pay-rest { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 10px; font-size: 16px; }
+        .pay-rest strong { color: var(--accent); }

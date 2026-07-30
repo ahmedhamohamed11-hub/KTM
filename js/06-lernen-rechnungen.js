@@ -154,6 +154,57 @@
         }
 
         const invoiceExtensions = {
+            // ===== Anzahlung & vereinbarter Preis =====
+            async openOfferPayment(offerId) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) return;
+                const angebotspreis = Number(offer.totalPrice) || 0;
+                const agreed = (offer.agreedPrice != null && offer.agreedPrice !== '') ? Number(offer.agreedPrice) : angebotspreis;
+                const deposit = Number(offer.depositAmount) || 0;
+                const rest = Math.max(0, agreed - deposit);
+
+                showModal('Anzahlung & vereinbarter Preis', `
+                    <div class="pay-summary">
+                        <div class="pay-row"><span>Angebotspreis</span><strong>${formatCurrency(angebotspreis)}</strong></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Vereinbarter Preis (falls telefonisch anders ausgemacht)</label>
+                        <input type="number" step="0.01" id="payAgreed" value="${(offer.agreedPrice != null && offer.agreedPrice !== '') ? offer.agreedPrice : ''}" placeholder="${angebotspreis.toFixed(2)}">
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Leer lassen = Angebotspreis gilt.</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Anzahlung erhalten (€)</label><input type="number" step="0.01" id="payDeposit" value="${deposit || ''}" placeholder="0,00"></div>
+                        <div class="form-group"><label>Datum der Anzahlung</label><input type="date" id="payDepositDate" value="${offer.depositDate || new Date().toISOString().slice(0, 10)}"></div>
+                    </div>
+                    <div class="pay-result">
+                        <div class="pay-row"><span>Vereinbarter Preis</span><strong id="payOutAgreed">${formatCurrency(agreed)}</strong></div>
+                        <div class="pay-row"><span>− Anzahlung</span><strong id="payOutDeposit">${formatCurrency(deposit)}</strong></div>
+                        <div class="pay-row pay-rest"><span>Rest offen</span><strong id="payOutRest">${formatCurrency(rest)}</strong></div>
+                    </div>
+                `, async () => {
+                    const ag = document.getElementById('payAgreed').value.trim();
+                    offer.agreedPrice = ag === '' ? '' : parseFloat(ag);
+                    offer.depositAmount = parseFloat(document.getElementById('payDeposit').value) || 0;
+                    offer.depositDate = document.getElementById('payDepositDate').value || '';
+                    await db.put('offers', offer);
+                    showToast('Zahlung gespeichert.', 'success');
+                    if (this.currentPage === 'offers') this.navigate('offers');
+                });
+
+                setTimeout(() => {
+                    const recalc = () => {
+                        const ag = document.getElementById('payAgreed').value.trim();
+                        const agreedVal = ag === '' ? angebotspreis : (parseFloat(ag) || 0);
+                        const dep = parseFloat(document.getElementById('payDeposit').value) || 0;
+                        document.getElementById('payOutAgreed').textContent = formatCurrency(agreedVal);
+                        document.getElementById('payOutDeposit').textContent = formatCurrency(dep);
+                        document.getElementById('payOutRest').textContent = formatCurrency(Math.max(0, agreedVal - dep));
+                    };
+                    document.getElementById('payAgreed')?.addEventListener('input', recalc);
+                    document.getElementById('payDeposit')?.addEventListener('input', recalc);
+                }, 30);
+            },
+
             // Rechnung automatisch aus Angebot erzeugen
             async createInvoiceFromOffer(offerId) {
                 const offer = await db.get('offers', offerId);
