@@ -3024,6 +3024,44 @@
                 this.navigate('materials');
             },
 
+            // ===== Händlerrabatte je Marke =====
+            async openDealerDiscounts() {
+                const raw = await getSetting('dealerDiscounts', '');
+                let map = {};
+                try { map = raw ? JSON.parse(raw) : {}; } catch (e) { map = {}; }
+                // Marken aus dem Materialkatalog sammeln + gängige vorschlagen
+                const mats = await db.getAll('materials');
+                const brands = [...new Set([...Object.keys(map), ...mats.map(m => m.manufacturer).filter(Boolean), 'LG', 'Daikin', 'Samsung', 'Hisense'])].sort();
+
+                showModal('Händlerrabatte je Marke', `
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+                        Trag hier ein, wie viel <strong>Rabatt auf den Listenpreis</strong> du bei welcher Marke bekommst. Die App rechnet daraus automatisch deinen <strong>Einkaufspreis</strong> und <strong>Gewinn</strong>.
+                    </div>
+                    <div class="dd-list">
+                        ${brands.map(b => `
+                            <div class="dd-row">
+                                <label>${escapeHtml(b)}</label>
+                                <div class="dd-input"><input type="number" min="0" max="100" step="1" data-brand="${escapeHtml(b)}" value="${map[b] != null ? map[b] : ''}" placeholder="0"> <span>%</span></div>
+                            </div>`).join('')}
+                    </div>
+                    <div class="form-group" style="margin-top:12px;">
+                        <label>Weitere Marke hinzufügen</label>
+                        <input type="text" id="ddNewBrand" placeholder="Marke eingeben und speichern">
+                    </div>
+                `, async () => {
+                    const newMap = {};
+                    document.querySelectorAll('.dd-row input[data-brand]').forEach(inp => {
+                        const v = parseFloat(inp.value);
+                        if (v > 0) newMap[inp.dataset.brand] = v;
+                    });
+                    const nb = document.getElementById('ddNewBrand').value.trim();
+                    if (nb && !(nb in newMap)) newMap[nb] = 0;
+                    await setSetting('dealerDiscounts', JSON.stringify(newMap));
+                    window.__ktmDealerDiscounts = newMap;
+                    showToast('Händlerrabatte gespeichert.', 'success');
+                });
+            },
+
             async openCustomerModal(id = null) {
                 const customer = id ? await db.get('customers', id) : null;
                 const modal = showModal(
@@ -3317,8 +3355,11 @@
                             </select>
                         </div>
                         <div class="form-row">
-                            <div class="form-group"><label>Einkaufspreis (€)</label><input type="number" id="matPurchasePrice" step="0.01" value="${mat?.purchasePrice || 0}"></div>
-                            <div class="form-group"><label>Verkaufspreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"></div>
+                            <div class="form-group"><label>Verkaufspreis / Listenpreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"></div>
+                            <div class="form-group"><label>Händlerrabatt (%)</label><input type="number" id="matDiscount" step="1" min="0" max="100" value="${mat?.dealerDiscount != null ? mat.dealerDiscount : ''}" placeholder="auto"></div>
+                        </div>
+                        <div class="form-group"><label>Einkaufspreis (€)</label><input type="number" id="matPurchasePrice" step="0.01" value="${mat?.purchasePrice || 0}">
+                            <div id="matProfitBox" class="mat-profit"></div>
                         </div>
                         <div class="form-group"><label>Beschreibung (erscheint im Angebot)</label><textarea id="matDescription" rows="2">${escapeHtml(mat?.description || '')}</textarea></div>
                         <div class="form-group"><label>Produktbilder (aus Galerie, mehrere möglich)</label>
@@ -3342,6 +3383,7 @@
                             unit: overlay.querySelector('#matUnit').value.trim() || 'Stk',
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
                             sellingPrice: parseFloat(overlay.querySelector('#matSellingPrice').value) || 0,
+                            dealerDiscount: overlay.querySelector('#matDiscount').value.trim() === '' ? null : (parseFloat(overlay.querySelector('#matDiscount').value) || 0),
                             description: overlay.querySelector('#matDescription').value.trim(),
                             notes: overlay.querySelector('#matNotes').value.trim(),
                             images: images,
@@ -3375,6 +3417,44 @@
                     });
                 };
                 renderGallery();
+                // Händlerrabatt -> Einkaufspreis + Gewinn automatisch
+                (async () => {
+                    const discounts = await getDealerDiscounts();
+                    const sellEl = modal.querySelector('#matSellingPrice');
+                    const discEl = modal.querySelector('#matDiscount');
+                    const purchEl = modal.querySelector('#matPurchasePrice');
+                    const box = modal.querySelector('#matProfitBox');
+                    const brandOf = () => (modal.querySelector('#matManufacturer')?.value || mat?.manufacturer || '').trim();
+                    const effectiveDiscount = () => {
+                        const manual = discEl.value.trim();
+                        if (manual !== '') return parseFloat(manual) || 0;
+                        const b = brandOf();
+                        return discounts[b] != null ? discounts[b] : null; // null = kein Marken-Rabatt hinterlegt
+                    };
+                    const recalc = (fromDiscount) => {
+                        const sell = parseFloat(sellEl.value) || 0;
+                        const disc = effectiveDiscount();
+                        // Wenn ein Rabatt greift, EK automatisch berechnen
+                        if (fromDiscount && disc != null) {
+                            purchEl.value = (sell * (1 - disc / 100)).toFixed(2);
+                        }
+                        const purch = parseFloat(purchEl.value) || 0;
+                        const profit = sell - purch;
+                        const marginPct = sell > 0 ? (profit / sell * 100) : 0;
+                        const discInfo = disc != null ? `Rabatt ${disc}%${discEl.value.trim() === '' ? ' (aus Marke ' + escapeHtml(brandOf()) + ')' : ''}` : 'kein Rabatt hinterlegt';
+                        box.innerHTML = `<div class="mat-profit-in">
+                            <span>${discInfo}</span>
+                            <span class="mat-profit-val ${profit >= 0 ? 'pos' : 'neg'}">Gewinn: ${formatCurrency(profit)} (${marginPct.toFixed(0)}%)</span>
+                        </div>`;
+                    };
+                    // Auto-EK beim Öffnen, wenn Rabatt greift und noch kein EK gesetzt
+                    if ((!mat || !(Number(mat.purchasePrice) > 0)) && effectiveDiscount() != null) recalc(true);
+                    else recalc(false);
+                    sellEl.addEventListener('input', () => recalc(true));
+                    discEl.addEventListener('input', () => recalc(true));
+                    purchEl.addEventListener('input', () => recalc(false));
+                    modal.querySelector('#matManufacturer')?.addEventListener('input', () => recalc(true));
+                })();
                 modal.querySelector('#matImage').addEventListener('change', async (e) => {
                     const files = Array.from(e.target.files || []);
                     if (!files.length) return;

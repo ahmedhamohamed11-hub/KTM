@@ -820,6 +820,15 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             return /^\d+$/.test(value) ? Number(value) : value;
         }
 
+        async function getDealerDiscounts() {
+            if (window.__ktmDealerDiscounts) return window.__ktmDealerDiscounts;
+            const raw = await getSetting('dealerDiscounts', '');
+            let map = {};
+            try { map = raw ? JSON.parse(raw) : {}; } catch (e) { map = {}; }
+            window.__ktmDealerDiscounts = map;
+            return map;
+        }
+
         async function getSetting(key, fallback = '') {
             const rec = await db.get('settings', key);
             return rec?.value ?? fallback;

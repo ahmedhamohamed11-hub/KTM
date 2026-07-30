@@ -1188,3 +1188,16 @@
         .pay-row span { color: var(--text-secondary); }
         .pay-rest { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 10px; font-size: 16px; }
         .pay-rest strong { color: var(--accent); }
+
+        /* ===== Händlerrabatt / Gewinn ===== */
+        .mat-profit { margin-top: 8px; }
+        .mat-profit-in { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--bg-tertiary); border-radius: var(--radius); padding: 8px 12px; font-size: 13px; }
+        .mat-profit-in > span:first-child { color: var(--text-muted); }
+        .mat-profit-val { font-weight: 700; }
+        .mat-profit-val.pos { color: var(--success); }
+        .mat-profit-val.neg { color: var(--danger); }
+        .dd-list { display: flex; flex-direction: column; gap: 8px; }
+        .dd-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .dd-row label { font-weight: 600; font-size: 14px; }
+        .dd-input { display: flex; align-items: center; gap: 6px; }
+        .dd-input input { width: 90px; }

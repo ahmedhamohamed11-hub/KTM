@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v46</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v47</span></div>
                         </div>
                     </div>`;
             })();
@@ -1367,6 +1367,10 @@
                         <div class="nav-card" onclick="app.openFieldSettings()">
                             <div class="card-icon green">🔧</div>
                             <div><div class="card-title">Felder &amp; Kategorien</div><div class="card-subtitle">Anpassbare Felder</div></div>
+                        </div>
+                        <div class="nav-card" onclick="app.openDealerDiscounts()">
+                            <div class="card-icon teal">🏷️</div>
+                            <div><div class="card-title">Händlerrabatte</div><div class="card-subtitle">EK-Rabatt je Marke (LG, Daikin ...)</div></div>
                         </div>
                         <div class="nav-card" onclick="app.confirmImportKatalog()">
                             <div class="card-icon teal">📥</div>
