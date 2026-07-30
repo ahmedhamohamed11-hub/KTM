@@ -2793,8 +2793,20 @@
                 else { doc.save(fname); showToast('Materialliste als PDF erstellt.', 'success'); }
             },
 
-            // ===== Digitaler Blätter-Katalog (eigene Seitenbilder) =====
+            // ===== Digitaler Blätter-Katalog =====
             async renderKatalog(openBrand) {
+                const area = document.getElementById('contentArea');
+                // Der fertige, professionell gestaltete Katalog wird in einem Rahmen
+                // (iframe) geöffnet. Er bringt seine eigenen Bilder und sein Design mit.
+                area.innerHTML = `
+                    <div class="katalog-frame-wrap">
+                        <iframe src="katalog.html" class="katalog-frame" title="Produktkatalog" loading="lazy"></iframe>
+                    </div>`;
+            },
+
+            // Alte Upload-Katalog-Funktionen (eigene Seitenbilder) bleiben verfügbar,
+            // werden aktuell aber nicht über das Menü aufgerufen.
+            async renderKatalogUpload(openBrand) {
                 const area = document.getElementById('contentArea');
                 const pages = (await db.getAll('catalogPages')) || [];
                 // nach Marke gruppieren, innerhalb nach Reihenfolge/Seitennummer
