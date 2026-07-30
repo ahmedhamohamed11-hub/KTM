@@ -1598,10 +1598,11 @@
 
                 const custLines = [];
                 if (customer) {
-                    custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
-                    if (customer.company) custLines.push(customer.company);
-                    if (customer.street) custLines.push(customer.street);
-                    if (customer.city) custLines.push(customer.city);
+                    const nm = (typeof customerDisplayName === 'function') ? customerDisplayName(customer) : `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
+                    if (nm && nm !== '–') custLines.push(nm);
+                    if (customer.company && (customer.firstName || customer.lastName)) custLines.push(customer.company);
+                    if (customer.street) custLines.push(`${customer.street}${customer.houseNumber ? ' ' + customer.houseNumber : ''}`);
+                    if (customer.zip || customer.city) custLines.push(`${customer.zip || ''} ${customer.city || ''}`.trim());
                     if (customer.phone) custLines.push(customer.phone);
                 }
                 if (custLines.length === 0) custLines.push('–');
@@ -3231,8 +3232,16 @@
                     id ? 'Kunde bearbeiten' : 'Neuer Kunde',
                     `
                         <div class="form-row">
-                            <div class="form-group"><label>Vorname *</label><input type="text" id="custFirstName" value="${escapeHtml(customer?.firstName || '')}"></div>
-                            <div class="form-group"><label>Nachname *</label><input type="text" id="custLastName" value="${escapeHtml(customer?.lastName || '')}"></div>
+                            <div class="form-group"><label>Anrede</label>
+                                <select id="custSalutation">
+                                    ${['', 'Herr', 'Frau', 'Divers', 'Firma'].map(s => `<option value="${s}" ${(customer?.salutation || '') === s ? 'selected' : ''}>${s || '— keine —'}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group"><label>Titel (optional)</label><input type="text" id="custTitle" value="${escapeHtml(customer?.title || '')}" placeholder="z. B. Dr., Ing."></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Vorname</label><input type="text" id="custFirstName" value="${escapeHtml(customer?.firstName || '')}"></div>
+                            <div class="form-group"><label>Nachname</label><input type="text" id="custLastName" value="${escapeHtml(customer?.lastName || '')}"></div>
                         </div>
                         <div class="form-group"><label>Firma (optional)</label><input type="text" id="custCompany" value="${escapeHtml(customer?.company || '')}"></div>
                         <div class="form-row">
@@ -3256,6 +3265,8 @@
                     `,
                     async (overlay) => {
                         const data = {
+                            salutation: overlay.querySelector('#custSalutation').value,
+                            title: overlay.querySelector('#custTitle').value.trim(),
                             firstName: overlay.querySelector('#custFirstName').value.trim(),
                             lastName: overlay.querySelector('#custLastName').value.trim(),
                             company: overlay.querySelector('#custCompany').value.trim(),
@@ -3268,8 +3279,10 @@
                             notes: overlay.querySelector('#custNotes').value.trim(),
                             status: overlay.querySelector('#custStatus').value,
                         };
-                        if (!data.firstName || !data.lastName) {
-                            showToast('Vor- und Nachname sind Pflichtfelder.', 'error');
+                        // Nicht mehr alle Felder Pflicht – es muss nur irgendeine
+                        // brauchbare Angabe da sein, damit kein leerer Kunde entsteht.
+                        if (!data.firstName && !data.lastName && !data.company && !data.phone && !data.email) {
+                            showToast('Bitte wenigstens Name, Firma oder Telefon angeben.', 'error');
                             return;
                         }
                         if (id) {

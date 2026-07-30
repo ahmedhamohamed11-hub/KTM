@@ -835,6 +835,19 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             return { gross, net, posDiscount, rate, discountEnabled, globalDiscount, netAfter, vatRate, vatAmount, total };
         }
 
+        // Baut den Anzeigenamen eines Kunden inkl. Anrede + Titel zusammen.
+        // "Herr Dr. Max Mustermann" – Firma-Kunden zeigen die Firma.
+        function customerDisplayName(c, opts = {}) {
+            if (!c) return opts.fallback || '–';
+            const nameParts = [c.salutation && c.salutation !== 'Firma' ? c.salutation : '', c.title || '', c.firstName || '', c.lastName || ''].filter(Boolean);
+            const personName = nameParts.join(' ').trim();
+            if (personName) return personName;
+            if (c.company) return c.company;
+            if (c.phone) return c.phone;
+            return opts.fallback || '–';
+        }
+        window.customerDisplayName = customerDisplayName;
+
         function parseId(value) {
             if (value === null || value === undefined || value === '') return null;
             return /^\d+$/.test(value) ? Number(value) : value;

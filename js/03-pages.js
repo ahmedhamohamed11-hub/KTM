@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v55</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v56</span></div>
                         </div>
                     </div>`;
             })();
@@ -493,7 +493,7 @@
                             <tbody>
                                 ${filtered.map(c => `
                                     <tr>
-                                        <td><strong>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</strong>${c.company ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(c.company)}</div>` : ''}</td>
+                                        <td><strong>${escapeHtml(customerDisplayName(c))}</strong>${c.company && (c.firstName||c.lastName) ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(c.company)}</div>` : ''}</td>
                                         <td>${c.phone ? `<a href="tel:${escapeHtml(String(c.phone).replace(/\s+/g, ''))}" class="contact-link">📞 ${escapeHtml(c.phone)}</a>` : '-'}${c.email ? `<div><a href="mailto:${escapeHtml(c.email)}" class="contact-link" style="font-size:12px;">✉️ ${escapeHtml(c.email)}</a></div>` : ''}</td>
                                         <td>${[c.street, c.city].filter(Boolean).length ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([c.street, c.city].filter(Boolean).join(', '))}" target="_blank" rel="noopener" class="contact-link" title="Navigation starten">🧭 ${escapeHtml([c.street, c.city].filter(Boolean).join(', '))}</a>` : '-'}</td>
                                         <td>${projCountByCust[String(c.id)] || 0}</td>
@@ -1207,7 +1207,7 @@
                                     const cust = proj ? customers.find(c => String(c.id) === String(proj.customerId)) : null;
                                     return `<tr>
                                         <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong></td>
-                                        <td>${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : '-')}${proj ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(proj.title || '')}</div>` : ''}</td>
+                                        <td>${escapeHtml(cust ? customerDisplayName(cust) : '-')}${proj ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(proj.title || '')}</div>` : ''}</td>
                                         <td>${formatDate(o.createdAt)}</td>
                                         <td><strong>${formatCurrency((o.agreedPrice != null && o.agreedPrice !== '') ? o.agreedPrice : (o.totalPrice || 0))}</strong>${(o.agreedPrice != null && o.agreedPrice !== '' && Number(o.agreedPrice) !== Number(o.totalPrice)) ? `<div style="font-size:11px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(o.totalPrice || 0)}</div>` : ''}${(Number(o.depositAmount) > 0) ? `<div style="font-size:11px;color:var(--success);">Anz. ${formatCurrency(o.depositAmount)} · Rest ${formatCurrency(Math.max(0, ((o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : Number(o.totalPrice || 0)) - Number(o.depositAmount)))}</div>` : ''}</td>
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
