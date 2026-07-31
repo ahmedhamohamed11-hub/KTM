@@ -1740,6 +1740,20 @@
                 doc.text(formatCurrency(_R.total), pw - mx - 4, fy + 2.3, { align: 'right' });
                 fy += 15;
 
+                // Vereinbarter Preis (telefonisch abweichend vom Angebot)
+                const _agreed = (offer.agreedPrice != null && offer.agreedPrice !== '') ? Number(offer.agreedPrice) : null;
+                if (_agreed != null && Math.abs(_agreed - _R.total) > 0.005) {
+                    doc.setFillColor(232, 245, 243);
+                    doc.roundedRect(boxX, fy - 5.5, boxW, 12.5, 2.5, 2.5, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(11);
+                    doc.setTextColor(...PDF_TEAL);
+                    doc.text('Vereinbarter Preis', boxX + 4, fy + 2.3);
+                    doc.text(formatCurrency(_agreed), pw - mx - 4, fy + 2.3, { align: 'right' });
+                    fy += 15;
+                    doc.setTextColor(0, 0, 0);
+                }
+
                 // Zahlungshinweis + Zusatzfelder des Projekts
                 doc.setFont('helvetica', 'italic');
                 doc.setFontSize(8.5);
@@ -4522,6 +4536,20 @@ async exportOfferPDF(offerId) {
     doc.setTextColor(255, 255, 255);
     doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
     doc.text(formatCurrency(_R2.total), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
+    finalY += 15;
+
+    // Vereinbarter Preis (telefonisch abweichend vom Angebot)
+    const _agreed2 = (offer.agreedPrice != null && offer.agreedPrice !== '') ? Number(offer.agreedPrice) : null;
+    if (_agreed2 != null && Math.abs(_agreed2 - _R2.total) > 0.005) {
+        doc.setFillColor(232, 245, 243);
+        doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11.5);
+        doc.setTextColor(...accentColor);
+        doc.text('Vereinbarter Preis', boxX + 4, finalY + 2);
+        doc.text(formatCurrency(_agreed2), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
+    }
 
     function drawFooter() {
         const ph = doc.internal.pageSize.getHeight();

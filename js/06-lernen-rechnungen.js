@@ -163,14 +163,14 @@
                 const deposit = Number(offer.depositAmount) || 0;
                 const rest = Math.max(0, agreed - deposit);
 
-                showModal('Anzahlung & vereinbarter Preis', `
+                showModal('Preis & Anzahlung', `
                     <div class="pay-summary">
-                        <div class="pay-row"><span>Angebotspreis</span><strong>${formatCurrency(angebotspreis)}</strong></div>
+                        <div class="pay-row"><span>Ursprünglicher Angebotspreis</span><strong>${formatCurrency(angebotspreis)}</strong></div>
                     </div>
                     <div class="form-group">
-                        <label>Vereinbarter Preis (falls telefonisch anders ausgemacht)</label>
+                        <label>Vereinbarter Preis (telefonisch ausgemacht)</label>
                         <input type="number" step="0.01" id="payAgreed" value="${(offer.agreedPrice != null && offer.agreedPrice !== '') ? offer.agreedPrice : ''}" placeholder="${angebotspreis.toFixed(2)}">
-                        <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Leer lassen = Angebotspreis gilt.</div>
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Erscheint dann im Angebot als „Vereinbarter Preis". Leer lassen = Angebotspreis gilt.</div>
                     </div>
                     <div class="form-row">
                         <div class="form-group"><label>Anzahlung erhalten (€)</label><input type="number" step="0.01" id="payDeposit" value="${deposit || ''}" placeholder="0,00"></div>
