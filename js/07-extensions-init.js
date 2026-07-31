@@ -94,12 +94,21 @@
                         if (room) a.rooms.add(room.name || 'Raum');
                     }
                     const fmtQty = q => (Math.round(q * 100) / 100).toString().replace('.', ',');
-                    const rows = [...agg.values()].map((a, i) => {
+                    // Projekt-Zeilen als Array (Index statt data-Attribut -> keine Escaping-Probleme mit " in Größen)
+                    const projLineList = [...agg.values()].map(a => {
                         const line = `${fmtQty(a.qty)} ${a.unit} ${a.name}${a.size ? ' ' + a.size : ''}`;
                         const roomInfo = a.rooms.size ? ` [${[...a.rooms].join(', ')}]` : '';
+                        return { line, full: line + roomInfo };
+                    });
+                    const currentText = (modal.querySelector('#ordItems')?.value || '');
+                    const currentLines = currentText.split('\n').map(l => l.trim()).filter(Boolean);
+                    const isEditing = !!order || currentLines.length > 0;
+                    const rows = projLineList.map((p, idx) => {
+                        const checked = isEditing ? currentLines.some(cl => cl === p.full || cl === p.line) : true;
+                        const roomInfo = p.full.slice(p.line.length);
                         return `<label class="ord-mat-row">
-                            <input type="checkbox" class="ord-mat-cb" checked data-line="${escapeHtml(line + roomInfo)}">
-                            <span class="ord-mat-line">${escapeHtml(line)}<span class="ord-mat-rooms">${escapeHtml(roomInfo)}</span></span>
+                            <input type="checkbox" class="ord-mat-cb" ${checked ? 'checked' : ''} data-idx="${idx}">
+                            <span class="ord-mat-line">${escapeHtml(p.line)}<span class="ord-mat-rooms">${escapeHtml(roomInfo)}</span></span>
                         </label>`;
                     }).join('');
                     matBox.innerHTML = `
@@ -111,18 +120,19 @@
                             </div>
                         </div>
                         <div class="ord-mat-list">${rows}</div>
-                        <button type="button" class="btn btn-sm btn-outline" id="ordMatApply" style="margin:8px 0 4px;">${icon('plus')} Angehakte übernehmen</button>
                     `;
+                    const allFulls = projLineList.map(p => p.full);
                     const applyChecked = () => {
-                        const picked = [...matBox.querySelectorAll('.ord-mat-cb:checked')].map(cb => cb.dataset.line);
-                        modal.querySelector('#ordItems').value = picked.join('\n');
+                        const picked = [...matBox.querySelectorAll('.ord-mat-cb:checked')].map(cb => projLineList[Number(cb.dataset.idx)].full);
+                        // freie Zeilen (selbst getippt, nicht aus dem Projekt) behalten
+                        const extra = (modal.querySelector('#ordItems').value || '').split('\n')
+                            .map(l => l.trim()).filter(l => l && !allFulls.includes(l));
+                        modal.querySelector('#ordItems').value = [...picked, ...extra].join('\n');
                     };
-                    matBox.querySelector('#ordMatAll')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = true); });
-                    matBox.querySelector('#ordMatNone')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = false); });
-                    matBox.querySelector('#ordMatApply')?.addEventListener('click', applyChecked);
+                    matBox.querySelector('#ordMatAll')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = true); applyChecked(); });
+                    matBox.querySelector('#ordMatNone')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = false); applyChecked(); });
                     matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.addEventListener('change', applyChecked));
-                    // Beim ersten Laden (neue Bestellung ohne vorhandene Artikel) direkt übernehmen
-                    if (!order && !presetItems) applyChecked();
+                    if (!isEditing) applyChecked();
                 };
                 // beim Öffnen, wenn schon ein Projekt gewählt ist
                 if (selProj) buildProjectMats(selProj);
@@ -1858,6 +1868,28 @@
             // ============ PDF: MATERIALBESTELLUNG mit Skizze ============
             // ============================================================
             async exportOrderPDF(orderId) {
+                const order = await db.get('orders', orderId);
+                if (!order) { showToast('Bestellung nicht gefunden.', 'error'); return; }
+                // Vorab fragen, was auf die Liste soll
+                showModal('Bestellliste – was soll drauf?', `
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;">Wähle, was auf der Materialliste erscheinen soll:</div>
+                    <label class="ord-opt-row"><input type="checkbox" id="optCustomer"> Kundenname & Adresse</label>
+                    <label class="ord-opt-row"><input type="checkbox" id="optProject"> Projektname</label>
+                    <label class="ord-opt-row"><input type="checkbox" id="optSupplier" checked> Lieferant</label>
+                    <label class="ord-opt-row"><input type="checkbox" id="optRooms" checked> Raum / Bereich (Spalte)</label>
+                `, async (overlay) => {
+                    const opts = {
+                        customer: overlay.querySelector('#optCustomer').checked,
+                        project: overlay.querySelector('#optProject').checked,
+                        supplier: overlay.querySelector('#optSupplier').checked,
+                        rooms: overlay.querySelector('#optRooms').checked
+                    };
+                    overlay.remove();
+                    await this._buildOrderPDF(orderId, opts);
+                }, { okText: 'Liste erstellen' });
+            },
+
+            async _buildOrderPDF(orderId, opts = {}) {
                 if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
                 const order = await db.get('orders', orderId);
                 if (!order) { showToast('Bestellung nicht gefunden.', 'error'); return; }
@@ -1878,39 +1910,48 @@
                     `${formatDate(order.date || order.createdAt)}  ·  Status: ${order.status || 'Offen'}`
                 ]);
 
-                const custLines = customer ? [
-                    `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
-                    customer.company || '',
+                // Info-Boxen nur zeigen, wenn gewünscht
+                const custLines = (opts.customer && customer) ? [
+                    (typeof customerDisplayName === 'function') ? customerDisplayName(customer) : `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+                    opts.customer && customer.company ? customer.company : '',
                     [customer.street, customer.city].filter(Boolean).join(', '),
                     customer.phone || ''
-                ].filter(Boolean) : ['–'];
+                ].filter(Boolean) : null;
                 const infoLines = [
-                    project ? `Projekt: ${project.title || ''}` : 'Ohne Projekt',
-                    `Lieferant: ${order.supplier || '–'}`,
+                    opts.project ? (project ? `Projekt: ${project.title || ''}` : 'Ohne Projekt') : '',
+                    opts.supplier ? `Lieferant: ${order.supplier || '–'}` : '',
                     order.notes ? `Notiz: ${order.notes}` : ''
                 ].filter(Boolean);
-                y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Bestellung', infoLines);
+                if (custLines || infoLines.length) {
+                    y = pdfInfoBoxes(doc, y, custLines ? 'Kunde' : '', custLines || [''], infoLines.length ? 'Bestellung' : '', infoLines.length ? infoLines : ['']);
+                }
 
-                // Materialliste: strukturiert aus Projekt-Material, sonst aus den Textzeilen
+                // WICHTIG: die tatsächlich bestellten Artikel (deine Auswahl) nutzen,
+                // nicht automatisch alle Projekt-Materialien.
+                const orderedLines = String(order.items || '').split('\n').map(l => l.trim()).filter(Boolean);
                 let head, body;
-                if (pm.length > 0) {
+                if (orderedLines.length > 0) {
+                    if (opts.rooms) {
+                        head = [['Nr.', 'Artikel', 'Raum / Bereich']];
+                        body = orderedLines.map((l, i) => {
+                            // Raum aus [ ... ] am Ende herauslösen
+                            const m = l.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+                            return m ? [String(i + 1), m[1].trim(), m[2].trim()] : [String(i + 1), l, ''];
+                        });
+                    } else {
+                        head = [['Nr.', 'Artikel']];
+                        body = orderedLines.map((l, i) => [String(i + 1), l.replace(/\s*\[[^\]]+\]\s*$/, '').trim()]);
+                    }
+                } else if (pm.length > 0) {
                     head = [['Nr.', 'Material', 'Größe', 'Menge', 'Einheit', 'Raum / Bereich', 'Bemerkung']];
                     body = pm.map((x, i) => {
                         const mat = materials.find(m => String(m.id) === String(x.materialId));
                         const room = rooms.find(r => String(r.id) === String(x.roomId));
-                        return [
-                            String(i + 1),
-                            mat?.name || x.name || 'Material',
-                            x.size || mat?.size || '–',
-                            String(x.quantity ?? ''),
-                            x.unit || mat?.unit || 'Stk',
-                            room?.name || 'Gesamt',
-                            x.note || ''
-                        ];
+                        return [String(i + 1), mat?.name || x.name || 'Material', x.size || mat?.size || '–', String(x.quantity ?? ''), x.unit || mat?.unit || 'Stk', room?.name || 'Gesamt', x.note || ''];
                     });
                 } else {
                     head = [['Nr.', 'Artikel']];
-                    body = String(order.items || '').split('\n').map(l => l.trim()).filter(Boolean).map((l, i) => [String(i + 1), l]);
+                    body = [];
                 }
 
                 doc.autoTable({
@@ -1918,7 +1959,7 @@
                     margin: { left: mx, right: mx, bottom: 26 },
                     head, body,
                     ...PDF_TABLE_STYLES,
-                    columnStyles: pm.length > 0 ? {
+                    columnStyles: (head[0].length > 3) ? {
                         0: { cellWidth: 9, halign: 'center' },
                         3: { cellWidth: 15, halign: 'center' },
                         4: { cellWidth: 16, halign: 'center' }
@@ -1929,8 +1970,8 @@
 
                 let fy = doc.lastAutoTable.finalY + 10;
 
-                // Aufstellungsplan / Projektskizze
-                if (rooms.length > 0) {
+                // Aufstellungsplan / Projektskizze nur, wenn Räume gewünscht sind
+                if (opts.rooms && rooms.length > 0) {
                     fy = pdfNewPageIfNeeded(doc, fy, 70, co);
                     fy = pdfRoomSketch(doc, rooms, mx, fy, pw - mx * 2);
                 }

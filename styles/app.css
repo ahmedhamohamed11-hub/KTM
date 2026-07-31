@@ -1276,3 +1276,8 @@
         .ord-mat-cb { margin-top: 2px; width: 17px; height: 17px; flex: 0 0 auto; accent-color: var(--accent); }
         .ord-mat-line { font-size: 13.5px; line-height: 1.4; }
         .ord-mat-rooms { color: var(--text-muted); font-size: 12px; }
+
+        /* Bestellliste-Optionen (was aufs PDF) */
+        .ord-opt-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; cursor: pointer; font-size: 14px; }
+        .ord-opt-row:hover { background: var(--bg-tertiary); }
+        .ord-opt-row input { width: 18px; height: 18px; accent-color: var(--accent); }
