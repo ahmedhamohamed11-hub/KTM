@@ -30,9 +30,9 @@
                             </div>
                             <div class="form-group"><label>Datum</label><input type="date" id="ordDate" value="${escapeHtml(order?.date || todayStr)}"></div>
                         </div>
-                        <div class="form-group"><label>Artikel *</label>
-                            <div id="ordProjectMats"></div>
-                            <textarea id="ordItems" rows="6" placeholder="z. B. 18 m Kupferrohr 22 mm, 42 m Kabel 5×2,5 mm²...">${escapeHtml(order?.items || presetItems || '')}</textarea>
+                        <div id="ordProjectMats"></div>
+                        <div class="form-group"><label id="ordItemsLabel">Artikel *</label>
+                            <textarea id="ordItems" rows="5" placeholder="z. B. 18 m Kupferrohr 22 mm, 42 m Kabel 5×2,5 mm²...">${escapeHtml(order?.items || presetItems || '')}</textarea>
                             ${materials.length > 0 ? `<select id="ordMatPicker" style="margin-top:8px;"><option value="">+ Artikel aus Materialdatenbank einfügen...</option>${materials.map(m => `<option value="${escapeHtml(m.name)}${m.size ? ' ' + escapeHtml(m.size) : ''}${m.articleNumber ? ' (' + escapeHtml(m.articleNumber) + ')' : ''}">${escapeHtml(m.name)}${m.size ? ' ' + escapeHtml(m.size) : ''}</option>`).join('')}</select>` : ''}
                         </div>
                         <div class="form-row">
@@ -77,9 +77,10 @@
                 // landen im Artikel-Feld – du wählst aus, was wirklich bestellt wird.
                 const matBox = modal.querySelector('#ordProjectMats');
                 const buildProjectMats = async (projId) => {
-                    if (!projId) { matBox.innerHTML = ''; return; }
+                    const lbl0 = modal.querySelector('#ordItemsLabel');
+                    if (!projId) { matBox.innerHTML = ''; if (lbl0) lbl0.textContent = 'Artikel *'; return; }
                     const pm = (await db.getByIndex('projectMaterials', 'projectId', parseId(projId))) || [];
-                    if (pm.length === 0) { matBox.innerHTML = ''; return; }
+                    if (pm.length === 0) { matBox.innerHTML = '<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">Für dieses Projekt ist noch kein Material erfasst – trag die Artikel unten von Hand ein.</div>'; if (lbl0) lbl0.textContent = 'Artikel *'; return; }
                     const rooms = (await db.getByIndex('rooms', 'projectId', parseId(projId))) || [];
                     const agg = new Map();
                     for (const x of pm) {
@@ -112,15 +113,21 @@
                         </label>`;
                     }).join('');
                     matBox.innerHTML = `
-                        <div class="ord-mat-head">
-                            <span>Material aus dem Projekt – abhaken, was bestellt wird:</span>
-                            <div class="ord-mat-tools">
-                                <button type="button" class="link-btn" id="ordMatAll">Alle</button>
-                                <button type="button" class="link-btn" id="ordMatNone">Keine</button>
+                        <div class="form-group">
+                            <label>Positionen aus dem Projekt – auswählen, was bestellt wird</label>
+                            <div class="ord-mat-head">
+                                <span>Angehakte Positionen kommen in die Bestellung:</span>
+                                <div class="ord-mat-tools">
+                                    <button type="button" class="link-btn" id="ordMatAll">Alle</button>
+                                    <button type="button" class="link-btn" id="ordMatNone">Keine</button>
+                                </div>
                             </div>
+                            <div class="ord-mat-list">${rows}</div>
                         </div>
-                        <div class="ord-mat-list">${rows}</div>
                     `;
+                    // Textfeld-Label auf "Weitere Artikel" umstellen, wenn Projektliste da ist
+                    const lbl = modal.querySelector('#ordItemsLabel');
+                    if (lbl) lbl.textContent = 'Weitere Artikel (frei, optional)';
                     const allFulls = projLineList.map(p => p.full);
                     const applyChecked = () => {
                         const picked = [...matBox.querySelectorAll('.ord-mat-cb:checked')].map(cb => projLineList[Number(cb.dataset.idx)].full);
