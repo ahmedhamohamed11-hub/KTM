@@ -1350,3 +1350,8 @@
         .diag-table td { font-size: 13px; padding: 7px 8px; }
         .diag-table tr.diag-missing { background: rgba(202,138,4,0.09); }
         .mat-cat-edit { cursor: pointer; }
+
+        /* ===== EK inline editierbar in Diagnose ===== */
+        .diag-ek-inp { border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 13px; background: var(--bg-secondary); color: var(--text-primary); }
+        .diag-ek-inp:focus { outline: none; border-color: var(--accent); }
+        .diag-ek-missing { border-color: var(--danger) !important; background: rgba(220,38,38,0.06) !important; }
