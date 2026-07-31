@@ -3734,8 +3734,16 @@
                             <div class="form-group"><label>Mindestbestand (Warnung bei Unterschreitung)</label><input type="number" inputmode="decimal" step="any" min="0" id="matMinStock" value="${mat?.minStock ?? ''}" placeholder="z. B. 10"></div>
                         </div>
                         <div class="form-row">
-                            <div class="form-group"><label>Gebinde (m je Rolle/Bund) <small>– für automatischen Meterpreis</small></label><input type="number" inputmode="decimal" step="any" min="0" id="matBundle" value="${mat?.bundleLength ?? ''}" placeholder="z. B. 50"></div>
+                            <div class="form-group"><label>Verpackungseinheit</label>
+                                <select id="matPackUnit">
+                                    ${['Stück', 'Rolle', 'Bund', 'Stange'].map(u => { const cur = mat?.unit === 'Rolle' || mat?.unit === 'Bund' || mat?.unit === 'Stange' ? mat.unit : 'Stück'; return `<option value="${u}" ${cur === u ? 'selected' : ''}>${u}</option>`; }).join('')}
+                                </select>
+                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Rolle/Bund/Stange = wird pro Meter verkauft.</div>
+                            </div>
+                            <div class="form-group"><label>Länge je Rolle/Bund/Stange (m)</label><input type="number" inputmode="decimal" step="any" min="0" id="matBundle" value="${mat?.bundleLength ?? ''}" placeholder="z. B. 50"></div>
                         </div>
+                        <div class="form-group" id="matMarkupRow" style="display:none;"><label>Aufschlag auf Einkaufspreis (%) <small>– bestimmt den Meter-Verkaufspreis</small></label><input type="number" inputmode="decimal" step="any" min="0" id="matMarkup" value="${mat?.markup ?? ''}" placeholder="z. B. 60"></div>
+                        <div id="matRollCalc" class="mat-roll-calc" style="display:none;"></div>
                         <div class="form-row">
                             <div class="form-group"><label>Kategorie</label>
                                 <select id="matCategory">
@@ -3773,9 +3781,10 @@
                             stock: parseFloat(String(overlay.querySelector('#matStock').value).replace(',', '.')) || 0,
                             minStock: parseFloat(String(overlay.querySelector('#matMinStock').value).replace(',', '.')) || 0,
                             bundleLength: parseFloat(String(overlay.querySelector('#matBundle').value).replace(',', '.')) || 0,
+                            markup: overlay.querySelector('#matMarkup')?.value.trim() === '' ? null : (parseFloat(String(overlay.querySelector('#matMarkup').value).replace(',', '.')) || 0),
                             category: overlay.querySelector('#matCategory').value,
                             bauart: overlay.querySelector('#matBauart')?.value || '',
-                            unit: overlay.querySelector('#matUnit').value.trim() || 'Stk',
+                            unit: (() => { const pu = overlay.querySelector('#matPackUnit')?.value; return (pu && pu !== 'Stück') ? pu : (overlay.querySelector('#matUnit').value.trim() || 'Stk'); })(),
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
                             sellingPrice: parseFloat(overlay.querySelector('#matSellingPrice').value) || 0,
                             dealerDiscount: overlay.querySelector('#matDiscount').value.trim() === '' ? null : (parseFloat(overlay.querySelector('#matDiscount').value) || 0),
@@ -3863,6 +3872,46 @@
                     discEl.addEventListener('input', () => recalc(true));
                     purchEl.addEventListener('input', () => recalc(false));
                     modal.querySelector('#matManufacturer')?.addEventListener('input', () => recalc(true));
+
+                    // ===== Rolle/Bund/Stange: EK/VK pro Meter live berechnen =====
+                    const packEl = modal.querySelector('#matPackUnit');
+                    const bundleEl = modal.querySelector('#matBundle');
+                    const markupEl = modal.querySelector('#matMarkup');
+                    const markupRow = modal.querySelector('#matMarkupRow');
+                    const rollBox = modal.querySelector('#matRollCalc');
+                    const recalcRoll = () => {
+                        const isRoll = packEl && ['Rolle', 'Bund', 'Stange'].includes(packEl.value);
+                        if (markupRow) markupRow.style.display = isRoll ? '' : 'none';
+                        if (rollBox) rollBox.style.display = isRoll ? '' : 'none';
+                        if (!isRoll || !rollBox) return;
+                        const bl = parseFloat(String(bundleEl.value).replace(',', '.')) || 0;
+                        const list = parseFloat(sellEl.value) || 0;      // Listenpreis pro Rolle
+                        const disc = effectiveDiscount();                 // % Händlerrabatt
+                        const ekRoll = disc != null ? list * (1 - disc / 100) : (parseFloat(purchEl.value) || 0);
+                        const markup = parseFloat(String(markupEl.value).replace(',', '.')) || 0;
+                        if (bl <= 0) { rollBox.innerHTML = '<div class="mat-roll-hint">Länge je Rolle/Bund/Stange eintragen, dann rechnet die App den Meterpreis.</div>'; return; }
+                        const ekPerM = ekRoll / bl;
+                        const vkPerM = markup > 0 ? ekPerM * (1 + markup / 100) : (list / bl);
+                        const vkRoll = vkPerM * bl;
+                        const unitWord = packEl.value;
+                        rollBox.innerHTML = `
+                            <div class="mat-roll-title">📏 Umrechnung pro Meter</div>
+                            <div class="mat-roll-grid">
+                                <span>Listenpreis / ${unitWord}</span><strong>${formatCurrency(list)}</strong>
+                                <span>Einkauf / ${unitWord}${disc != null ? ` (−${disc}%)` : ''}</span><strong>${formatCurrency(ekRoll)}</strong>
+                                <span>Einkauf / Meter</span><strong>${formatCurrency(ekPerM)}</strong>
+                                <span>Verkauf / Meter${markup > 0 ? ` (+${markup}%)` : ''}</span><strong class="hl">${formatCurrency(vkPerM)}</strong>
+                                <span>Verkauf / ${unitWord}</span><strong>${formatCurrency(vkRoll)}</strong>
+                            </div>
+                            <div class="mat-roll-hint">Im Angebot zahlt der Kunde <strong>${formatCurrency(vkPerM)}/m</strong> – die Rolle sieht er nie.</div>`;
+                    };
+                    packEl?.addEventListener('change', recalcRoll);
+                    bundleEl?.addEventListener('input', recalcRoll);
+                    markupEl?.addEventListener('input', recalcRoll);
+                    sellEl.addEventListener('input', recalcRoll);
+                    discEl.addEventListener('input', recalcRoll);
+                    purchEl.addEventListener('input', recalcRoll);
+                    recalcRoll();
                 })();
                 modal.querySelector('#matImage').addEventListener('change', async (e) => {
                     const files = Array.from(e.target.files || []);

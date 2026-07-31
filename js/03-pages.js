@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v66</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v67</span></div>
                         </div>
                     </div>`;
             })();
@@ -974,9 +974,22 @@
         }
         function matUnitPrice(mat, unit) {
             const base = Number(mat?.sellingPrice) || 0;
-            if (unit === 'm' && mat && ['Rolle', 'Bund'].includes(mat.unit || '')) {
+            // Rolle/Bund/Stange -> Verkaufspreis pro Meter/Einheit
+            if (unit === 'm' && mat && ['Rolle', 'Bund', 'Stange'].includes(mat.unit || '')) {
                 const bl = matBundleLength(mat);
-                if (bl > 0) return Math.round((base / bl) * 100) / 100;
+                if (bl > 0) {
+                    // Wenn ein Aufschlag (markup) hinterlegt ist: Verkaufspreis = EK/Meter × (1 + Aufschlag)
+                    const markup = Number(mat.markup);
+                    if (markup > 0) {
+                        const ekRoll = (typeof effectivePurchasePrice === 'function') ? effectivePurchasePrice(mat, window.__ktmDealerDiscounts) : (Number(mat.purchasePrice) || 0);
+                        if (ekRoll > 0) {
+                            const ekPerM = ekRoll / bl;
+                            return Math.round(ekPerM * (1 + markup / 100) * 100) / 100;
+                        }
+                    }
+                    // sonst: Listenpreis der Rolle / Länge (bisheriges Verhalten)
+                    return Math.round((base / bl) * 100) / 100;
+                }
             }
             return base;
         }
