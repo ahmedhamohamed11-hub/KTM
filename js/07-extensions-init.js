@@ -3750,7 +3750,7 @@
                             </select>
                         </div>
                         <div class="form-row">
-                            <div class="form-group"><label>Verkaufspreis / Listenpreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"></div>
+                            <div class="form-group"><label>Listenpreis / Verkaufspreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"><div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Der Preis, den der Kunde zahlt. Der Einkaufspreis wird daraus per Rabatt berechnet.</div></div>
                             <div class="form-group"><label>Händlerrabatt (%)</label><input type="number" id="matDiscount" step="1" min="0" max="100" value="${mat?.dealerDiscount != null ? mat.dealerDiscount : ''}" placeholder="auto"></div>
                         </div>
                         <div class="form-group"><label>Einkaufspreis (€)</label><input type="number" id="matPurchasePrice" step="0.01" value="${mat?.purchasePrice || 0}">
@@ -4328,6 +4328,7 @@
                     <div class="pos-name">${escapeHtml(s.name)}</div>
                     <div class="pos-meta">${escapeHtml(s.manufacturer || '')} ${s.articleNumber ? '· ' + escapeHtml(s.articleNumber) : ''}</div>
                 </div>
+                <div class="offer-pos-price"><input type="number" min="0" step="0.01" value="${s.price}" data-price="${idx}" class="offer-price-input" title="Verkaufspreis je Einheit">€</div>
                 <input type="number" min="1" value="${s.quantity}" data-idx="${idx}" class="offer-qty-input" title="Menge">
                 <div class="offer-pos-disc"><input type="number" min="0" max="100" step="1" value="${disc || ''}" placeholder="0" data-disc="${idx}" class="offer-disc-input" title="Rabatt auf diese Position in %"><span>%</span></div>
                 <div style="text-align:right;font-weight:600;">${formatCurrency(lineAfter)}${disc > 0 ? `<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(lineNet)}</div>` : ''}</div>
@@ -4349,6 +4350,46 @@
                 const lineNet = selected[idx].price * selected[idx].quantity;
                 const lineAfter = lineNet * (1 - v / 100);
                 if (cell) cell.innerHTML = `${formatCurrency(lineAfter)}${v > 0 ? `<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(lineNet)}</div>` : ''}`;
+            });
+        });
+
+        list.querySelectorAll('.offer-price-input').forEach(inp => {
+            // live: Preis der Position aktualisieren
+            inp.addEventListener('input', (e) => {
+                const idx = parseInt(e.target.dataset.price);
+                selected[idx].price = parseFloat(e.target.value) || 0;
+                updateSettingsFromUI();
+                renderSummary();
+                const cell = e.target.closest('.offer-pos-item').querySelector('div[style*="text-align:right"]');
+                const d = Number(selected[idx].discount) || 0;
+                const lineNet = selected[idx].price * selected[idx].quantity;
+                const lineAfter = lineNet * (1 - d / 100);
+                if (cell) cell.innerHTML = `${formatCurrency(lineAfter)}${d > 0 ? `<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(lineNet)}</div>` : ''}`;
+            });
+            // beim Verlassen: fragen, ob dauerhaft in die Materialdatenbank
+            inp.addEventListener('change', async (e) => {
+                const idx = parseInt(e.target.dataset.price);
+                const pos = selected[idx];
+                const newPrice = parseFloat(e.target.value) || 0;
+                if (!pos.materialId) return;   // freie Position ohne Material – nichts zu speichern
+                const m = materials.find(mm => String(mm.id) === String(pos.materialId));
+                if (!m) return;
+                const oldPrice = Number(m.sellingPrice) || 0;
+                if (Math.abs(newPrice - oldPrice) < 0.005) return;   // keine echte Änderung
+                const choice = await showPriceSaveDialog(m.name, oldPrice, newPrice);
+                if (choice === 'permanent') {
+                    m.sellingPrice = newPrice;
+                    await db.put('materials', { ...m, sellingPrice: newPrice });
+                    showToast(`Preis für „${m.name}" dauerhaft gespeichert.`, 'success');
+                }
+                // bei 'once' bleibt der Preis nur in diesem Angebot (schon in selected gesetzt)
+                // bei 'cancel' zurücksetzen
+                if (choice === 'cancel') {
+                    pos.price = oldPrice;
+                    renderPosList();
+                    updateSettingsFromUI();
+                    renderSummary();
+                }
             });
         });
 

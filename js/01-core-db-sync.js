@@ -750,6 +750,40 @@ async function backgroundSyncPushInner() {
             });
         }
 
+        // Drei-Wege-Dialog bei Preisänderung im Angebot:
+        // 'permanent' (dauerhaft in Materialdatenbank), 'once' (nur dieses Angebot), 'cancel'
+        function showPriceSaveDialog(name, oldPrice, newPrice) {
+            return new Promise((resolve) => {
+                const container = document.getElementById('modalContainer');
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                const fmt = v => (typeof formatCurrency === 'function') ? formatCurrency(v) : (Number(v).toFixed(2) + ' €');
+                overlay.innerHTML = `
+                    <div class="modal modal-confirm">
+                        <h3>Preisänderung speichern?</h3>
+                        <div class="modal-body">
+                            <p style="font-size:14px;line-height:1.5;margin:0 0 10px;">Du hast den Verkaufspreis von <strong>${escapeHtml(name)}</strong> geändert:</p>
+                            <div style="display:flex;gap:10px;align-items:center;font-size:14px;margin-bottom:4px;">
+                                <span style="text-decoration:line-through;color:var(--text-muted);">${fmt(oldPrice)}</span>
+                                <span>→</span>
+                                <strong style="color:var(--accent);">${fmt(newPrice)}</strong>
+                            </div>
+                            <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:8px 0 0;">Soll dieser neue Preis dauerhaft in der Materialdatenbank gespeichert werden (gilt dann für alle künftigen Angebote)?</p>
+                        </div>
+                        <div class="modal-actions" style="flex-wrap:wrap;">
+                            <button class="btn btn-outline" data-choice="cancel">Abbrechen</button>
+                            <button class="btn btn-outline" data-choice="once">Nur dieses Angebot</button>
+                            <button class="btn btn-primary" data-choice="permanent">Ja, dauerhaft speichern</button>
+                        </div>
+                    </div>`;
+                container.appendChild(overlay);
+                const close = (val) => { overlay.remove(); resolve(val); };
+                overlay.querySelectorAll('[data-choice]').forEach(b => b.addEventListener('click', () => close(b.dataset.choice)));
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) close('once'); });
+            });
+        }
+        window.showPriceSaveDialog = showPriceSaveDialog;
+
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str ?? '';
