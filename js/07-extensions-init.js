@@ -24,7 +24,7 @@
                             </select>
                         </div>
                         <div class="form-row">
-                            <div class="form-group"><label>Lieferant *</label>
+                            <div class="form-group"><label>Lieferant</label>
                                 <input type="text" id="ordSupplier" list="ordSupplierList" value="${escapeHtml(order?.supplier || '')}" placeholder="z. B. Schiessl, Frigopol...">
                                 <datalist id="ordSupplierList">${suppliers.map(s => `<option value="${escapeHtml(s)}">`).join('')}</datalist>
                             </div>
@@ -47,7 +47,7 @@
                     async (overlay) => {
                         const supplier = overlay.querySelector('#ordSupplier').value.trim();
                         const items = overlay.querySelector('#ordItems').value.trim();
-                        if (!supplier || !items) { showToast('Lieferant und Artikel sind Pflichtfelder.', 'error'); return; }
+                        if (!items) { showToast('Bitte mindestens einen Artikel angeben.', 'error'); return; }
                         const data = {
                             ...(order || {}),
                             projectId: overlay.querySelector('#ordProject').value ? parseId(overlay.querySelector('#ordProject').value) : null,
@@ -58,7 +58,7 @@
                             notes: overlay.querySelector('#ordNotes').value.trim()
                         };
                         if (id) { await db.put('orders', data); } else { await db.add('orders', data); }
-                        learnValue('supplier', supplier).catch(() => {});
+                        if (supplier) learnValue('supplier', supplier).catch(() => {});
                         overlay.remove();
                         showToast(id ? 'Bestellung aktualisiert.' : 'Bestellung angelegt.', 'success');
                         if (app.currentPage === 'orders' || app.currentPage === 'dashboard' || app.currentPage === 'projects') app.navigate(app.currentPage, app.currentProjectId);
