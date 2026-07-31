@@ -952,8 +952,12 @@
                              <input type="number" step="0.01" min="0" class="diag-ek-input" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" value="${known ? (Math.round(ekUnit * 100) / 100) : ''}" placeholder="EK/${escapeHtml(it.unit || m.unit || 'Stk')}">
                              <button type="button" class="btn btn-sm btn-primary diag-ek-save" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" title="Einkaufspreis speichern">✓</button>
                            </div>`
-                        : '<span style="color:var(--danger);font-weight:600;">fehlt</span>');
-                    return `<tr class="${!known && !labor ? 'diag-missing' : ''}">
+                        : '<span style="color:var(--danger);font-weight:600;text-decoration:underline;">fehlt</span>');
+                    // Bei fehlendem EK ist die ganze Zeile klickbar: öffnet direkt das
+                    // passende Material (fokussiert im Einkaufspreis-Feld) bzw. bietet an,
+                    // ein neues Material anzulegen, wenn keins verknüpft ist.
+                    const missingRow = !known && !labor;
+                    return `<tr class="${missingRow ? 'diag-missing diag-row-clickable' : ''}" ${missingRow ? `data-idx="${idx}" title="Klicken, um den Einkaufspreis am Material einzutragen"` : ''}>
                         <td>${escapeHtml(it.name || '(ohne Namen)')}<div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div></td>
                         <td style="text-align:right;">${formatCurrency(lineSales)}</td>
                         <td style="text-align:right;">${ekCell}</td>
@@ -988,7 +992,7 @@
                         <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
                         <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>
                     </div>
-                    <div class="diag-detail-title">Positionen im Detail <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">– Einkauf direkt hier eintragen &amp; mit ✓ speichern</span></div>
+                    <div class="diag-detail-title">Positionen im Detail <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">– EK direkt eintragen &amp; mit ✓ speichern, oder auf eine „fehlt"-Zeile klicken für die volle Materialbearbeitung</span></div>
                     <div class="table-container"><table class="diag-table">
                         <thead><tr><th>Position</th><th style="text-align:right;">Verkauf</th><th style="text-align:right;">Einkauf</th><th style="text-align:right;">Gewinn</th></tr></thead>
                         <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
@@ -1015,6 +1019,56 @@
                         diagModal.remove();
                         app.showOfferDiagnosis(offerId);
                     });
+                });
+
+                // Ganze Zeile klickbar (bei fehlendem EK): öffnet die volle
+                // Material-Bearbeitung statt nur des schnellen Inline-Felds - u.a. wenn
+                // noch mehr als der EK gepflegt werden muss, oder das Material im Katalog
+                // fehlt (dann Rückfrage zum Neuanlegen + automatische Verknüpfung).
+                diagModal.querySelectorAll('tr.diag-row-clickable[data-idx]').forEach(tr => {
+                    tr.addEventListener('click', (e) => {
+                        if (e.target.closest('.diag-ek-edit')) return; // Inline-Feld/Button hat Vorrang
+                        app.fixMissingEkFromDiagnosis(offerId, parseInt(tr.dataset.idx, 10), diagModal);
+                    });
+                });
+            },
+
+            // Öffnet aus der Gewinn-Diagnose heraus direkt das verknüpfte Material
+            // (fokussiert im Einkaufspreis-Feld) bzw. bietet an, ein fehlendes Material
+            // neu anzulegen und automatisch mit der Angebotsposition zu verknüpfen.
+            // Nach dem Speichern baut sich die Diagnose automatisch neu auf.
+            async fixMissingEkFromDiagnosis(offerId, idx, diagModal) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+                const it = (offer.positions || [])[idx];
+                if (!it) return;
+                const materials = await db.getAll('materials');
+                const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                const afterSave = async () => { diagModal?.remove(); app.showOfferDiagnosis(offerId); };
+
+                if (m) {
+                    app.openMaterialModal(m.id, { focusField: 'matPurchasePrice', skipNavigate: true, onSaved: afterSave });
+                    return;
+                }
+                const wantsCreate = await showConfirm(
+                    `Material „${escapeHtml(it.name || 'Position')}" wurde im Katalog nicht gefunden. Jetzt anlegen?`,
+                    { title: 'Material nicht gefunden', okText: 'Jetzt anlegen', danger: false }
+                );
+                if (!wantsCreate) return;
+                app.openMaterialModal(null, {
+                    prefill: {
+                        name: it.name || '', manufacturer: it.manufacturer || '', articleNumber: it.articleNumber || '',
+                        category: it.category || '', unit: it.unit || 'Stk', sellingPrice: Number(it.price) || 0,
+                        description: it.description || ''
+                    },
+                    focusField: 'matPurchasePrice',
+                    skipNavigate: true,
+                    onSaved: async (newId) => {
+                        // Neues Material automatisch mit dieser Angebotsposition verknüpfen
+                        it.materialId = newId;
+                        await db.put('offers', offer);
+                        await afterSave();
+                    }
                 });
             },
 
@@ -3873,8 +3927,17 @@
                 win.document.title = 'Bildvorschau';
             },
 
-            async openMaterialModal(id = null) {
-                const mat = id ? await db.get('materials', id) : null;
+            // opts.prefill: Felder für ein NEUES Material vorbelegen (z.B. aus einer
+            //   Angebotsposition ohne Katalog-Treffer).
+            // opts.focusField: Element-ID, die nach dem Öffnen fokussiert/markiert wird
+            //   (z.B. 'matPurchasePrice', damit man sofort tippen kann).
+            // opts.onSaved(savedId, data): wird nach erfolgreichem Speichern aufgerufen,
+            //   BEVOR zur Materialliste navigiert wird.
+            // opts.skipNavigate: unterdrückt die sonst übliche Navigation zu 'materials'
+            //   danach (z.B. wenn der Aufrufer selbst weiterleitet, etwa zurück in eine
+            //   Gewinn-Diagnose).
+            async openMaterialModal(id = null, opts = {}) {
+                const mat = id ? await db.get('materials', id) : (opts.prefill ? { ...opts.prefill } : null);
                 // Bilder als Array; alte Einzelbilder (mat.image) werden übernommen
                 let images = Array.isArray(mat?.images) ? [...mat.images] : (mat?.image ? [mat.image] : []);
                 const modal = showModal(
@@ -3953,16 +4016,18 @@
                             image: images[0] || '',
                         };
                         if (!data.name) { showToast('Artikelname ist erforderlich.', 'error'); return; }
+                        let savedId = id;
                         if (id) {
                             data.id = id;
                             data.createdAt = mat.createdAt;
                             await db.put('materials', data);
                         } else {
-                            await db.add('materials', data);
+                            savedId = await db.add('materials', data);
                         }
                         overlay.remove();
                         showToast(id ? 'Material aktualisiert.' : 'Material angelegt.', 'success');
-                        this.navigate('materials');
+                        if (typeof opts.onSaved === 'function') await opts.onSaved(savedId, data);
+                        if (!opts.skipNavigate) this.navigate('materials');
                     }
                 );
                 // Galerie-Vorschau rendern (mit Löschen-Knopf je Bild)
@@ -4084,6 +4149,10 @@
                     renderGallery();
                     e.target.value = ''; // erlaubt erneutes Wählen derselben Datei
                 });
+                if (opts.focusField) {
+                    const focusEl = modal.querySelector('#' + opts.focusField);
+                    if (focusEl) { focusEl.focus(); focusEl.select?.(); }
+                }
             },
 
             viewImage(src) {
