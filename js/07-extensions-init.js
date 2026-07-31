@@ -5,7 +5,7 @@
         // ============================================================
         const ktmV2Extensions = Object.assign({}, planApplyExtensions, invoiceExtensions, {
             // ---------- Bestellungen ----------
-            async openOrderModal(id = null, presetProjectId = null, presetItems = '') {
+            async openOrderModal(id = null, presetProjectId = null, presetItems = '', presetLines = null) {
                 const order = id ? await db.get('orders', id) : null;
                 const projects = await db.getAll('projects');
                 const materials = await db.getAll('materials');
@@ -76,7 +76,51 @@
                 // Projekt-Material als anklickbare Häkchen-Liste. Angehakte Positionen
                 // landen im Artikel-Feld – du wählst aus, was wirklich bestellt wird.
                 const matBox = modal.querySelector('#ordProjectMats');
+                // Rendert eine Häkchen-Liste aus {line, full}-Positionen (Projekt ODER Angebot)
+                const renderChecklist = (lineList) => {
+                    const lbl0 = modal.querySelector('#ordItemsLabel');
+                    if (!lineList || lineList.length === 0) { matBox.innerHTML = ''; if (lbl0) lbl0.textContent = 'Artikel *'; return; }
+                    const currentText = (modal.querySelector('#ordItems')?.value || '');
+                    const currentLines = currentText.split('\n').map(l => l.trim()).filter(Boolean);
+                    const isEditing = !!order || currentLines.length > 0;
+                    const rows = lineList.map((p, idx) => {
+                        const checked = isEditing ? currentLines.some(cl => cl === p.full || cl === p.line) : true;
+                        const roomInfo = p.full.slice(p.line.length);
+                        return `<label class="ord-mat-row">
+                            <input type="checkbox" class="ord-mat-cb" ${checked ? 'checked' : ''} data-idx="${idx}">
+                            <span class="ord-mat-line">${escapeHtml(p.line)}<span class="ord-mat-rooms">${escapeHtml(roomInfo)}</span></span>
+                        </label>`;
+                    }).join('');
+                    matBox.innerHTML = `
+                        <div class="form-group">
+                            <label>Positionen auswählen, was bestellt wird</label>
+                            <div class="ord-mat-head">
+                                <span>Angehakte Positionen kommen in die Bestellung:</span>
+                                <div class="ord-mat-tools">
+                                    <button type="button" class="link-btn" id="ordMatAll">Alle</button>
+                                    <button type="button" class="link-btn" id="ordMatNone">Keine</button>
+                                </div>
+                            </div>
+                            <div class="ord-mat-list">${rows}</div>
+                        </div>
+                    `;
+                    if (lbl0) lbl0.textContent = 'Weitere Artikel (frei, optional)';
+                    const allFulls = lineList.map(p => p.full);
+                    const applyChecked = () => {
+                        const picked = [...matBox.querySelectorAll('.ord-mat-cb:checked')].map(cb => lineList[Number(cb.dataset.idx)].full);
+                        const extra = (modal.querySelector('#ordItems').value || '').split('\n')
+                            .map(l => l.trim()).filter(l => l && !allFulls.includes(l));
+                        modal.querySelector('#ordItems').value = [...picked, ...extra].join('\n');
+                    };
+                    matBox.querySelector('#ordMatAll')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = true); applyChecked(); });
+                    matBox.querySelector('#ordMatNone')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = false); applyChecked(); });
+                    matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.addEventListener('change', applyChecked));
+                    if (!isEditing) applyChecked();
+                };
+
                 const buildProjectMats = async (projId) => {
+                    // Wenn feste Positionen übergeben wurden (z. B. aus einem Angebot), diese nutzen
+                    if (presetLines && presetLines.length) { renderChecklist(presetLines); return; }
                     const lbl0 = modal.querySelector('#ordItemsLabel');
                     if (!projId) { matBox.innerHTML = ''; if (lbl0) lbl0.textContent = 'Artikel *'; return; }
                     const pm = (await db.getByIndex('projectMaterials', 'projectId', parseId(projId))) || [];
@@ -95,55 +139,17 @@
                         if (room) a.rooms.add(room.name || 'Raum');
                     }
                     const fmtQty = q => (Math.round(q * 100) / 100).toString().replace('.', ',');
-                    // Projekt-Zeilen als Array (Index statt data-Attribut -> keine Escaping-Probleme mit " in Größen)
                     const projLineList = [...agg.values()].map(a => {
                         const line = `${fmtQty(a.qty)} ${a.unit} ${a.name}${a.size ? ' ' + a.size : ''}`;
                         const roomInfo = a.rooms.size ? ` [${[...a.rooms].join(', ')}]` : '';
                         return { line, full: line + roomInfo };
                     });
-                    const currentText = (modal.querySelector('#ordItems')?.value || '');
-                    const currentLines = currentText.split('\n').map(l => l.trim()).filter(Boolean);
-                    const isEditing = !!order || currentLines.length > 0;
-                    const rows = projLineList.map((p, idx) => {
-                        const checked = isEditing ? currentLines.some(cl => cl === p.full || cl === p.line) : true;
-                        const roomInfo = p.full.slice(p.line.length);
-                        return `<label class="ord-mat-row">
-                            <input type="checkbox" class="ord-mat-cb" ${checked ? 'checked' : ''} data-idx="${idx}">
-                            <span class="ord-mat-line">${escapeHtml(p.line)}<span class="ord-mat-rooms">${escapeHtml(roomInfo)}</span></span>
-                        </label>`;
-                    }).join('');
-                    matBox.innerHTML = `
-                        <div class="form-group">
-                            <label>Positionen aus dem Projekt – auswählen, was bestellt wird</label>
-                            <div class="ord-mat-head">
-                                <span>Angehakte Positionen kommen in die Bestellung:</span>
-                                <div class="ord-mat-tools">
-                                    <button type="button" class="link-btn" id="ordMatAll">Alle</button>
-                                    <button type="button" class="link-btn" id="ordMatNone">Keine</button>
-                                </div>
-                            </div>
-                            <div class="ord-mat-list">${rows}</div>
-                        </div>
-                    `;
-                    // Textfeld-Label auf "Weitere Artikel" umstellen, wenn Projektliste da ist
-                    const lbl = modal.querySelector('#ordItemsLabel');
-                    if (lbl) lbl.textContent = 'Weitere Artikel (frei, optional)';
-                    const allFulls = projLineList.map(p => p.full);
-                    const applyChecked = () => {
-                        const picked = [...matBox.querySelectorAll('.ord-mat-cb:checked')].map(cb => projLineList[Number(cb.dataset.idx)].full);
-                        // freie Zeilen (selbst getippt, nicht aus dem Projekt) behalten
-                        const extra = (modal.querySelector('#ordItems').value || '').split('\n')
-                            .map(l => l.trim()).filter(l => l && !allFulls.includes(l));
-                        modal.querySelector('#ordItems').value = [...picked, ...extra].join('\n');
-                    };
-                    matBox.querySelector('#ordMatAll')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = true); applyChecked(); });
-                    matBox.querySelector('#ordMatNone')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = false); applyChecked(); });
-                    matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.addEventListener('change', applyChecked));
-                    if (!isEditing) applyChecked();
+                    renderChecklist(projLineList);
                 };
                 // beim Öffnen, wenn schon ein Projekt gewählt ist
-                if (selProj) buildProjectMats(selProj);
-                modal.querySelector('#ordProject')?.addEventListener('change', (e) => buildProjectMats(e.target.value));
+                if (presetLines && presetLines.length) buildProjectMats(selProj);
+                else if (selProj) buildProjectMats(selProj);
+                modal.querySelector('#ordProject')?.addEventListener('change', (e) => { if (!(presetLines && presetLines.length)) buildProjectMats(e.target.value); });
             },
 
             async deleteOrder(id) {
@@ -396,6 +402,26 @@
             },
 
             // Bestellliste aus Projekt-Material erzeugen
+            // Bestellung aus einem Angebot – Positionen als Häkchen-Liste auswählbar
+            async createOrderFromOffer(offerId) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+                const positions = offer.positions || [];
+                if (positions.length === 0) { showToast('Dieses Angebot hat keine Positionen.', 'info'); return; }
+                const fmtQty = q => (Math.round((Number(q) || 0) * 100) / 100).toString().replace('.', ',');
+                // Nur echte Material-Positionen (Arbeit/Leistung überspringen wir für die Bestellung nicht zwingend – wir nehmen alle)
+                const lines = positions.map(p => {
+                    const qty = fmtQty(p.quantity);
+                    const unit = p.unit || 'Stk';
+                    const name = p.name || 'Position';
+                    const size = p.size ? ' ' + p.size : '';
+                    const line = `${qty} ${unit} ${name}${size}`.trim();
+                    return { line, full: line };
+                });
+                const projId = offer.projectId || null;
+                this.openOrderModal(null, projId, '', lines);
+            },
+
             async createOrderFromProject(projectId) {
                 const pm = (await db.getByIndex('projectMaterials', 'projectId', projectId)) || [];
                 if (pm.length === 0) { showToast('Kein Material im Projekt.', 'info'); return; }
