@@ -1355,3 +1355,22 @@
         .diag-ek-input { width: 76px; padding: 4px 6px; font-size: 12.5px; text-align: right; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); }
         .diag-ek-save { padding: 3px 8px; line-height: 1; }
         .mat-cat-edit { cursor: pointer; }
+
+        /* ===== Geräte-Konfigurator ===== */
+        .cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 12px; }
+        .cfg-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--bg-content); }
+        .cfg-card-select { cursor: pointer; transition: all var(--transition); }
+        .cfg-card-select:hover { border-color: var(--accent); background: var(--accent-light); transform: translateY(-1px); }
+        .cfg-card-role { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--accent); margin-bottom: 4px; }
+        .cfg-card-name { font-weight: 700; font-size: 13.5px; margin-bottom: 5px; }
+        .cfg-card-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11.5px; color: var(--text-muted); margin-bottom: 6px; }
+        .cfg-card-price { font-weight: 700; color: var(--accent); font-size: 14px; }
+        .cfg-result-title { font-weight: 700; font-size: 14.5px; margin-bottom: 10px; }
+        .cfg-total { font-size: 15px; margin: 10px 0 12px; padding-top: 10px; border-top: 2px solid var(--border); }
+        .cfg-total strong { color: var(--accent); }
+        .cfg-slots { font-size: 13px; margin-bottom: 8px; color: var(--text-secondary); }
+        .cfg-indoor-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+        .cfg-indoor-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); gap: 10px; }
+        .cfg-indoor-name { font-size: 13px; font-weight: 600; }
+        .cfg-qty-ctl { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .cfg-qty-ctl span { min-width: 18px; text-align: center; font-weight: 700; }

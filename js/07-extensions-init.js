@@ -1417,6 +1417,258 @@
                 if (this.currentPage === 'projects' && this.currentProjectId === projectId) this.navigate('projects', projectId);
             },
 
+            // ============================================================
+            // ============ INTELLIGENTER GERÄTE-KONFIGURATOR =============
+            // ============================================================
+            // Marke -> Gerätetyp -> Leistung -> zeigt NUR die tatsächlich zueinander
+            // passende Innen-/Außengerät-Kombination (Preis, Typennummern, technische
+            // Daten). Bei Multi-Split werden ausschließlich Innengeräte derselben Marke
+            // UND derselben Bauart ('Innengerät Multi-Split') angeboten - Single-Split-
+            // Geräte können hier nie erscheinen, weil die Auswahl strikt über das
+            // bauart-Feld läuft (dieselbe robuste Logik wie im Schnellrechner-Fix).
+            async openDeviceConfigurator() {
+                const allMats = await db.getAll('materials');
+                const materials = allMats.filter(m => m.category === 'Klimageräte' && m.manufacturer);
+                if (!materials.length) { showToast('Noch keine Klimageräte im Katalog – erst Geräte anlegen oder Hersteller-Katalog importieren.', 'info'); return; }
+
+                const typeGroupOf = (bauart) => (bauart || '').replace(/^Innengerät\s*/, '').replace(/^Außengerät\s*/, '').trim();
+                const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+                const parseRefrigerant = (notes) => { const m = String(notes || '').match(/\bR\d{2,4}[A-Z]?\b/); return m ? m[0] : ''; };
+                const parseEnergy = (notes) => { const m = String(notes || '').match(/A\+{1,3}(?:\s*\/\s*A\+{0,3})?/); return m ? m[0] : ''; };
+                // Anschlusszahl eines Multi-Außengeräts: dieselbe Erkennung wie im
+                // Schnellrechner (calcPickOutdoor) - Notiz "max. N IG" zuerst, sonst
+                // markentypische Namensmuster (inkl. Bosch CL..M NN/N).
+                const maxIGof = (m) => {
+                    const n = String(m.notes || ''); const mn = n.match(/max\.?\s*(\d+)\s*IG/i); if (mn) return parseInt(mn[1], 10);
+                    const nm = (String(m.name || '') + ' ' + String(m.articleNumber || '')).toUpperCase();
+                    const mm = nm.match(/\b(\d)\s*(?:MXM|AMW)/) || nm.match(/\bMU\s*(\d)\s*R/) || nm.match(/\bAJ\d+TXJ(\d)/) || nm.match(/\bCL\d+M\s*\d+\/(\d)/);
+                    return mm ? parseInt(mm[1], 10) : 0;
+                };
+
+                const state = { brand: '', type: '', outdoorId: '', indoorQty: {} };
+
+                const modal = showModal('🔧 Geräte-Konfigurator', `<div id="cfgBody"></div>`, null, null, { wide: true });
+                const body = modal.querySelector('#cfgBody');
+
+                const deviceCard = (m, roleLabel) => {
+                    const ref = parseRefrigerant(m.notes);
+                    const energy = parseEnergy(m.notes);
+                    return `<div class="cfg-card">
+                        <div class="cfg-card-role">${roleLabel}</div>
+                        <div class="cfg-card-name">${escapeHtml(m.name)}</div>
+                        <div class="cfg-card-meta">
+                            ${m.articleNumber ? `<span>Art.-Nr. ${escapeHtml(m.articleNumber)}</span>` : ''}
+                            ${m.size ? `<span>${escapeHtml(m.size)} kW</span>` : ''}
+                            ${ref ? `<span>${escapeHtml(ref)}</span>` : ''}
+                            ${energy ? `<span>${escapeHtml(energy)}</span>` : ''}
+                        </div>
+                        <div class="cfg-card-price">${formatCurrency(m.sellingPrice || 0)}</div>
+                    </div>`;
+                };
+
+                function render() {
+                    let html = '';
+                    const crumbs = [`<button class="crumb ${!state.brand ? 'active' : ''}" data-nav="brand">Marke</button>`];
+                    if (state.brand) crumbs.push(`<button class="crumb ${state.brand && !state.type ? 'active' : ''}" data-nav="type">${escapeHtml(state.brand)}</button>`);
+                    if (state.type) crumbs.push(`<button class="crumb active">${escapeHtml(state.type)}</button>`);
+                    html += `<div class="mat-crumbs" style="margin-bottom:14px;">${crumbs.join('<span class="crumb-sep">›</span>')}</div>`;
+
+                    if (!state.brand) {
+                        // ---------- Schritt 1: Marke ----------
+                        const brands = [...new Set(materials.map(m => m.manufacturer))].sort();
+                        html += `<div class="sp-label">1. Marke wählen</div><div class="sp-grid">${brands.map(b => `<button type="button" class="sp-btn" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</button>`).join('')}</div>`;
+                    } else if (!state.type) {
+                        // ---------- Schritt 2: Gerätetyp ----------
+                        const types = [...new Set(materials.filter(m => m.manufacturer === state.brand && m.bauart).map(m => typeGroupOf(m.bauart)))]
+                            .filter(t => t && t !== 'Zubehör').sort();
+                        html += `<div class="sp-label">2. Gerätetyp wählen</div><div class="sp-grid">${types.map(t => `<button type="button" class="sp-btn" data-type="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}</div>`;
+                        if (!types.length) html += `<div class="sp-empty">Keine Klimageräte-Typen für ${escapeHtml(state.brand)} gefunden.</div>`;
+                    } else if (state.type === 'Multi-Split') {
+                        renderMulti();
+                        return;
+                    } else {
+                        renderSingleOrSelfContained();
+                        return;
+                    }
+                    body.innerHTML = html;
+                    wireNav();
+                }
+
+                // Single-Split / VRF: 1 Außengerät + 1 Innengerät passender Leistung.
+                // Klimaset / Truhengerät: bereits vollständige Positionen, direkt gelistet
+                // (keine Preise erfinden - Bosch-Sets z.B. haben keinen separaten AG-Preis).
+                function renderSingleOrSelfContained() {
+                    const outdoor = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Außengerät ' + state.type);
+                    const indoor = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Innengerät ' + state.type);
+                    const selfContained = materials.filter(m => m.manufacturer === state.brand && m.bauart === state.type);
+
+                    let html = `<div class="sp-label">3. Leistung wählen</div><div class="sp-grid">`;
+                    if (outdoor.length && indoor.length) {
+                        const sizes = [...new Set(outdoor.map(m => m.size).filter(Boolean))].sort((a, b) => kwOf(a) - kwOf(b));
+                        html += sizes.map(s => `<button type="button" class="sp-btn" data-power="${escapeHtml(s)}">${escapeHtml(s)} kW</button>`).join('');
+                    } else if (selfContained.length) {
+                        const sizes = [...new Set(selfContained.map(m => m.size).filter(Boolean))].sort((a, b) => kwOf(a) - kwOf(b));
+                        html += sizes.map(s => `<button type="button" class="sp-btn" data-power-self="${escapeHtml(s)}">${escapeHtml(s)} kW</button>`).join('');
+                    } else {
+                        html += `<div class="sp-empty">Keine passenden Geräte gefunden.</div>`;
+                    }
+                    html += `</div><div id="cfgResult"></div>`;
+                    body.innerHTML = html;
+                    wireNav();
+
+                    body.querySelectorAll('[data-power]').forEach(btn => btn.addEventListener('click', () => {
+                        const target = kwOf(btn.dataset.power);
+                        const bestOutdoor = [...outdoor].sort((a, b) => Math.abs(kwOf(a.size) - target) - Math.abs(kwOf(b.size) - target))[0];
+                        const bestIndoor = [...indoor].sort((a, b) => Math.abs(kwOf(a.size) - target) - Math.abs(kwOf(b.size) - target))[0];
+                        const total = (Number(bestOutdoor?.sellingPrice) || 0) + (Number(bestIndoor?.sellingPrice) || 0);
+                        body.querySelector('#cfgResult').innerHTML = `
+                            <div class="cfg-result-title">Kombination – ${escapeHtml(state.brand)} ${escapeHtml(state.type)}</div>
+                            <div class="cfg-grid">${deviceCard(bestIndoor, 'Innengerät')}${deviceCard(bestOutdoor, 'Außengerät')}</div>
+                            <div class="cfg-total">Gesamtpreis: <strong>${formatCurrency(total)}</strong></div>
+                            <button class="btn btn-primary" id="cfgAddCombo">${icon('plus')} Beide zum Projekt hinzufügen</button>`;
+                        body.querySelector('#cfgAddCombo').addEventListener('click', () => app._configuratorAddToProject([bestIndoor, bestOutdoor].filter(Boolean)));
+                    }));
+                    body.querySelectorAll('[data-power-self]').forEach(btn => btn.addEventListener('click', () => {
+                        const target = kwOf(btn.dataset.powerSelf);
+                        const best = [...selfContained].sort((a, b) => Math.abs(kwOf(a.size) - target) - Math.abs(kwOf(b.size) - target))[0];
+                        body.querySelector('#cfgResult').innerHTML = `
+                            <div class="cfg-result-title">${escapeHtml(state.brand)} ${escapeHtml(state.type)}</div>
+                            <div class="cfg-grid">${deviceCard(best, state.type)}</div>
+                            <div class="cfg-total">Gesamtpreis: <strong>${formatCurrency(best?.sellingPrice || 0)}</strong></div>
+                            <button class="btn btn-primary" id="cfgAddCombo">${icon('plus')} Zum Projekt hinzufügen</button>`;
+                        body.querySelector('#cfgAddCombo').addEventListener('click', () => app._configuratorAddToProject([best].filter(Boolean)));
+                    }));
+                }
+
+                // Multi-Split: erst Außengerät (Leistung + Anschlusszahl) wählen, danach
+                // NUR dazu passende Innengeräte (gleiche Marke, bauart 'Innengerät
+                // Multi-Split') bis zur maximalen Anschlusszahl - nie Single-Split-Geräte.
+                function renderMulti() {
+                    const outdoor = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Außengerät Multi-Split');
+                    if (!state.outdoorId) {
+                        let html = `<div class="sp-label">3. Außengerät wählen</div><div class="cfg-grid">`;
+                        html += outdoor.sort((a, b) => kwOf(a.size) - kwOf(b.size)).map(m => `
+                            <div class="cfg-card cfg-card-select" data-pick-outdoor="${escapeHtml(String(m.id))}">
+                                <div class="cfg-card-name">${escapeHtml(m.name)}</div>
+                                <div class="cfg-card-meta"><span>${escapeHtml(m.size || '')} kW</span><span>max. ${maxIGof(m)} Innengeräte</span></div>
+                                <div class="cfg-card-price">${formatCurrency(m.sellingPrice || 0)}</div>
+                            </div>`).join('');
+                        html += `</div>`;
+                        if (!outdoor.length) html += `<div class="sp-empty">Keine Multi-Split-Außengeräte für ${escapeHtml(state.brand)} gefunden.</div>`;
+                        body.innerHTML = html;
+                        wireNav();
+                        body.querySelectorAll('[data-pick-outdoor]').forEach(el => el.addEventListener('click', () => {
+                            state.outdoorId = el.dataset.pickOutdoor; state.indoorQty = {}; render();
+                        }));
+                        return;
+                    }
+
+                    const ag = materials.find(m => String(m.id) === String(state.outdoorId));
+                    const maxIG = maxIGof(ag);
+                    const indoorPool = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Innengerät Multi-Split')
+                        .sort((a, b) => kwOf(a.size) - kwOf(b.size));
+                    const usedSlots = Object.values(state.indoorQty).reduce((s, q) => s + q, 0);
+                    const indoorTotal = indoorPool.reduce((s, m) => s + (Number(state.indoorQty[m.id]) || 0) * (Number(m.sellingPrice) || 0), 0);
+                    const total = (Number(ag?.sellingPrice) || 0) + indoorTotal;
+
+                    let html = `
+                        <div class="sp-label">4. Passende Innengeräte wählen (${escapeHtml(state.brand)}, nur Multi-Split-kompatibel) <button type="button" class="crumb" id="cfgBackOutdoor" style="margin-left:8px;">‹ anderes Außengerät</button></div>
+                        <div class="cfg-grid" style="margin-bottom:10px;">${deviceCard(ag, 'Außengerät (gewählt)')}</div>
+                        <div class="cfg-slots">Belegt: <strong>${usedSlots} / ${maxIG}</strong> Innengeräte</div>
+                        <div class="cfg-indoor-list">`;
+                    indoorPool.forEach(m => {
+                        const qty = state.indoorQty[m.id] || 0;
+                        const disableAdd = usedSlots >= maxIG;
+                        html += `<div class="cfg-indoor-row">
+                            <div class="cfg-indoor-name">${escapeHtml(m.name)}<div class="cfg-card-meta"><span>${escapeHtml(m.size || '')} kW</span><span>${formatCurrency(m.sellingPrice || 0)}</span></div></div>
+                            <div class="cfg-qty-ctl">
+                                <button type="button" class="btn btn-sm btn-outline" data-qty-dec="${escapeHtml(String(m.id))}" ${qty <= 0 ? 'disabled' : ''}>−</button>
+                                <span>${qty}</span>
+                                <button type="button" class="btn btn-sm btn-outline" data-qty-inc="${escapeHtml(String(m.id))}" ${disableAdd ? 'disabled' : ''}>+</button>
+                            </div>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                    if (!indoorPool.length) html += `<div class="sp-empty">Keine Multi-Split-Innengeräte für ${escapeHtml(state.brand)} im Katalog.</div>`;
+                    html += `<div class="cfg-total">Gesamtpreis: <strong>${formatCurrency(total)}</strong> <small>(Außengerät + ${usedSlots} Innengerät${usedSlots !== 1 ? 'e' : ''})</small></div>`;
+                    html += `<button class="btn btn-primary" id="cfgAddCombo" ${usedSlots === 0 ? 'disabled' : ''}>${icon('plus')} Alle zum Projekt hinzufügen</button>`;
+                    body.innerHTML = html;
+                    wireNav();
+
+                    body.querySelector('#cfgBackOutdoor').addEventListener('click', () => { state.outdoorId = ''; state.indoorQty = {}; render(); });
+                    body.querySelectorAll('[data-qty-inc]').forEach(btn => btn.addEventListener('click', () => {
+                        const id = btn.dataset.qtyInc;
+                        if (usedSlots >= maxIG) return;
+                        state.indoorQty[id] = (state.indoorQty[id] || 0) + 1;
+                        render();
+                    }));
+                    body.querySelectorAll('[data-qty-dec]').forEach(btn => btn.addEventListener('click', () => {
+                        const id = btn.dataset.qtyDec;
+                        state.indoorQty[id] = Math.max(0, (state.indoorQty[id] || 0) - 1);
+                        render();
+                    }));
+                    const addBtn = body.querySelector('#cfgAddCombo');
+                    if (addBtn) addBtn.addEventListener('click', () => {
+                        const items = [];
+                        if (ag) items.push({ m: ag, qty: 1 });
+                        indoorPool.forEach(m => { const q = state.indoorQty[m.id] || 0; if (q > 0) items.push({ m, qty: q }); });
+                        app._configuratorAddToProject(items.map(i => i.m), items.map(i => i.qty));
+                    });
+                }
+
+                function wireNav() {
+                    body.querySelectorAll('.sp-btn[data-brand]').forEach(btn => btn.addEventListener('click', () => { state.brand = btn.dataset.brand; render(); }));
+                    body.querySelectorAll('.sp-btn[data-type]').forEach(btn => btn.addEventListener('click', () => { state.type = btn.dataset.type; state.outdoorId = ''; state.indoorQty = {}; render(); }));
+                    const crumbBrand = modal.querySelector('.crumb[data-nav="brand"]');
+                    const crumbType = modal.querySelector('.crumb[data-nav="type"]');
+                    crumbBrand?.addEventListener('click', () => { state.brand = ''; state.type = ''; state.outdoorId = ''; state.indoorQty = {}; render(); });
+                    crumbType?.addEventListener('click', () => { state.type = ''; state.outdoorId = ''; state.indoorQty = {}; render(); });
+                }
+
+                render();
+            },
+
+            // Fügt eine im Konfigurator zusammengestellte Kombination (Innen+Außen bzw.
+            // Außengerät + mehrere Innengeräte) gesammelt einem Projekt hinzu.
+            async _configuratorAddToProject(mats, qtys = null) {
+                mats = mats.filter(Boolean);
+                if (!mats.length) return;
+                const projects = (await db.getAll('projects')).filter(p => !['Bezahlt', 'Archiviert', 'Archiv'].includes(p.status))
+                    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                if (projects.length === 0) { showToast('Kein offenes Projekt vorhanden – lege zuerst ein Projekt an.', 'info'); return; }
+
+                const modal = showModal('Kombination zum Projekt hinzufügen', `
+                    <div class="form-group"><label>Projekt *</label>
+                        <select id="cap_project">${projects.map(p => `<option value="${escapeHtml(String(p.id))}">${escapeHtml(p.title || 'Projekt')}</option>`).join('')}</select>
+                    </div>
+                    <div class="form-group"><label>Raum (optional)</label><select id="cap_room"><option value="">Projekt gesamt</option></select></div>
+                    <div style="font-size:12.5px;color:var(--text-muted);">${mats.length} Position${mats.length !== 1 ? 'en' : ''}: ${mats.map(m => escapeHtml(m.name)).join(', ')}</div>
+                `, async (overlay) => {
+                    const projectId = parseId(overlay.querySelector('#cap_project').value);
+                    const roomId = overlay.querySelector('#cap_room').value || null;
+                    if (!projectId) { showToast('Bitte ein Projekt wählen.', 'error'); return; }
+                    for (let i = 0; i < mats.length; i++) {
+                        const m = mats[i];
+                        const qty = qtys ? (qtys[i] || 1) : 1;
+                        await db.add('projectMaterials', {
+                            projectId, materialId: m.id, roomId: roomId ? parseId(roomId) : null,
+                            quantity: qty, unit: m.unit || 'Stk', size: m.size || '',
+                            price: matUnitPrice(m, m.unit || 'Stk'), note: 'Aus Geräte-Konfigurator'
+                        });
+                    }
+                    overlay.remove();
+                    showToast(`${mats.length} Position${mats.length !== 1 ? 'en' : ''} zum Projekt hinzugefügt.`, 'success');
+                }, null);
+                const loadRooms = async () => {
+                    const pid = modal.querySelector('#cap_project').value;
+                    const rooms = (await db.getByIndex('rooms', 'projectId', pid)) || [];
+                    modal.querySelector('#cap_room').innerHTML = '<option value="">Projekt gesamt</option>' +
+                        rooms.map(r => `<option value="${escapeHtml(String(r.id))}">${escapeHtml(r.name || 'Raum')}</option>`).join('');
+                };
+                modal.querySelector('#cap_project').addEventListener('change', loadRooms);
+                loadRooms();
+            },
+
             async openRoomModal(projectId, roomId = null) {
                 await loadLearned();
                 const room = roomId ? await db.get('rooms', roomId) : null;

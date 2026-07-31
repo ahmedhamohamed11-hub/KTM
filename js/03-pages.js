@@ -1184,6 +1184,7 @@
                             <option value="min" ${F.stockF === 'min' ? 'selected' : ''}>Unter Minimum</option>
                         </select>
                         <div class="toolbar-spacer"></div>
+                        <button class="btn btn-primary btn-sm" onclick="app.openDeviceConfigurator()">🔧 Geräte-Konfigurator</button>
                         <button class="btn btn-outline btn-sm" onclick="app.exportMaterialsExcel()">Excel Export</button>
                         <button class="btn btn-outline btn-sm" onclick="app.importMaterialsExcel()">Excel Import</button>
                     </div>
