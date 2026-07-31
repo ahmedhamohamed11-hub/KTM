@@ -921,18 +921,18 @@
 
                 const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
                 let salesTotal = 0, materialCost = 0, laborSales = 0, missing = 0;
-                const rows = positions.map(it => {
+                const rows = positions.map((it, idx) => {
                     const qty = Number(it.quantity) || 0;
                     const disc = Number(it.discount) || 0;
                     const lineSales = (Number(it.price) || 0) * qty * (1 - disc / 100);
                     salesTotal += lineSales;
                     const labor = isLabor(it);
-                    let cost = 0, known = true, ekUnit = 0, note = '';
+                    let cost = 0, known = true, ekUnit = 0, note = '', m = null;
                     if (labor) {
                         laborSales += lineSales;
                         note = 'Arbeit (kein Materialeinkauf)';
                     } else {
-                        const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                        m = materials.find(mm => String(mm.id) === String(it.materialId));
                         if (!m) { known = false; note = '⚠️ Material nicht mehr in Datenbank'; }
                         else {
                             const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek;
@@ -942,10 +942,21 @@
                         if (!known) missing++;
                     }
                     const lineProfit = lineSales - cost;
+                    // EK direkt hier bearbeitbar (statt erst zum Material navigieren zu
+                    // müssen) - besonders bei "fehlt" der schnellste Weg, den Gewinn
+                    // sofort korrekt zu sehen. Eingabe ist EK je verkaufter Einheit
+                    // (z.B. €/m bei Rollenware); wird beim Speichern zurück auf den
+                    // Material-Einkaufspreis (ggf. × Gebindelänge) umgerechnet.
+                    const ekCell = labor ? '—' : (m
+                        ? `<div class="diag-ek-edit">
+                             <input type="number" step="0.01" min="0" class="diag-ek-input" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" value="${known ? (Math.round(ekUnit * 100) / 100) : ''}" placeholder="EK/${escapeHtml(it.unit || m.unit || 'Stk')}">
+                             <button type="button" class="btn btn-sm btn-primary diag-ek-save" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" title="Einkaufspreis speichern">✓</button>
+                           </div>`
+                        : '<span style="color:var(--danger);font-weight:600;">fehlt</span>');
                     return `<tr class="${!known && !labor ? 'diag-missing' : ''}">
                         <td>${escapeHtml(it.name || '(ohne Namen)')}<div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div></td>
                         <td style="text-align:right;">${formatCurrency(lineSales)}</td>
-                        <td style="text-align:right;">${labor ? '—' : (known ? formatCurrency(cost) : '<span style="color:var(--danger);font-weight:600;">fehlt</span>')}</td>
+                        <td style="text-align:right;">${ekCell}</td>
                         <td style="text-align:right;font-weight:600;color:${lineProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">${known || labor ? formatCurrency(lineProfit) : '?'}</td>
                     </tr>`;
                 }).join('');
@@ -966,8 +977,8 @@
                 const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
                 const complete = missing === 0;
 
-                showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
-                    ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn beim Material nach, dann stimmt die Marge.</div>` : ''}
+                const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
+                    ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn direkt unten in der Tabelle nach, dann stimmt die Marge sofort.</div>` : ''}
                     <div class="diag-summary">
                         <div class="diag-row"><span>Verkaufspreis${(offer.agreedPrice != null && offer.agreedPrice !== '') ? ' (vereinbart)' : ''}</span><strong>${formatCurrency(salesEffective)}</strong></div>
                         <div class="diag-row"><span>− Materialeinkauf</span><strong>${formatCurrency(totalCost)}</strong></div>
@@ -977,13 +988,34 @@
                         <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
                         <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>
                     </div>
-                    <div class="diag-detail-title">Positionen im Detail</div>
+                    <div class="diag-detail-title">Positionen im Detail <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">– Einkauf direkt hier eintragen &amp; mit ✓ speichern</span></div>
                     <div class="table-container"><table class="diag-table">
                         <thead><tr><th>Position</th><th style="text-align:right;">Verkauf</th><th style="text-align:right;">Einkauf</th><th style="text-align:right;">Gewinn</th></tr></thead>
                         <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
                     </table></div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Nur für dich sichtbar – erscheint nie im Kundenangebot oder PDF.</div>
                 `, null, null, { wide: true });
+
+                // Einkaufspreis inline speichern: EK je verkaufter Einheit -> zurück auf
+                // den Material-Einkaufspreis umrechnen (bei Rolle/Bund/Stange × Gebindelänge)
+                // und die Diagnose danach mit den neuen Zahlen neu aufbauen.
+                diagModal.querySelectorAll('.diag-ek-save').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const matId = btn.dataset.mat;
+                        const input = diagModal.querySelector(`.diag-ek-input[data-idx="${btn.dataset.idx}"]`);
+                        const val = parseFloat(String(input.value).replace(',', '.'));
+                        if (!(val >= 0)) { showToast('Bitte einen gültigen Einkaufspreis eingeben.', 'info'); return; }
+                        const mat = await db.get('materials', matId);
+                        if (!mat) { showToast('Material nicht gefunden.', 'error'); return; }
+                        const bl = Number(mat.bundleLength) || 0;
+                        const isPack = ['Rolle', 'Bund', 'Stange'].includes(mat.unit || '') && bl > 0;
+                        mat.purchasePrice = isPack ? Math.round(val * bl * 100) / 100 : val;
+                        await db.put('materials', mat);
+                        showToast(`Einkaufspreis für „${mat.name}" gespeichert.`, 'success');
+                        diagModal.remove();
+                        app.showOfferDiagnosis(offerId);
+                    });
+                });
             },
 
             async openCategoryManageModal(cat) {
