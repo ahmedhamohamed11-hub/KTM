@@ -1203,20 +1203,10 @@
                 try { const t = await getSetting('marginThresholds'); if (t) marginThresholds = JSON.parse(t); } catch (e) {}
 
                 // Interner Gewinn eines (eingefrorenen) Angebots aus seinen Positionen
-                // Einkaufspreis pro VERKAUFTER Einheit (rechnet Rolle/Bund/Stange -> Meter um)
-                const ekPerSalesUnit = (m, it) => {
-                    if (!m) return { ek: 0, known: false };
-                    let ekPack = 0;   // EK der Einkaufseinheit (Rolle/Bund/Stange oder Stück)
-                    if (typeof effectivePurchasePrice === 'function') ekPack = Number(effectivePurchasePrice(m, dealerDiscounts)) || 0;
-                    if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
-                    if (!(ekPack > 0)) return { ek: 0, known: false };
-                    // Verkauf pro Meter, aber Einkauf pro Rolle/Bund/Stange -> auf Meter herunterrechnen
-                    const bl = Number(m.bundleLength) || 0;
-                    const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
-                    const soldPerMeter = (it.unit === 'm') || isPack;
-                    if (isPack && soldPerMeter) return { ek: ekPack / bl, known: true };   // EK pro Meter
-                    return { ek: ekPack, known: true };                                    // EK pro Stück
-                };
+                // Einkaufspreis pro VERKAUFTER Einheit (rechnet Rolle/Bund/Stange -> Meter um).
+                // Nutzt die EINE zentrale Funktion (01-core-db-sync.js) - keine eigene Kopie
+                // mehr, damit ein hier behobener Bug nicht anderswo erneut auftaucht.
+                const ekPerSalesUnit = (m) => window.ekPerSalesUnit(m, dealerDiscounts);
 
                 // Vollständige, nachvollziehbare Kalkulation eines (eingefrorenen) Angebots.
                 // Gewinn = Verkaufspreis − Materialeinkauf − Arbeitskosten − sonstige Kosten
@@ -1239,7 +1229,7 @@
                             laborSales += lineSales;   // Arbeit: kein Materialeinkauf
                         } else {
                             const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                            const r = ekPerSalesUnit(m, it);
+                            const r = ekPerSalesUnit(m);
                             ekKnown = r.known;
                             ekUnit = r.ek;
                             if (ekKnown) lineCost = ekUnit * qty;
@@ -1248,8 +1238,13 @@
                         materialCost += lineCost;
                         lines.push({ name: it.name || '(ohne Namen)', qty, unit: it.unit || 'Stk', sales: lineSales, cost: lineCost, ekUnit, labor, ekKnown, discount: disc, hasDiscount: disc > 0 });
                     });
-                    // Verkaufspreis: vereinbarter Preis (netto) falls gesetzt, sonst Summe der Positionen
-                    const salesEffective = (o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : salesTotal;
+                    // Verkaufspreis: vereinbarter Preis (netto) falls gesetzt, sonst der beim
+                    // Angebot hinterlegte Netto-Betrag NACH dem Gesamtrabatt (netAfterDiscount) -
+                    // sonst wurde ein auf das ganze Angebot gewährter Rabatt hier ignoriert und
+                    // der Gewinn dadurch systematisch zu hoch ausgewiesen.
+                    const salesEffective = (o.agreedPrice != null && o.agreedPrice !== '')
+                        ? Number(o.agreedPrice)
+                        : ((Number(o.netAfterDiscount) > 0) ? Number(o.netAfterDiscount) : salesTotal);
                     const otherCost = 0;   // Platzhalter für spätere sonstige Kosten
                     const profit = salesEffective - materialCost - otherCost;
                     const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;

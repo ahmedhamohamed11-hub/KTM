@@ -928,6 +928,26 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         }
         window.effectivePurchasePrice = effectivePurchasePrice;
 
+        // Zentrale, EINZIGE Stelle für die Umrechnung Einkaufseinheit -> Verkaufseinheit.
+        // Grund: Bei Rollen-/Bund-/Stangenware (z.B. Kupferrohr) wird EINGEKAUFT pro
+        // Rolle, aber VERKAUFT pro Meter. Wird der Rollen-EK direkt mit der Meter-Menge
+        // multipliziert, entsteht ein um ein Vielfaches zu hoher "Einkauf" -> unrealistischer
+        // oder stark negativer Gewinn (Ursache des gemeldeten Fehlers). Jede Stelle, die
+        // einen Gewinn/EK je Position berechnet, MUSS diese Funktion nutzen statt eigener
+        // Kopien - sonst wird ein hier behobener Bug an anderer Stelle erneut eingebaut.
+        // Gibt EK PRO VERKAUFTER EINHEIT zurück (z.B. € je Meter statt € je Rolle).
+        function ekPerSalesUnit(m, dealerDiscounts) {
+            if (!m) return { ek: 0, known: false };
+            let ekPack = Number(effectivePurchasePrice(m, dealerDiscounts)) || 0;   // EK der Einkaufseinheit (Rolle/Bund/Stange oder Stück)
+            if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
+            if (!(ekPack > 0)) return { ek: 0, known: false };
+            const bl = Number(m.bundleLength) || 0;
+            const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
+            if (isPack) return { ek: ekPack / bl, known: true };   // EK pro Meter
+            return { ek: ekPack, known: true };                    // EK pro Stück
+        }
+        window.ekPerSalesUnit = ekPerSalesUnit;
+
         // Bucht den Verbrauch von Metern bei Rollen-/Bund-/Stangen-Material.
         // stock = Anzahl ganzer Rollen, openMeters = Rest der angebrochenen Rolle.
         // Reicht der offene Rest nicht, wird automatisch eine Rolle angebrochen

@@ -418,7 +418,12 @@
                     const m = materials.find(x => String(x.id) === String(sel.value));
                     const vk = parseFloat(modal.querySelector('#pmPrice')?.value) || 0;
                     const qty = parseFloat(String(modal.querySelector('#pmQty')?.value).replace(',', '.')) || 1;
-                    const ek = Number(m?.purchasePrice) || 0;
+                    // Zentrale Funktion statt rohem m.purchasePrice: rechnet Rolle/Bund/Stange
+                    // auf den EK je Meter herunter und berücksichtigt den Händlerrabatt - vorher
+                    // wurde hier bei Rollenware der EK der GANZEN Rolle mit der Meter-Menge
+                    // multipliziert, was einen stark negativen "Gewinn" vortäuschte.
+                    const ekInfo = window.ekPerSalesUnit ? window.ekPerSalesUnit(m) : { ek: Number(m?.purchasePrice) || 0, known: (Number(m?.purchasePrice) || 0) > 0 };
+                    const ek = ekInfo.known ? ekInfo.ek : 0;
                     if (ek > 0) {
                         const profit = (vk - ek) * qty;
                         box.innerHTML = `<div class="pm-ek-in">
@@ -911,16 +916,8 @@
                 const dealerDiscounts = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
 
                 const isLabor = (it) => { const c = (it.category || '').toLowerCase(); const n = (it.name || '').toLowerCase(); return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || c.includes('lohn') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt') || n.includes('arbeitsstunde'); };
-                const ekPerSalesUnit = (m, it) => {
-                    if (!m) return { ek: 0, known: false };
-                    let ekPack = (typeof effectivePurchasePrice === 'function') ? (Number(effectivePurchasePrice(m, dealerDiscounts)) || 0) : 0;
-                    if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
-                    if (!(ekPack > 0)) return { ek: 0, known: false };
-                    const bl = Number(m.bundleLength) || 0;
-                    const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
-                    if (isPack && ((it.unit === 'm') || isPack)) return { ek: ekPack / bl, known: true };
-                    return { ek: ekPack, known: true };
-                };
+                // Zentrale Funktion (01-core-db-sync.js) statt eigener Kopie.
+                const ekPerSalesUnit = (m) => window.ekPerSalesUnit(m, dealerDiscounts);
 
                 const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
                 let salesTotal = 0, materialCost = 0, laborSales = 0, missing = 0;
@@ -938,7 +935,7 @@
                         const m = materials.find(mm => String(mm.id) === String(it.materialId));
                         if (!m) { known = false; note = '⚠️ Material nicht mehr in Datenbank'; }
                         else {
-                            const r = ekPerSalesUnit(m, it); known = r.known; ekUnit = r.ek;
+                            const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek;
                             if (known) { cost = ekUnit * qty; if (disc === 0 && !m.dealerDiscount && !(dealerDiscounts[(m.manufacturer||'').trim()])) note = 'kein Rabatt hinterlegt'; }
                             else note = '⚠️ Einkaufspreis fehlt';
                         }
@@ -953,11 +950,16 @@
                     </tr>`;
                 }).join('');
 
-                const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '') ? Number(offer.agreedPrice) : salesTotal;
+                // Wie in offerProfit() (03-pages.js): nach Gesamtrabatt hinterlegten Netto-
+                // Betrag nutzen, sonst wird ein Gesamtrabatt hier ignoriert und der Gewinn
+                // zu hoch ausgewiesen.
+                const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '')
+                    ? Number(offer.agreedPrice)
+                    : ((Number(offer.netAfterDiscount) > 0) ? Number(offer.netAfterDiscount) : salesTotal);
                 const totalCost = materialCost = positions.reduce((s, it) => {
                     if (isLabor(it)) return s;
                     const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                    const r = ekPerSalesUnit(m, it);
+                    const r = ekPerSalesUnit(m);
                     return s + (r.known ? r.ek * (Number(it.quantity) || 0) : 0);
                 }, 0);
                 const profit = salesEffective - totalCost;
@@ -1175,7 +1177,11 @@
                 const m = await db.get('materials', id);
                 if (!m) return;
                 const st = matStockStatus(m);
-                const marge = (Number(m.sellingPrice) || 0) - (Number(m.purchasePrice) || 0);
+                // Effektiver EK (Händlerrabatt berücksichtigen) statt rohem purchasePrice -
+                // sonst zeigt die Detailseite "EK 0,00 €" / volle Marge, obwohl über den
+                // Markenrabatt längst ein Einkaufspreis errechnet wird.
+                const ekEffective = (typeof effectivePurchasePrice === 'function') ? (Number(effectivePurchasePrice(m)) || 0) : (Number(m.purchasePrice) || 0);
+                const marge = (Number(m.sellingPrice) || 0) - ekEffective;
 
                 // QR-Code (Artikelnummer bzw. Modellname) für Lager-Etiketten
                 let qrHtml = '';
@@ -1201,7 +1207,7 @@
                                     ${m.articleNumber ? `<div class="survey-chip"><span>Artikelnummer</span><strong>${escapeHtml(m.articleNumber)}</strong></div>` : ''}
                                     <div class="survey-chip"><span>Kategorie</span><strong>${escapeHtml(m.category || '-')}</strong></div>
                                     <div class="survey-chip"><span>Einheit</span><strong>${escapeHtml(m.unit || 'Stk')}</strong></div>
-                                    <div class="survey-chip"><span>EK-Preis</span><strong>${formatCurrency(m.purchasePrice || 0)}</strong></div>
+                                    <div class="survey-chip"><span>EK-Preis</span><strong>${formatCurrency(ekEffective)}</strong>${(!(Number(m.purchasePrice) > 0) && ekEffective > 0) ? '<small style="display:block;color:var(--text-muted);font-weight:400;">via Händlerrabatt</small>' : ''}</div>
                                     <div class="survey-chip" style="border-color:var(--accent);"><span>VK-Preis</span><strong style="color:var(--accent);">${formatCurrency(m.sellingPrice || 0)}</strong></div>
                                     ${marge > 0 ? `<div class="survey-chip"><span>Marge</span><strong style="color:var(--success);">${formatCurrency(marge)}</strong></div>` : ''}
                                     <div class="survey-chip"><span>Lagerbestand</span><strong class="${st.cls === 'st-low' ? 'text-danger' : ''}">${m.stock ?? 0} ${escapeHtml(m.unit || 'Stk')}${m.minStock > 0 ? ' (min. ' + m.minStock + ')' : ''}</strong></div>
@@ -4612,16 +4618,19 @@
         return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt');
     }
 
-    // Einkaufspreis je Einheit für eine Position – nutzt die zentrale Logik
-    // (individueller Rabatt → Markenrabatt → fester EK).
+    // Einkaufspreis je VERKAUFTER Einheit für eine Position – nutzt die zentrale
+    // Logik (individueller Rabatt → Markenrabatt → fester EK, inkl. Rolle/Bund/
+    // Stange -> Meter-Umrechnung). Vorher wurde hier bei Rollenware der EK der
+    // GANZEN Rolle mit der Meter-Menge multipliziert -> massiv negativer Gewinn
+    // in der Live-Kalkulation beim Angebot-Erstellen, obwohl die Angebotsliste
+    // (offerProfit) bereits korrekt rechnete. Jetzt dieselbe zentrale Funktion.
     function purchaseUnitFor(it) {
         const m = materials.find(mm => String(mm.id) === String(it.materialId));
         if (m) {
-            // Position kann Preis überschrieben haben; Material-Listenpreis für EK nutzen
-            const ek = effectivePurchasePrice(m, dealerDiscounts);
-            if (ek > 0) return ek;
+            const r = window.ekPerSalesUnit(m, dealerDiscounts);
+            if (r.known && r.ek > 0) return r.ek;
         }
-        // Fallback: Markenrabatt direkt auf den Positionspreis
+        // Fallback: Markenrabatt direkt auf den Positionspreis (kein Material verknüpft)
         const brand = (it.manufacturer || m?.manufacturer || '').trim();
         const disc = dealerDiscounts && brand ? Number(dealerDiscounts[brand]) : 0;
         if (disc > 0) {
@@ -4656,13 +4665,19 @@
         });
         const totalVK = materialVK + laborVK;
         const materialProfit = materialVK - materialEK;
-        const totalProfit = totalVK - materialEK; // Arbeit = reiner Ertrag (kein EK)
-        const margin = totalVK > 0 ? (totalProfit / totalVK) * 100 : 0;
+        // Gesamtrabatt (auf das ganze Angebot, separat von Positions-Rabatten) muss hier
+        // ebenfalls abgezogen werden - sonst zeigt die Live-Kalkulation einen höheren
+        // Gewinn als tatsächlich beim Speichern als netAfterDiscount herauskommt.
+        const globalDiscRate = (offerSettings && offerSettings.discountEnabled) ? (Math.min(100, Math.max(0, Number(offerSettings.discountRate) || 0)) / 100) : 0;
+        const totalVKAfterDiscount = totalVK * (1 - globalDiscRate);
+        const totalProfit = totalVKAfterDiscount - materialEK; // Arbeit = reiner Ertrag (kein EK)
+        const margin = totalVKAfterDiscount > 0 ? (totalProfit / totalVKAfterDiscount) * 100 : 0;
         const row = (label, val, cls = '') => `<div class="calc-row ${cls}"><span>${label}</span><span>${val}</span></div>`;
         let html = `<div class="calc-head">🔒 Interne Kalkulation <span>nur für dich – nicht im Angebot/PDF</span></div>`;
         html += row('Materialkosten (EK)', formatCurrency(materialEK));
         html += row('Materialverkauf (VK)', formatCurrency(materialVK));
         html += row('Materialgewinn', formatCurrency(materialProfit), materialProfit < 0 ? 'neg' : 'pos');
+        if (globalDiscRate > 0) html += row(`Gesamtrabatt (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(totalVK - totalVKAfterDiscount));
         html += row('Arbeitskosten (VK)', formatCurrency(laborVK));
         html += row('Reingewinn gesamt', formatCurrency(totalProfit), totalProfit < 0 ? 'neg' : 'pos');
         html += row('Gewinnmarge', `${margin.toFixed(1)} %`, margin < 10 ? 'neg' : 'pos');
@@ -4706,8 +4721,16 @@
         const existing = selected.find(s => s.materialId === materialId);
         if (existing) { existing.quantity += 1; }
         else {
+            // Rolle/Bund/Stange wird laut Materialstammdaten "pro Meter verkauft" - die
+            // Position bekommt deshalb sofort den Meter-Verkaufspreis (wie im Projekt-
+            // Material-Dialog via matUnitPrice), statt des vollen Rollen-Listenpreises.
+            // Sonst startet die Position mit VK = Rollenpreis, während der EK bereits
+            // pro Meter gerechnet wird -> Gewinn/Marge in der Live-Kalkulation viel zu hoch.
+            const isRollGoods = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && Number(m.bundleLength) > 0;
+            const unit = isRollGoods ? 'm' : (m.unit || 'Stk');
+            const price = isRollGoods ? (matUnitPrice(m, 'm') || 0) : (Number(m.sellingPrice) || 0);
             selected.push({
-                materialId: m.id, name: m.name, unit: m.unit || 'Stk', price: m.sellingPrice || 0,
+                materialId: m.id, name: m.name, unit, price,
                 quantity: 1, manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
                 category: m.category || '', description: m.description || '', image: m.image || ''
             });
