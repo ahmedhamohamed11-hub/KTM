@@ -3963,6 +3963,7 @@
     if (!customer) { showToast('Kein Kunde zugewiesen.', 'error'); return; }
 
     const materials = await db.getAll('materials');
+    const dealerDiscounts = await getDealerDiscounts();
     const cooling = calculateCoolingCapacity(project.rooms || []);
     const manufacturers = [...new Set(materials.map(m => m.manufacturer).filter(Boolean))];
     const defaults = await loadOfferDefaults();
@@ -4108,6 +4109,7 @@
                 <div class="offer-rooms" id="offerRoomPicker"></div>
                 <div class="offer-pos-list" id="offerPosList"></div>
                 <div class="offer-summary-box" id="offerSummaryBox"></div>
+                <div class="offer-calc-box" id="offerCalcBox"></div>
             </div>
         </div>
         `,
@@ -4375,6 +4377,68 @@
         }
         html += `<div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>`;
         modal.querySelector('#offerSummaryBox').innerHTML = html;
+        renderInternalCalc();
+    }
+
+    // Ist eine Position Arbeitszeit/Anfahrt (zählt zu Arbeitskosten, nicht Material)?
+    function isLabor(it) {
+        const c = (it.category || '').toLowerCase();
+        const n = (it.name || '').toLowerCase();
+        return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt');
+    }
+
+    // Einkaufspreis je Einheit für eine Position ermitteln:
+    // 1) hinterlegter EK am Material  2) VK × (1 − Lieferantenrabatt der Marke)
+    function purchaseUnitFor(it) {
+        const m = materials.find(mm => String(mm.id) === String(it.materialId));
+        if (m && Number(m.purchasePrice) > 0) return Number(m.purchasePrice);
+        const brand = (it.manufacturer || m?.manufacturer || '').trim();
+        const disc = dealerDiscounts && brand ? Number(dealerDiscounts[brand]) : 0;
+        if (disc > 0) {
+            const rate = disc > 1 ? disc / 100 : disc;
+            return (Number(it.price) || 0) * (1 - rate);
+        }
+        return 0; // unbekannt
+    }
+
+    // Interne Kalkulation – NUR für dich, kommt nie ins PDF/Angebot.
+    function renderInternalCalc() {
+        const box = modal.querySelector('#offerCalcBox');
+        if (!box) return;
+        let materialEK = 0, materialVK = 0, laborVK = 0, unknownEK = 0;
+        const warnRows = [];
+        selected.forEach(it => {
+            const qty = Number(it.quantity) || 0;
+            const vkLine = (Number(it.price) || 0) * qty * (1 - (Number(it.discount) || 0) / 100);
+            if (isLabor(it)) { laborVK += vkLine; return; }
+            materialVK += vkLine;
+            const ekUnit = purchaseUnitFor(it);
+            if (ekUnit > 0) {
+                const ekLine = ekUnit * qty;
+                materialEK += ekLine;
+                const profit = vkLine - ekLine;
+                const margin = vkLine > 0 ? (profit / vkLine) * 100 : 0;
+                if (vkLine < ekLine) warnRows.push(`⚠️ <strong>${escapeHtml(it.name)}</strong> wird UNTER Einkauf verkauft (${formatCurrency(vkLine)} < ${formatCurrency(ekLine)})`);
+                else if (margin < 10) warnRows.push(`⚠️ <strong>${escapeHtml(it.name)}</strong>: nur ${margin.toFixed(1)}% Marge`);
+            } else {
+                unknownEK += vkLine;
+            }
+        });
+        const totalVK = materialVK + laborVK;
+        const materialProfit = materialVK - materialEK;
+        const totalProfit = totalVK - materialEK; // Arbeit = reiner Ertrag (kein EK)
+        const margin = totalVK > 0 ? (totalProfit / totalVK) * 100 : 0;
+        const row = (label, val, cls = '') => `<div class="calc-row ${cls}"><span>${label}</span><span>${val}</span></div>`;
+        let html = `<div class="calc-head">🔒 Interne Kalkulation <span>nur für dich – nicht im Angebot/PDF</span></div>`;
+        html += row('Materialkosten (EK)', formatCurrency(materialEK));
+        html += row('Materialverkauf (VK)', formatCurrency(materialVK));
+        html += row('Materialgewinn', formatCurrency(materialProfit), materialProfit < 0 ? 'neg' : 'pos');
+        html += row('Arbeitskosten (VK)', formatCurrency(laborVK));
+        html += row('Reingewinn gesamt', formatCurrency(totalProfit), totalProfit < 0 ? 'neg' : 'pos');
+        html += row('Gewinnmarge', `${margin.toFixed(1)} %`, margin < 10 ? 'neg' : 'pos');
+        if (unknownEK > 0.005) html += `<div class="calc-note">Für ${formatCurrency(unknownEK)} Verkauf ist kein Einkaufspreis hinterlegt – trag ihn beim Material ein (Händlerrabatt), dann wird der Gewinn genauer.</div>`;
+        if (warnRows.length) html += `<div class="calc-warn">${warnRows.join('<br>')}</div>`;
+        box.innerHTML = html;
     }
 
     function matchesFilter(m) {
