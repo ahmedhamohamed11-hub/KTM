@@ -1081,23 +1081,34 @@
 
             async openCategoryManageModal(cat) {
                 const materials = await db.getAll('materials');
-                const inCat = materials.filter(m => (m.category || 'Ohne Kategorie') === cat);
-                const otherCats = [...new Set(materials.map(m => m.category || 'Ohne Kategorie'))].filter(c => c !== cat).sort();
+                // Präfix-Treffer statt nur exaktem Treffer: erfasst bei einem Ordner MIT
+                // Unterordnern auch alle Produkte in dessen Unterordnern (kaskadierend).
+                const inCat = materials.filter(m => { const c = m.category || 'Ohne Kategorie'; return c === cat || c.startsWith(cat + '/'); });
+                const hasChildren = inCat.some(m => (m.category || '') !== cat);
+                const otherCats = [...new Set(materials.map(m => m.category || 'Ohne Kategorie'))].filter(c => c !== cat && !c.startsWith(cat + '/')).sort();
                 const known = ['Außengeräte', 'Innengeräte', 'Multisplit-Systeme', 'VRF-Systeme', 'Kupferrohr', 'Isolierung', 'Elektromaterial', 'Kabel', 'Kondensat', 'Befestigung', 'Montagematerial', 'Werkzeug', 'Kältemittel', 'Arbeitszeit', 'Ersatzteile', 'Steuerungen', 'Zubehör'];
                 const targets = [...new Set([...otherCats, ...known.filter(k => k !== cat)])];
+                const cascadeHint = hasChildren ? ` (inkl. Unterordner)` : '';
 
                 const modal = showModal(
-                    `Kategorie verwalten – ${escapeHtml(cat)}`,
+                    `Ordner verwalten – ${escapeHtml(cat)}`,
                     `
                         <div class="form-card">
                             <div class="form-card-title">✏️ Umbenennen</div>
-                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Alle ${inCat.length} Produkte dieser Kategorie erhalten den neuen Namen.</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Alle ${inCat.length} Produkte${cascadeHint} erhalten den neuen Pfad. Unterordner bleiben als Unterordner erhalten.</div>
                             <div class="form-group"><label>Neuer Name</label><input type="text" id="catNewName" value="${escapeHtml(cat)}" list="dl_catNames"><datalist id="dl_catNames">${known.map(k => `<option value="${escapeHtml(k)}">`).join('')}</datalist></div>
                             <button class="btn btn-primary btn-sm" id="catRenameBtn">Umbenennen</button>
                         </div>
                         <div class="form-card">
+                            <div class="form-card-title">📁 Unterordner anlegen</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Verschiebt ausgewählte Produkte dieses Ordners in einen neuen Unterordner „${escapeHtml(cat)}/...".</div>
+                            <div class="form-group"><label>Name des Unterordners</label><input type="text" id="catSubName" placeholder="z. B. Kabel"></div>
+                            <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">Tipp: Du kannst auch beim Anlegen/Bearbeiten eines Materials direkt "${escapeHtml(cat)}/Neuer Unterordner" als Kategorie eintippen.</div>
+                            <button class="btn btn-outline btn-sm" id="catSubBtn">Alle ${inCat.filter(m => (m.category || '') === cat).length} direkten Produkte in Unterordner verschieben</button>
+                        </div>
+                        <div class="form-card">
                             <div class="form-card-title">📦 Alle Produkte verschieben</div>
-                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Falsch einsortiert? Verschiebe alle ${inCat.length} Produkte in eine andere Kategorie – diese Kategorie verschwindet danach.</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Falsch einsortiert? Verschiebe alle ${inCat.length} Produkte${cascadeHint} in eine andere Kategorie – dieser Ordner verschwindet danach.</div>
                             <div class="form-group"><label>Ziel-Kategorie</label>
                                 <input type="text" id="catMoveTarget" list="dl_catTargets" placeholder="Bestehende wählen oder neue eintippen...">
                                 <datalist id="dl_catTargets">${targets.map(t => `<option value="${escapeHtml(t)}">`).join('')}</datalist>
@@ -1105,35 +1116,53 @@
                             <button class="btn btn-outline btn-sm" id="catMoveBtn">Alle verschieben</button>
                         </div>
                         <div class="form-card" style="border-color:var(--danger);">
-                            <div class="form-card-title">🗑 Kategorie löschen</div>
-                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Die ${inCat.length} Produkte werden dabei NICHT gelöscht, sondern nach „Zubehör" verschoben. Zum Löschen einzelner Produkte: Produkt öffnen → Löschen.</div>
-                            <button class="btn btn-danger btn-sm" id="catDeleteBtn">Kategorie auflösen</button>
+                            <div class="form-card-title">🗑 Ordner löschen</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Die ${inCat.length} Produkte${cascadeHint} werden dabei NICHT gelöscht, sondern nach „Zubehör" verschoben. Zum Löschen einzelner Produkte: Produkt öffnen → Löschen, oder Mehrfachauswahl nutzen.</div>
+                            <button class="btn btn-danger btn-sm" id="catDeleteBtn">Ordner auflösen</button>
                         </div>
                     `,
                     null, null, { wide: true }
                 );
 
-                const bulkMove = async (target, msg) => {
-                    for (const m of inCat) { m.category = target; await db.put('materials', m); }
+                // Verschiebt jedes Produkt einzeln unter Beibehaltung des restlichen
+                // Pfads: aus "cat" bzw. "cat/Rest" wird "target" bzw. "target/Rest".
+                const cascadeMove = async (target, msg) => {
+                    for (const m of inCat) {
+                        const c = m.category || 'Ohne Kategorie';
+                        m.category = c === cat ? target : (target + c.slice(cat.length));
+                        await db.put('materials', m);
+                    }
                     modal.remove();
                     showToast(msg, 'success');
-                    listFilters.materials.cat = ''; listFilters.materials.level = 'cats';
+                    listFilters.materials.cat = ''; listFilters.materials.hersteller = ''; listFilters.materials.serie = ''; listFilters.materials.level = 'cats';
                     renderMaterials();
                 };
                 modal.querySelector('#catRenameBtn').addEventListener('click', async () => {
                     const name = modal.querySelector('#catNewName').value.trim();
                     if (!name || name === cat) { showToast('Bitte einen neuen Namen eingeben.', 'info'); return; }
-                    await bulkMove(name, `Kategorie „${cat}" heißt jetzt „${name}" (${inCat.length} Produkte aktualisiert).`);
+                    await cascadeMove(name, `„${cat}" heißt jetzt „${name}" (${inCat.length} Produkte${cascadeHint} aktualisiert).`);
+                });
+                modal.querySelector('#catSubBtn').addEventListener('click', async () => {
+                    const sub = modal.querySelector('#catSubName').value.trim();
+                    if (!sub) { showToast('Bitte einen Namen für den Unterordner eingeben.', 'info'); return; }
+                    const direct = inCat.filter(m => (m.category || '') === cat);
+                    if (!direct.length) { showToast('Keine direkten Produkte in diesem Ordner zum Verschieben.', 'info'); return; }
+                    const target = `${cat}/${sub}`;
+                    for (const m of direct) { m.category = target; await db.put('materials', m); }
+                    modal.remove();
+                    showToast(`Unterordner „${sub}" angelegt (${direct.length} Produkt${direct.length !== 1 ? 'e' : ''} verschoben).`, 'success');
+                    listFilters.materials.cat = cat; listFilters.materials.level = 'subcats';
+                    renderMaterials();
                 });
                 modal.querySelector('#catMoveBtn').addEventListener('click', async () => {
                     const target = modal.querySelector('#catMoveTarget').value.trim();
                     if (!target) { showToast('Bitte Ziel-Kategorie wählen.', 'info'); return; }
-                    if (!(await showConfirm(`Alle ${inCat.length} Produkte von „${cat}" nach „${target}" verschieben?`))) return;
-                    await bulkMove(target, `${inCat.length} Produkte nach „${target}" verschoben.`);
+                    if (!(await showConfirm(`Alle ${inCat.length} Produkte${cascadeHint} von „${cat}" nach „${target}" verschieben?`))) return;
+                    await cascadeMove(target, `${inCat.length} Produkte nach „${target}" verschoben.`);
                 });
                 modal.querySelector('#catDeleteBtn').addEventListener('click', async () => {
-                    if (!(await showConfirm(`Kategorie „${cat}" auflösen und alle ${inCat.length} Produkte nach „Zubehör" verschieben?`))) return;
-                    await bulkMove('Zubehör', `Kategorie „${cat}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
+                    if (!(await showConfirm(`Ordner „${cat}" auflösen und alle ${inCat.length} Produkte${cascadeHint} nach „Zubehör" verschieben?`))) return;
+                    await cascadeMove('Zubehör', `Ordner „${cat}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
                 });
             },
 
@@ -1239,12 +1268,132 @@
                 if (level === 'cats') { F.cat = ''; F.hersteller = ''; F.serie = ''; }
                 if (level === 'hersteller') { F.hersteller = ''; F.serie = ''; }
                 if (level === 'serien') { F.serie = ''; }
-                F.level = level; F.q = '';
+                F.level = level; F.q = ''; F.selectMode = false; F.selected = new Set();
                 renderMaterials();
             },
-            matOpenCat(c) { const F = listFilters.materials; F.cat = c; F.hersteller = ''; F.serie = ''; F.level = 'hersteller'; renderMaterials(); },
-            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.serie = ''; F.level = 'serien'; renderMaterials(); },
+            // Öffnet einen Kategorie-Pfad (kann "Ordner" oder "Ordner/Unterordner" sein).
+            // Hat der Pfad noch echte Unterordner, geht es erst in die Unterordner-Ansicht
+            // ('subcats'), sonst direkt zu den Herstellern - forceExact überspringt das
+            // (genutzt von der "Direkt in ..."-Karte, die exakt diesen Pfad ohne
+            // Unterordner-Zwischenschritt anzeigen soll).
+            async matOpenCatPath(path, forceExact = false) {
+                const F = listFilters.materials;
+                F.hersteller = ''; F.serie = ''; F.selectMode = false; F.selected = new Set();
+                if (!forceExact) {
+                    const materials = await db.getAll('materials');
+                    const hasChildren = materials.some(m => (m.category || 'Ohne Kategorie').startsWith(path + '/'));
+                    if (hasChildren) { F.cat = path; F.level = 'subcats'; renderMaterials(); return; }
+                }
+                F.cat = path; F.level = 'hersteller'; renderMaterials();
+            },
+            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.serie = ''; F.level = 'serien'; F.selectMode = false; F.selected = new Set(); renderMaterials(); },
             matOpenSerie(s) { const F = listFilters.materials; F.serie = s === 'Ohne Serie' ? '' : s; F.level = 'produkte'; renderMaterials(); },
+
+            // ---------- Material-Katalog: Mehrfachauswahl ----------
+            matToggleSelect(id) {
+                const F = listFilters.materials;
+                const key = String(id);
+                if (!F.selected) F.selected = new Set();
+                if (F.selected.has(key)) F.selected.delete(key); else F.selected.add(key);
+                renderMaterials();
+            },
+            async matBulkMove() {
+                const F = listFilters.materials;
+                const ids = [...(F.selected || [])];
+                if (!ids.length) return;
+                const cats = getMaterialCategories();
+                const modal = showModal(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} verschieben`, `
+                    <div class="form-group"><label>Ziel-Kategorie</label>
+                        <input type="text" id="bulkMoveTarget" list="dl_bulkCats" placeholder="Bestehende wählen oder neue eintippen (z. B. 'Ordner/Unterordner')...">
+                        <datalist id="dl_bulkCats">${cats.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
+                    </div>
+                `, async (overlay) => {
+                    const target = overlay.querySelector('#bulkMoveTarget').value.trim();
+                    if (!target) { showToast('Bitte eine Ziel-Kategorie angeben.', 'info'); return; }
+                    for (const id of ids) {
+                        const m = await db.get('materials', id);
+                        if (m) { m.category = target; await db.put('materials', m); }
+                    }
+                    overlay.remove();
+                    showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${target}" verschoben.`, 'success');
+                    F.selectMode = false; F.selected = new Set();
+                    renderMaterials();
+                }, 'Verschieben');
+            },
+            async matBulkDelete() {
+                const F = listFilters.materials;
+                const ids = [...(F.selected || [])];
+                if (!ids.length) return;
+                if (!(await showConfirm(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} wirklich unwiderruflich löschen?`))) return;
+                for (const id of ids) await db.delete('materials', id);
+                showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} gelöscht.`, 'info');
+                F.selectMode = false; F.selected = new Set();
+                renderMaterials();
+            },
+
+            // ---------- Material-Katalog: Drag & Drop ----------
+            // Ordner-auf-Ordner: verschiebt alle Materialien der Quell-Kategorie (inkl.
+            // etwaiger Unterordner) in die Ziel-Kategorie (Umbenennen des Pfad-Präfixes).
+            matCatDragStart(event, path) {
+                event.dataTransfer.setData('application/x-ktm-category', path);
+                event.dataTransfer.effectAllowed = 'move';
+            },
+            matProductDragStart(event, id) {
+                event.dataTransfer.setData('application/x-ktm-material', String(id));
+                event.dataTransfer.effectAllowed = 'move';
+            },
+            async matCatDrop(event, targetPath) {
+                event.preventDefault();
+                event.currentTarget?.classList.remove('drag-over');
+                const srcCat = event.dataTransfer.getData('application/x-ktm-category');
+                const matId = event.dataTransfer.getData('application/x-ktm-material');
+                if (srcCat && srcCat !== targetPath) {
+                    await app._moveCategoryInto(srcCat, targetPath);
+                } else if (matId) {
+                    await app._moveMaterialsToCategory([matId], targetPath);
+                }
+            },
+            async matDropOnCrumb(event, targetPath) {
+                event.preventDefault();
+                const srcCat = event.dataTransfer.getData('application/x-ktm-category');
+                const matId = event.dataTransfer.getData('application/x-ktm-material');
+                const target = targetPath || 'Zubehör';
+                if (srcCat && srcCat !== targetPath) {
+                    await app._moveCategoryInto(srcCat, target);
+                } else if (matId) {
+                    await app._moveMaterialsToCategory([matId], target);
+                }
+            },
+            // Verschiebt ALLE Materialien einer Quell-Kategorie (inkl. Unterordner) unter
+            // die Ziel-Kategorie: aus "Quelle" bzw. "Quelle/Rest" wird "Ziel" bzw.
+            // "Ziel/Quelle" bzw. "Ziel/Quelle/Rest" (Ordner wird UNTER das Ziel gehängt,
+            // nicht mit ihm zusammengeführt - so bleiben gleichnamige Unterordner erhalten).
+            async _moveCategoryInto(srcCat, targetPath) {
+                if (!srcCat || srcCat === targetPath) return;
+                const srcLeaf = srcCat.split('/').pop();
+                const newBase = targetPath ? `${targetPath}/${srcLeaf}` : srcLeaf;
+                if (newBase === srcCat || newBase.startsWith(srcCat + '/')) { showToast('Ein Ordner kann nicht in sich selbst verschoben werden.', 'error'); return; }
+                const materials = await db.getAll('materials');
+                const affected = materials.filter(m => { const c = m.category || 'Ohne Kategorie'; return c === srcCat || c.startsWith(srcCat + '/'); });
+                if (!affected.length) return;
+                for (const m of affected) {
+                    const c = m.category || 'Ohne Kategorie';
+                    m.category = c === srcCat ? newBase : (newBase + c.slice(srcCat.length));
+                    await db.put('materials', m);
+                }
+                showToast(`„${srcLeaf}" (${affected.length} Produkt${affected.length !== 1 ? 'e' : ''}) nach „${newBase}" verschoben.`, 'success');
+                const F = listFilters.materials; F.cat = ''; F.hersteller = ''; F.serie = ''; F.level = 'cats';
+                renderMaterials();
+            },
+            async _moveMaterialsToCategory(ids, targetPath) {
+                if (!ids.length) return;
+                for (const id of ids) {
+                    const m = await db.get('materials', id);
+                    if (m) { m.category = targetPath; await db.put('materials', m); }
+                }
+                showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${targetPath}" verschoben.`, 'success');
+                renderMaterials();
+            },
 
             async toggleFavorite(id) {
                 const m = await db.get('materials', id);
@@ -4228,7 +4377,7 @@
                             <div class="form-group"><label>Kategorie</label>
                                 <input type="text" id="matCategory" value="${escapeHtml(mat?.category || '')}" list="dl_matCats" placeholder="z. B. Kältemittel, Kupferrohr, Werkzeug ...">
                                 <datalist id="dl_matCats">${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
-                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Frei wählbar – vorhandene Gruppe wählen oder neue eintippen.</div>
+                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Frei wählbar – vorhandene Gruppe wählen oder neue eintippen. Mit "/" entstehen Unterordner, z. B. "Elektromaterial/Kabel".</div>
                             </div>
                             <div class="form-group"><label>Einheit</label><input type="text" id="matUnit" value="${escapeHtml(mat?.unit || 'Stk')}"></div>
                         </div>
