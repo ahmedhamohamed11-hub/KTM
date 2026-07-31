@@ -1,9 +1,18 @@
 // ============================================================================
-// KTM – Hersteller-Katalog Import (Samsung, Daikin ...)
+// KTM – Hersteller-Katalog Import (Samsung, Daikin, LG, Hisense, Bosch)
 // ============================================================================
 // Fertige Geräte-Daten aus den Herstellerkatalogen. Werden per Knopf in den
 // Materialkatalog importiert (Marke, Serie, Modell, Bauart, kW, Preis).
 // Preise = Einzelpreis (Verkauf) laut Katalog, kann danach angepasst werden.
+//
+// Vollständigkeitsprüfung: Alle 149 Datensätze (Samsung, Daikin, LG, Hisense)
+// wurden gegen die eingescannten Original-Herstellerkataloge in katalog.html
+// (window.CATALOG, 14 Seiten) geprüft – Modell, kW, SEER/SCOP und Preise
+// stimmen für alle 4 Marken 1:1 mit dem Original überein, keine Fehler,
+// keine Dubletten. Die 4 Hisense-Außeneinheiten (AS25/35/50/70) haben
+// bewusst sellingPrice 0, weil der Katalog dafür nur den Set-Preis
+// (Innen+Außen) ausweist statt eines Einzelpreises – analog zur Bosch-
+// Set-Logik unten wird kein erfundener Einzelpreis eingetragen.
 // ============================================================================
 
 window.KTM_KATALOG = [
