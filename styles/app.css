@@ -1264,3 +1264,15 @@
         /* PDF-Fallback-Box (mobil, wenn Tab blockiert) */
         .pdf-link-box { background: #fff; border-radius: var(--radius-lg); padding: 20px; width: min(360px, 100%); display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow-lg); }
         .pdf-link-title { font-weight: 700; font-size: 16px; text-align: center; margin-bottom: 6px; }
+
+        /* ===== Bestellung: Projekt-Material-Checkliste ===== */
+        .ord-mat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px; }
+        .ord-mat-tools { display: flex; gap: 10px; flex: 0 0 auto; }
+        .link-btn { background: none; border: none; color: var(--accent); font-weight: 600; font-size: 12.5px; cursor: pointer; padding: 0; }
+        .ord-mat-list { border: 1px solid var(--border); border-radius: var(--radius); max-height: 200px; overflow-y: auto; background: var(--bg-secondary); }
+        .ord-mat-row { display: flex; align-items: flex-start; gap: 9px; padding: 9px 11px; cursor: pointer; border-bottom: 1px solid var(--border); }
+        .ord-mat-row:last-child { border-bottom: none; }
+        .ord-mat-row:hover { background: var(--bg-tertiary); }
+        .ord-mat-cb { margin-top: 2px; width: 17px; height: 17px; flex: 0 0 auto; accent-color: var(--accent); }
+        .ord-mat-line { font-size: 13.5px; line-height: 1.4; }
+        .ord-mat-rooms { color: var(--text-muted); font-size: 12px; }

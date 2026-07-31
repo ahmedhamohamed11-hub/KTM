@@ -31,6 +31,7 @@
                             <div class="form-group"><label>Datum</label><input type="date" id="ordDate" value="${escapeHtml(order?.date || todayStr)}"></div>
                         </div>
                         <div class="form-group"><label>Artikel *</label>
+                            <div id="ordProjectMats"></div>
                             <textarea id="ordItems" rows="6" placeholder="z. B. 18 m Kupferrohr 22 mm, 42 m Kabel 5×2,5 mm²...">${escapeHtml(order?.items || presetItems || '')}</textarea>
                             ${materials.length > 0 ? `<select id="ordMatPicker" style="margin-top:8px;"><option value="">+ Artikel aus Materialdatenbank einfügen...</option>${materials.map(m => `<option value="${escapeHtml(m.name)}${m.size ? ' ' + escapeHtml(m.size) : ''}${m.articleNumber ? ' (' + escapeHtml(m.articleNumber) + ')' : ''}">${escapeHtml(m.name)}${m.size ? ' ' + escapeHtml(m.size) : ''}</option>`).join('')}</select>` : ''}
                         </div>
@@ -71,6 +72,61 @@
                     ta.value = (ta.value ? ta.value.trimEnd() + '\n' : '') + '1 Stk ' + e.target.value;
                     e.target.value = '';
                 });
+
+                // Projekt-Material als anklickbare Häkchen-Liste. Angehakte Positionen
+                // landen im Artikel-Feld – du wählst aus, was wirklich bestellt wird.
+                const matBox = modal.querySelector('#ordProjectMats');
+                const buildProjectMats = async (projId) => {
+                    if (!projId) { matBox.innerHTML = ''; return; }
+                    const pm = (await db.getByIndex('projectMaterials', 'projectId', parseId(projId))) || [];
+                    if (pm.length === 0) { matBox.innerHTML = ''; return; }
+                    const rooms = (await db.getByIndex('rooms', 'projectId', parseId(projId))) || [];
+                    const agg = new Map();
+                    for (const x of pm) {
+                        const mat = materials.find(m => String(m.id) === String(x.materialId));
+                        const size = x.size || mat?.size || '';
+                        const unit = x.unit || mat?.unit || 'Stk';
+                        const key = `${String(x.materialId)}|${size}|${unit}`;
+                        if (!agg.has(key)) agg.set(key, { name: mat?.name || x.name || 'Material', size, unit, qty: 0, rooms: new Set() });
+                        const a = agg.get(key);
+                        a.qty += Number(x.quantity) || 0;
+                        const room = rooms.find(r => String(r.id) === String(x.roomId));
+                        if (room) a.rooms.add(room.name || 'Raum');
+                    }
+                    const fmtQty = q => (Math.round(q * 100) / 100).toString().replace('.', ',');
+                    const rows = [...agg.values()].map((a, i) => {
+                        const line = `${fmtQty(a.qty)} ${a.unit} ${a.name}${a.size ? ' ' + a.size : ''}`;
+                        const roomInfo = a.rooms.size ? ` [${[...a.rooms].join(', ')}]` : '';
+                        return `<label class="ord-mat-row">
+                            <input type="checkbox" class="ord-mat-cb" checked data-line="${escapeHtml(line + roomInfo)}">
+                            <span class="ord-mat-line">${escapeHtml(line)}<span class="ord-mat-rooms">${escapeHtml(roomInfo)}</span></span>
+                        </label>`;
+                    }).join('');
+                    matBox.innerHTML = `
+                        <div class="ord-mat-head">
+                            <span>Material aus dem Projekt – abhaken, was bestellt wird:</span>
+                            <div class="ord-mat-tools">
+                                <button type="button" class="link-btn" id="ordMatAll">Alle</button>
+                                <button type="button" class="link-btn" id="ordMatNone">Keine</button>
+                            </div>
+                        </div>
+                        <div class="ord-mat-list">${rows}</div>
+                        <button type="button" class="btn btn-sm btn-outline" id="ordMatApply" style="margin:8px 0 4px;">${icon('plus')} Angehakte übernehmen</button>
+                    `;
+                    const applyChecked = () => {
+                        const picked = [...matBox.querySelectorAll('.ord-mat-cb:checked')].map(cb => cb.dataset.line);
+                        modal.querySelector('#ordItems').value = picked.join('\n');
+                    };
+                    matBox.querySelector('#ordMatAll')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = true); });
+                    matBox.querySelector('#ordMatNone')?.addEventListener('click', () => { matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.checked = false); });
+                    matBox.querySelector('#ordMatApply')?.addEventListener('click', applyChecked);
+                    matBox.querySelectorAll('.ord-mat-cb').forEach(cb => cb.addEventListener('change', applyChecked));
+                    // Beim ersten Laden (neue Bestellung ohne vorhandene Artikel) direkt übernehmen
+                    if (!order && !presetItems) applyChecked();
+                };
+                // beim Öffnen, wenn schon ein Projekt gewählt ist
+                if (selProj) buildProjectMats(selProj);
+                modal.querySelector('#ordProject')?.addEventListener('change', (e) => buildProjectMats(e.target.value));
             },
 
             async deleteOrder(id) {
@@ -345,7 +401,9 @@
                 const lines = [...agg.values()].map(a =>
                     `${fmtQty(a.qty)} ${a.unit} ${a.name}${a.size ? ' ' + a.size : ''}${a.rooms.size ? ' [' + [...a.rooms].join(', ') + ']' : ''}`
                 );
-                this.openOrderModal(null, projectId, lines.join('\n'));
+                // Kein vorbefüllter Textblock mehr – die Häkchen-Liste im
+                // Bestell-Dialog übernimmt die Auswahl der Projekt-Materialien.
+                this.openOrderModal(null, projectId, '');
             },
 
             // ---------- Projektstatus (Dropdown + Drag & Drop) ----------
