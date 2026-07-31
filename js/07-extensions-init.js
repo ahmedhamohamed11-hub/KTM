@@ -951,11 +951,11 @@
                 modal.querySelector('#catMoveBtn').addEventListener('click', async () => {
                     const target = modal.querySelector('#catMoveTarget').value.trim();
                     if (!target) { showToast('Bitte Ziel-Kategorie wählen.', 'info'); return; }
-                    if (!confirm(`Alle ${inCat.length} Produkte von „${cat}" nach „${target}" verschieben?`)) return;
+                    if (!(await showConfirm(`Alle ${inCat.length} Produkte von „${cat}" nach „${target}" verschieben?`))) return;
                     await bulkMove(target, `${inCat.length} Produkte nach „${target}" verschoben.`);
                 });
                 modal.querySelector('#catDeleteBtn').addEventListener('click', async () => {
-                    if (!confirm(`Kategorie „${cat}" auflösen und alle ${inCat.length} Produkte nach „Zubehör" verschieben?`)) return;
+                    if (!(await showConfirm(`Kategorie „${cat}" auflösen und alle ${inCat.length} Produkte nach „Zubehör" verschieben?`))) return;
                     await bulkMove('Zubehör', `Kategorie „${cat}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
                 });
             },
@@ -3784,9 +3784,9 @@
                         <div id="matRollCalc" class="mat-roll-calc" style="display:none;"></div>
                         <div class="form-row">
                             <div class="form-group"><label>Kategorie</label>
-                                <select id="matCategory">
-                                    ${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}" ${mat?.category === c.name ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
-                                </select>
+                                <input type="text" id="matCategory" value="${escapeHtml(mat?.category || '')}" list="dl_matCats" placeholder="z. B. Kältemittel, Kupferrohr, Werkzeug ...">
+                                <datalist id="dl_matCats">${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
+                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Frei wählbar – vorhandene Gruppe wählen oder neue eintippen.</div>
                             </div>
                             <div class="form-group"><label>Einheit</label><input type="text" id="matUnit" value="${escapeHtml(mat?.unit || 'Stk')}"></div>
                         </div>
@@ -3821,7 +3821,7 @@
                             bundleLength: parseFloat(String(overlay.querySelector('#matBundle').value).replace(',', '.')) || 0,
                             markup: overlay.querySelector('#matMarkup')?.value.trim() === '' ? null : (parseFloat(String(overlay.querySelector('#matMarkup').value).replace(',', '.')) || 0),
                             openMeters: mat?.openMeters ?? 0,
-                            category: overlay.querySelector('#matCategory').value,
+                            category: overlay.querySelector('#matCategory').value.trim() || 'Zubehör',
                             bauart: overlay.querySelector('#matBauart')?.value || '',
                             unit: (() => { const pu = overlay.querySelector('#matPackUnit')?.value; return (pu && pu !== 'Stück') ? pu : (overlay.querySelector('#matUnit').value.trim() || 'Stk'); })(),
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
