@@ -853,6 +853,33 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             return /^\d+$/.test(value) ? Number(value) : value;
         }
 
+        // Zentrale, überall genutzte EK-Ermittlung (zukunftssicher):
+        // 1. Individueller Rabatt am Artikel (dealerDiscount) → Listenpreis × (1−Rabatt)
+        // 2. sonst Marken-/Lieferantenrabatt → Listenpreis × (1−Markenrabatt)
+        // 3. sonst fest hinterlegter Einkaufspreis (purchasePrice)
+        // Marken-Rabatt-Änderung wirkt so automatisch auf alle Artikel der Marke,
+        // außer auf die mit eigenem individuellem Rabatt.
+        function effectivePurchasePrice(m, dealerDiscounts) {
+            if (!m) return 0;
+            const list = Number(m.sellingPrice) || 0;
+            const norm = d => { d = Number(d) || 0; return d > 1 ? d / 100 : d; };
+            // 1. individueller Rabatt am Artikel
+            if (m.dealerDiscount != null && m.dealerDiscount !== '') {
+                const r = norm(m.dealerDiscount);
+                if (r > 0 && list > 0) return list * (1 - r);
+            }
+            // 2. Marken-/Lieferantenrabatt
+            const brand = (m.manufacturer || '').trim();
+            const dd = dealerDiscounts || window.__ktmDealerDiscounts || {};
+            if (brand && dd[brand] != null && list > 0) {
+                const r = norm(dd[brand]);
+                if (r > 0) return list * (1 - r);
+            }
+            // 3. fest hinterlegter EK
+            return Number(m.purchasePrice) || 0;
+        }
+        window.effectivePurchasePrice = effectivePurchasePrice;
+
         async function getDealerDiscounts() {
             if (window.__ktmDealerDiscounts) return window.__ktmDealerDiscounts;
             const raw = await getSetting('dealerDiscounts', '');

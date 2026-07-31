@@ -3836,11 +3836,25 @@
                         const purch = parseFloat(purchEl.value) || 0;
                         const profit = sell - purch;
                         const marginPct = sell > 0 ? (profit / sell * 100) : 0;
-                        const discInfo = disc != null ? `Rabatt ${disc}%${discEl.value.trim() === '' ? ' (aus Marke ' + escapeHtml(brandOf()) + ')' : ''}` : 'kein Rabatt hinterlegt';
+                        const hasIndividual = discEl.value.trim() !== '';
+                        const b = brandOf();
+                        const brandRate = discounts[b];
+                        let discInfo;
+                        if (hasIndividual) {
+                            discInfo = `Individueller Rabatt ${parseFloat(discEl.value) || 0}%` + (brandRate != null ? ` <a href="#" id="matDiscReset" style="color:var(--accent);font-weight:600;">↺ auf Marke ${escapeHtml(b)} (${brandRate}%)</a>` : '');
+                        } else if (disc != null) {
+                            discInfo = `Rabatt ${disc}% (aus Marke ${escapeHtml(b)})`;
+                        } else {
+                            discInfo = 'kein Rabatt hinterlegt';
+                        }
+                        const ekCalc = (sell > 0 && disc != null) ? `<span style="color:var(--text-muted);font-size:11.5px;">${formatCurrency(sell)} − ${disc}% = EK ${formatCurrency(sell * (1 - disc / 100))}</span>` : '';
                         box.innerHTML = `<div class="mat-profit-in">
                             <span>${discInfo}</span>
                             <span class="mat-profit-val ${profit >= 0 ? 'pos' : 'neg'}">Gewinn: ${formatCurrency(profit)} (${marginPct.toFixed(0)}%)</span>
-                        </div>`;
+                        </div>${ekCalc ? `<div style="margin-top:3px;">${ekCalc}</div>` : ''}`;
+                        // Reset-Link verdrahten
+                        const resetLink = box.querySelector('#matDiscReset');
+                        if (resetLink) resetLink.addEventListener('click', (e) => { e.preventDefault(); discEl.value = ''; recalc(true); });
                     };
                     // Auto-EK beim Öffnen, wenn Rabatt greift und noch kein EK gesetzt
                     if ((!mat || !(Number(mat.purchasePrice) > 0)) && effectiveDiscount() != null) recalc(true);
@@ -4387,18 +4401,23 @@
         return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt');
     }
 
-    // Einkaufspreis je Einheit für eine Position ermitteln:
-    // 1) hinterlegter EK am Material  2) VK × (1 − Lieferantenrabatt der Marke)
+    // Einkaufspreis je Einheit für eine Position – nutzt die zentrale Logik
+    // (individueller Rabatt → Markenrabatt → fester EK).
     function purchaseUnitFor(it) {
         const m = materials.find(mm => String(mm.id) === String(it.materialId));
-        if (m && Number(m.purchasePrice) > 0) return Number(m.purchasePrice);
+        if (m) {
+            // Position kann Preis überschrieben haben; Material-Listenpreis für EK nutzen
+            const ek = effectivePurchasePrice(m, dealerDiscounts);
+            if (ek > 0) return ek;
+        }
+        // Fallback: Markenrabatt direkt auf den Positionspreis
         const brand = (it.manufacturer || m?.manufacturer || '').trim();
         const disc = dealerDiscounts && brand ? Number(dealerDiscounts[brand]) : 0;
         if (disc > 0) {
             const rate = disc > 1 ? disc / 100 : disc;
             return (Number(it.price) || 0) * (1 - rate);
         }
-        return 0; // unbekannt
+        return 0;
     }
 
     // Interne Kalkulation – NUR für dich, kommt nie ins PDF/Angebot.
