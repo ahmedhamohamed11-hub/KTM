@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v67</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v68</span></div>
                         </div>
                     </div>`;
             })();
@@ -996,6 +996,19 @@
 
         function matStockStatus(m) {
             const s = Number(m.stock) || 0;
+            const bl = Number(m.bundleLength) || 0;
+            const isRoll = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
+            const open = Number(m.openMeters) || 0;
+            // Bei Rollen: Bestand als Rollen + offener Rest, plus Gesamtmeter
+            if (isRoll) {
+                const totalM = s * bl + open;
+                const uw = m.unit;
+                if (totalM <= 0) return { label: 'Kein Bestand', cls: 'st-none' };
+                const openTxt = open > 0.001 ? ` + ${open.toString().replace('.', ',')} m offen` : '';
+                const lbl = `${s} ${uw}${openTxt} (${totalM.toString().replace('.', ',')} m)`;
+                if (m.minStock > 0 && totalM < Number(m.minStock)) return { label: 'Nachbestellen · ' + lbl, cls: 'st-low' };
+                return { label: lbl, cls: 'st-ok' };
+            }
             if (m.minStock > 0 && s < Number(m.minStock)) return { label: 'Nachbestellen', cls: 'st-low' };
             if (s > 0) return { label: 'Auf Lager (' + s + ')', cls: 'st-ok' };
             return { label: 'Kein Bestand', cls: 'st-none' };

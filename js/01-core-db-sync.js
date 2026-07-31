@@ -914,6 +914,54 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         }
         window.effectivePurchasePrice = effectivePurchasePrice;
 
+        // Bucht den Verbrauch von Metern bei Rollen-/Bund-/Stangen-Material.
+        // stock = Anzahl ganzer Rollen, openMeters = Rest der angebrochenen Rolle.
+        // Reicht der offene Rest nicht, wird automatisch eine Rolle angebrochen
+        // (stock −1, openMeters += Rollenlänge). Bei 0 m ist die Rolle verbraucht.
+        // Gibt {ok, rollsUsed, remainingOpen, remainingRolls} zurück.
+        // Buchungen werden serialisiert (Warteschlange), damit schnelle
+        // Folgebuchungen sich nicht gegenseitig überschreiben.
+        let __bookQueue = Promise.resolve();
+        function bookMeterConsumption(materialId, meters) {
+            const run = () => _bookMeterNow(materialId, meters);
+            const p = __bookQueue.then(run, run);
+            __bookQueue = p.catch(() => {});
+            return p;
+        }
+        async function _bookMeterNow(materialId, meters) {
+            const m = await db.get('materials', materialId);
+            if (!m) return { ok: false, reason: 'not_found' };
+            const need = Number(meters) || 0;
+            if (need <= 0) return { ok: false, reason: 'zero' };
+            const bl = Number(m.bundleLength) || 0;
+            const isRoll = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
+            if (!isRoll) {
+                m.stock = Math.max(0, (Number(m.stock) || 0) - need);
+                await db.put('materials', m);
+                return { ok: true, rollsUsed: 0, remainingOpen: 0, remainingRolls: m.stock };
+            }
+            let rolls = Number(m.stock) || 0;
+            let open = Number(m.openMeters) || 0;
+            let rollsUsed = 0;
+            let remaining = need;
+            while (remaining > 0.0001) {
+                if (open <= 0.0001) {
+                    if (rolls <= 0) break;
+                    rolls -= 1;
+                    rollsUsed += 1;
+                    open = bl;
+                }
+                const take = Math.min(open, remaining);
+                open -= take;
+                remaining -= take;
+            }
+            m.stock = rolls;
+            m.openMeters = Math.round(open * 1000) / 1000;
+            await db.put('materials', m);
+            return { ok: remaining <= 0.0001, shortfall: Math.max(0, remaining), rollsUsed, remainingOpen: m.openMeters, remainingRolls: rolls };
+        }
+        window.bookMeterConsumption = bookMeterConsumption;
+
         async function getDealerDiscounts() {
             if (window.__ktmDealerDiscounts) return window.__ktmDealerDiscounts;
             const raw = await getSetting('dealerDiscounts', '');

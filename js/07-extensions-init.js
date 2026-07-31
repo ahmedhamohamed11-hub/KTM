@@ -159,6 +159,43 @@
                 app.navigate('orders');
             },
 
+            // Meter-Verbrauch buchen (Rolle/Bund/Stange) – bricht Rollen automatisch an
+            async bookConsumption(id) {
+                const m = await db.get('materials', id);
+                if (!m) return;
+                const bl = Number(m.bundleLength) || 0;
+                const uw = m.unit;
+                const rolls = Number(m.stock) || 0;
+                const open = Number(m.openMeters) || 0;
+                const totalM = rolls * bl + open;
+                showModal('Verbrauch buchen', `
+                    <div style="font-size:13.5px;color:var(--text-secondary);margin-bottom:10px;">
+                        <strong>${escapeHtml(m.name)}</strong><br>
+                        Bestand: ${rolls} ${escapeHtml(uw)}${open > 0.001 ? ` + ${String(open).replace('.', ',')} m offen` : ''} = <strong>${String(Math.round(totalM * 100) / 100).replace('.', ',')} m</strong>
+                    </div>
+                    <div class="form-group"><label>Verbrauchte Meter</label>
+                        <input type="text" inputmode="decimal" id="consumeM" placeholder="z. B. 8,5" autofocus>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-muted);">Die Meter werden vom offenen Rest abgezogen. Ist er leer, wird automatisch eine ${escapeHtml(uw)} angebrochen.</div>
+                `, async (overlay) => {
+                    const meters = parseFloat(String(overlay.querySelector('#consumeM').value).replace(',', '.')) || 0;
+                    if (meters <= 0) { showToast('Bitte Meter eingeben.', 'error'); return; }
+                    if (meters > totalM + 0.001) {
+                        const ok = await showConfirm(`Es sind nur ${String(Math.round(totalM * 100) / 100).replace('.', ',')} m auf Lager. Trotzdem buchen (Bestand geht auf 0)?`, { okText: 'Trotzdem buchen', danger: false });
+                        if (!ok) return;
+                    }
+                    const res = await bookMeterConsumption(id, meters);
+                    overlay.remove();
+                    if (res.ok || res.shortfall >= 0) {
+                        let msg = `${String(meters).replace('.', '.')} m gebucht.`;
+                        if (res.rollsUsed > 0) msg += ` ${res.rollsUsed} ${uw} angebrochen.`;
+                        msg += ` Rest: ${res.remainingRolls} ${uw} + ${String(res.remainingOpen).replace('.', ',')} m.`;
+                        showToast(msg, 'success');
+                    }
+                    this.navigate('materials');
+                }, null, { okText: 'Buchen' });
+            },
+
             // ---------- Materialbestand ----------
             async setStock(id, value) {
                 const m = await db.get('materials', id);
@@ -1097,6 +1134,7 @@
                         </div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;">
                             <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove(); app.addMaterialToProject(${idJS(m.id)})">${icon('plus')} Zum Projekt hinzufügen</button>
+                            ${(['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && Number(m.bundleLength) > 0) ? `<button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove(); app.bookConsumption(${idJS(m.id)})">📉 Verbrauch buchen (Meter)</button>` : ''}
                             <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove(); app.openMaterialModal(${idJS(m.id)})">${icon('edit')} Bearbeiten</button>
                             <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove(); app.duplicateMaterial(${idJS(m.id)})">⧉ Duplizieren</button>
                             <button class="btn btn-danger" onclick="this.closest('.modal-overlay').remove(); app.deleteMaterial(${idJS(m.id)})">${icon('trash')} Löschen</button>
@@ -3782,6 +3820,7 @@
                             minStock: parseFloat(String(overlay.querySelector('#matMinStock').value).replace(',', '.')) || 0,
                             bundleLength: parseFloat(String(overlay.querySelector('#matBundle').value).replace(',', '.')) || 0,
                             markup: overlay.querySelector('#matMarkup')?.value.trim() === '' ? null : (parseFloat(String(overlay.querySelector('#matMarkup').value).replace(',', '.')) || 0),
+                            openMeters: mat?.openMeters ?? 0,
                             category: overlay.querySelector('#matCategory').value,
                             bauart: overlay.querySelector('#matBauart')?.value || '',
                             unit: (() => { const pu = overlay.querySelector('#matPackUnit')?.value; return (pu && pu !== 'Stück') ? pu : (overlay.querySelector('#matUnit').value.trim() || 'Stk'); })(),
