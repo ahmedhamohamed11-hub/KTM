@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v69</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v70</span></div>
                         </div>
                     </div>`;
             })();
@@ -1196,6 +1196,36 @@
                 const offers = await db.getAll('offers');
                 const projects = await db.getAll('projects');
                 const customers = await db.getAll('customers');
+                const materials = await db.getAll('materials');
+                const dealerDiscounts = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+                // Marge-Schwellen (frei einstellbar via Settings, sonst Standard 10/20)
+                let marginThresholds = { low: 10, high: 20 };
+                try { const t = await getSetting('marginThresholds'); if (t) marginThresholds = JSON.parse(t); } catch (e) {}
+
+                // Interner Gewinn eines (eingefrorenen) Angebots aus seinen Positionen
+                const offerProfit = (o) => {
+                    const positions = o.positions || [];
+                    let vk = 0, ek = 0, unknown = 0;
+                    const isLabor = (it) => { const c = (it.category || '').toLowerCase(); const n = (it.name || '').toLowerCase(); return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt'); };
+                    positions.forEach(it => {
+                        const qty = Number(it.quantity) || 0;
+                        const line = (Number(it.price) || 0) * qty * (1 - (Number(it.discount) || 0) / 100);
+                        vk += line;
+                        if (isLabor(it)) return;   // Arbeit = reiner Ertrag, kein EK
+                        const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                        let ekUnit = 0;
+                        if (m && typeof effectivePurchasePrice === 'function') ekUnit = effectivePurchasePrice(m, dealerDiscounts);
+                        else if (m && Number(m.purchasePrice) > 0) ekUnit = Number(m.purchasePrice);
+                        if (ekUnit > 0) ek += ekUnit * qty;
+                        else unknown += line;
+                    });
+                    // effektiver Umsatz = vereinbarter Preis falls gesetzt, sonst Netto der Positionen
+                    const agreedNet = (o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : vk;
+                    const profit = agreedNet - ek;
+                    const margin = agreedNet > 0 ? (profit / agreedNet) * 100 : 0;
+                    return { profit, margin, ek, vk, unknown, hasData: (ek > 0 || vk > 0) };
+                };
+                const marginColor = (m) => m < marginThresholds.low ? 'mg-red' : (m < marginThresholds.high ? 'mg-yellow' : 'mg-green');
 
                 const q = listFilters.offers.q.toLowerCase();
                 const statusFilter = listFilters.offers.status;
@@ -1226,16 +1256,21 @@
                     </div>
                     <div class="table-container">
                         <table>
-                            <thead><tr><th>Nummer</th><th>Kunde / Projekt</th><th>Datum</th><th>Gesamtbetrag</th><th>Status</th><th style="text-align:right;">Aktionen</th></tr></thead>
+                            <thead><tr><th>Nummer</th><th>Kunde / Projekt</th><th>Datum</th><th>Gesamtbetrag</th><th>🔒 Gewinn</th><th>Status</th><th style="text-align:right;">Aktionen</th></tr></thead>
                             <tbody>
                                 ${filtered.map(o => {
                                     const proj = projects.find(p => String(p.id) === String(o.projectId));
                                     const cust = proj ? customers.find(c => String(c.id) === String(proj.customerId)) : null;
+                                    const p = offerProfit(o);
+                                    const profitCell = p.hasData
+                                        ? `<td><div class="mg-badge ${marginColor(p.margin)}">${p.profit >= 0 ? '+' : ''}${formatCurrency(p.profit)}<span class="mg-pct">${p.margin.toFixed(0)}%</span></div>${p.unknown > 0.005 ? '<div class="mg-note">EK unvollständig</div>' : ''}</td>`
+                                        : `<td><span class="mg-na">–</span></td>`;
                                     return `<tr>
                                         <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong></td>
                                         <td>${escapeHtml(cust ? customerDisplayName(cust) : '-')}${proj ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(proj.title || '')}</div>` : ''}</td>
                                         <td>${formatDate(o.createdAt)}</td>
                                         <td><strong>${formatCurrency((o.agreedPrice != null && o.agreedPrice !== '') ? o.agreedPrice : (o.totalPrice || 0))}</strong>${(o.agreedPrice != null && o.agreedPrice !== '' && Number(o.agreedPrice) !== Number(o.totalPrice)) ? `<div style="font-size:11px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(o.totalPrice || 0)}</div>` : ''}${(Number(o.depositAmount) > 0) ? `<div style="font-size:11px;color:var(--success);">Anz. ${formatCurrency(o.depositAmount)} · Rest ${formatCurrency(Math.max(0, ((o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : Number(o.totalPrice || 0)) - Number(o.depositAmount)))}</div>` : ''}</td>
+                                        ${profitCell}
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             <button class="btn btn-sm btn-primary" onclick="app.exportOfferPDF(${idJS(o.id)})">${icon('pdf')} PDF</button>
