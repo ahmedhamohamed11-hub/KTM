@@ -798,10 +798,31 @@ async function backgroundSyncPushInner() {
         }
         window.showPriceSaveDialog = showPriceSaveDialog;
 
+        // Sicherheits-Fix (gefunden beim App-Audit): escapeHtml() escapte bisher nur
+        // &, < und > (das reicht für reinen Textinhalt, z.B. <div>${escapeHtml(x)}</div>).
+        // Im ganzen Code wird das Ergebnis aber auch massenhaft in doppelt gequotete
+        // HTML-Attribute eingesetzt (value="${escapeHtml(x)}", data-x="${escapeHtml(x)}",
+        // onclick="...('${escapeHtml(x)}')" usw.). Enthält der Wert ein " (z.B. ein
+        // Kategorie- oder Materialname mit Anführungszeichen), bricht er aus dem
+        // Attribut aus und der Rest wird als neues HTML/Attribut interpretiert
+        // (Attribut-Injection - reproduziert und verifiziert beim App-Audit).
+        // Zusätzliches Escapen von " ist in reinem Textinhalt folgenlos (wird dort nie
+        // ausgewertet) und macht escapeHtml() dadurch für Text- UND Attribut-Kontext
+        // sicher, ohne jede Aufrufstelle einzeln anzupassen.
+        // WICHTIG: ' bewusst NICHT mit-escapen. Etliche Aufrufstellen im Code hängen
+        // zusätzlich .replace(/'/g, "\\'") an escapeHtml() an, um innerhalb von
+        // onclick="...('...')" ein JS-String-Escaping herzustellen. Da " (der äußere
+        // HTML-Attribut-Delimiter) hier bereits sicher ist, ist ein rohes ' im
+        // JS-String-Kontext unkritisch für die HTML-Ebene; würde escapeHtml() es zu
+        // &#39; kodieren, würde der Browser das beim Attribut-Parsen wieder zu einem
+        // rohen ' dekodieren, BEVOR die JS-Engine den Onclick-Code liest - der
+        // nachgelagerte .replace(/'/g, "\\'") liefe dann ins Leere und die Browser-
+        // seitige Dekodierung würde den JS-String erneut vorzeitig beenden (Namen mit
+        // Apostroph, z.B. "d'Anjou", hätten dann kaputte onclick-Handler).
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str ?? '';
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;');
         }
 
         // PDF teilen (natives Teilen-Menü: WhatsApp, E-Mail, ...) oder speichern.

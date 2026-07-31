@@ -1022,7 +1022,7 @@
                         const isPack = ['Rolle', 'Bund', 'Stange'].includes(mat.unit || '') && bl > 0;
                         mat.purchasePrice = isPack ? Math.round(val * bl * 100) / 100 : val;
                         await db.put('materials', mat);
-                        showToast(`Einkaufspreis für „${mat.name}" gespeichert.`, 'success');
+                        showToast(`Einkaufspreis für „${escapeHtml(mat.name)}" gespeichert.`, 'success');
                         diagModal.remove();
                         app.showOfferDiagnosis(offerId);
                     });
@@ -1137,10 +1137,14 @@
                     listFilters.materials.cat = ''; listFilters.materials.hersteller = ''; listFilters.materials.serie = ''; listFilters.materials.level = 'cats';
                     renderMaterials();
                 };
+                // Kategorienamen sind frei eingebbarer Nutzertext - showToast()/showConfirm()
+                // setzen ihre Nachricht per innerHTML, also IMMER escapeHtml() auf alles, was
+                // in eine Toast-/Bestätigungs-Nachricht eingebaut wird (sonst XSS-Lücke über
+                // einen präparierten Kategorienamen).
                 modal.querySelector('#catRenameBtn').addEventListener('click', async () => {
                     const name = modal.querySelector('#catNewName').value.trim();
                     if (!name || name === cat) { showToast('Bitte einen neuen Namen eingeben.', 'info'); return; }
-                    await cascadeMove(name, `„${cat}" heißt jetzt „${name}" (${inCat.length} Produkte${cascadeHint} aktualisiert).`);
+                    await cascadeMove(name, `„${escapeHtml(cat)}" heißt jetzt „${escapeHtml(name)}" (${inCat.length} Produkte${cascadeHint} aktualisiert).`);
                 });
                 modal.querySelector('#catSubBtn').addEventListener('click', async () => {
                     const sub = modal.querySelector('#catSubName').value.trim();
@@ -1150,19 +1154,19 @@
                     const target = `${cat}/${sub}`;
                     for (const m of direct) { m.category = target; await db.put('materials', m); }
                     modal.remove();
-                    showToast(`Unterordner „${sub}" angelegt (${direct.length} Produkt${direct.length !== 1 ? 'e' : ''} verschoben).`, 'success');
+                    showToast(`Unterordner „${escapeHtml(sub)}" angelegt (${direct.length} Produkt${direct.length !== 1 ? 'e' : ''} verschoben).`, 'success');
                     listFilters.materials.cat = cat; listFilters.materials.level = 'subcats';
                     renderMaterials();
                 });
                 modal.querySelector('#catMoveBtn').addEventListener('click', async () => {
                     const target = modal.querySelector('#catMoveTarget').value.trim();
                     if (!target) { showToast('Bitte Ziel-Kategorie wählen.', 'info'); return; }
-                    if (!(await showConfirm(`Alle ${inCat.length} Produkte${cascadeHint} von „${cat}" nach „${target}" verschieben?`))) return;
-                    await cascadeMove(target, `${inCat.length} Produkte nach „${target}" verschoben.`);
+                    if (!(await showConfirm(`Alle ${inCat.length} Produkte${cascadeHint} von „${escapeHtml(cat)}" nach „${escapeHtml(target)}" verschieben?`))) return;
+                    await cascadeMove(target, `${inCat.length} Produkte nach „${escapeHtml(target)}" verschoben.`);
                 });
                 modal.querySelector('#catDeleteBtn').addEventListener('click', async () => {
-                    if (!(await showConfirm(`Ordner „${cat}" auflösen und alle ${inCat.length} Produkte${cascadeHint} nach „Zubehör" verschieben?`))) return;
-                    await cascadeMove('Zubehör', `Ordner „${cat}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
+                    if (!(await showConfirm(`Ordner „${escapeHtml(cat)}" auflösen und alle ${inCat.length} Produkte${cascadeHint} nach „Zubehör" verschieben?`))) return;
+                    await cascadeMove('Zubehör', `Ordner „${escapeHtml(cat)}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
                 });
             },
 
@@ -1315,7 +1319,7 @@
                         if (m) { m.category = target; await db.put('materials', m); }
                     }
                     overlay.remove();
-                    showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${target}" verschoben.`, 'success');
+                    showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${escapeHtml(target)}" verschoben.`, 'success');
                     F.selectMode = false; F.selected = new Set();
                     renderMaterials();
                 }, 'Verschieben');
@@ -1381,7 +1385,7 @@
                     m.category = c === srcCat ? newBase : (newBase + c.slice(srcCat.length));
                     await db.put('materials', m);
                 }
-                showToast(`„${srcLeaf}" (${affected.length} Produkt${affected.length !== 1 ? 'e' : ''}) nach „${newBase}" verschoben.`, 'success');
+                showToast(`„${escapeHtml(srcLeaf)}" (${affected.length} Produkt${affected.length !== 1 ? 'e' : ''}) nach „${escapeHtml(newBase)}" verschoben.`, 'success');
                 const F = listFilters.materials; F.cat = ''; F.hersteller = ''; F.serie = ''; F.level = 'cats';
                 renderMaterials();
             },
@@ -1391,7 +1395,7 @@
                     const m = await db.get('materials', id);
                     if (m) { m.category = targetPath; await db.put('materials', m); }
                 }
-                showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${targetPath}" verschoben.`, 'success');
+                showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${escapeHtml(targetPath)}" verschoben.`, 'success');
                 renderMaterials();
             },
 
