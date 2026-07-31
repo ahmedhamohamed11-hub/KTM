@@ -321,7 +321,7 @@
                 const stepBox = modal.querySelector('#pmStepPicker');
                 if (stepBox) {
                     // Kategorien nach Bauart (mit sinnvoller Reihenfolge + Icon)
-                    const catOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'];
+                    const catOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Konsolengerät', 'Unterdeckengerät', 'Truhengerät', 'Klimaset', 'Zubehör'];
                     const catIcon = { 'Innengerät Single-Split': '🌡️', 'Außengerät Single-Split': '🔲', 'Innengerät Multi-Split': '🌡️', 'Außengerät Multi-Split': '🔲', 'Truhengerät': '📦', 'Zubehör': '🔧' };
                     const state = { cat: null, brand: null, series: null };
 
@@ -3582,7 +3582,7 @@
             // ===== Hersteller-Katalog importieren (Samsung, Daikin ...) =====
             async confirmImportKatalog() {
                 const count = (window.KTM_KATALOG || []).length;
-                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung, Daikin, LG, Hisense + Zubehör wie SUMO-Standfüße, Verteilerboxen) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
+                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung, Daikin, LG, Hisense, Bosch + Zubehör wie SUMO-Standfüße, Verteilerboxen, WLAN-Gateway) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
                 if (ok) this.importHerstellerKatalog();
             },
 
@@ -3975,7 +3975,7 @@
                         </div>
                         <div class="form-group"><label>Bauart (optional – für Sortierung Innen/Außen, Single/Multi)</label>
                             <select id="matBauart">
-                                ${['', 'Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'].map(b => `<option value="${b}" ${(mat?.bauart || '') === b ? 'selected' : ''}>${b || '– keine –'}</option>`).join('')}
+                                ${['', 'Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Konsolengerät', 'Unterdeckengerät', 'Truhengerät', 'Klimaset', 'Zubehör'].map(b => `<option value="${b}" ${(mat?.bauart || '') === b ? 'selected' : ''}>${b || '– keine –'}</option>`).join('')}
                             </select>
                         </div>
                         <div class="form-row">

@@ -1140,7 +1140,7 @@
                         body = `<div class="empty-note" style="padding:30px;">${searching ? 'Keine Treffer für „' + escapeHtml(q) + '".' : 'Keine Produkte in dieser Auswahl.'}</div>`;
                     } else if (list.some(m => m.bauart)) {
                         // Nach Bauart gruppieren (Innen/Außen, Single/Multi ...) – nur wenn gepflegt
-                        const order = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'];
+                        const order = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Konsolengerät', 'Unterdeckengerät', 'Truhengerät', 'Klimaset', 'Zubehör'];
                         const groups = {};
                         list.forEach(m => { const b = m.bauart || 'Sonstige'; (groups[b] = groups[b] || []).push(m); });
                         const keys = Object.keys(groups).sort((a, b) => {
@@ -1492,7 +1492,7 @@
                         </div>
                         <div class="nav-card" onclick="app.confirmImportKatalog()">
                             <div class="card-icon teal">📥</div>
-                            <div><div class="card-title">Geräte-Katalog importieren</div><div class="card-subtitle">Samsung, Daikin, LG, Hisense & Zubehör</div></div>
+                            <div><div class="card-title">Geräte-Katalog importieren</div><div class="card-subtitle">Samsung, Daikin, LG, Hisense, Bosch & Zubehör</div></div>
                         </div>
                         <div class="nav-card" onclick="app.navigate('backup')">
                             <div class="card-icon amber">💾</div>
