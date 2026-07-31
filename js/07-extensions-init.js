@@ -724,11 +724,18 @@
                     return mm ? parseInt(mm[1], 10) : 0;
                 };
                 // Gerätetyp: Multi-AG / Single-AG / Innengerät – darf NIE gemischt werden.
-                // WICHTIG: primär über den Modellnamen erkennen (Nomenklatur ist eindeutig),
-                // weil die Kategorie im Katalog nicht immer sauber gepflegt ist
-                // (z. B. Hisense-Außengeräte, die als "Klimagerät" importiert wurden).
+                // Datenqualitäts-Fund: die alten Namensmuster erkannten z.B. Daikin-
+                // Truhengerät-Außeneinheiten (RXXM..) und Samsung-Außeneinheiten (AR..X/EU)
+                // gar nicht, und "truhengerät" im Notiztext einer AUSSENeinheit (weil sie
+                // zum Truhengerät passt) ließ sie sogar fälschlich als Innengerät gelten.
+                // Das gepflegte bauart-Feld ('Innengerät ...'/'Außengerät ...') ist
+                // zuverlässiger und hat jetzt Vorrang; Namensmuster/Kategorie bleiben
+                // Fallback für Material ohne gepflegte Bauart.
                 const devType = (m) => {
                     if (!m) return '?';
+                    const bauartRaw = String(m.bauart || '');
+                    if (bauartRaw.includes('Außengerät') || bauartRaw.includes('Aussengerät')) return maxIG(m) >= 2 ? 'MULTI-AG' : 'AG';
+                    if (bauartRaw.includes('Innengerät')) return 'IG';
                     const nm = (String(m.name || '') + ' ' + String(m.articleNumber || '')).toUpperCase();
                     const notes = String(m.notes || '').toLowerCase();
 

@@ -33,7 +33,17 @@
         async function calcPickDevice(loadKw, brand) {
             const mats = await db.getAll('materials');
             const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+            // WICHTIG (Datenqualitäts-Fund): früher wurden Innen-/Außengeräte NUR über
+            // markenspezifische Namensmuster (MXM/AMW/RX../AS..EW) unterschieden. Das
+            // gepflegte bauart-Feld ('Innengerät ...'/'Außengerät ...') wurde ignoriert -
+            // dadurch galten z.B. sämtliche Samsung-, Daikin-Truhengerät-, LG-VRF- und
+            // Hisense-Außengeräte fälschlich als "Innengerät" (keines der Muster passte),
+            // und wurden dem Kunden im Schnellrechner als Innengerät vorgeschlagen. Das
+            // bauart-Feld ist die zuverlässigste Quelle und hat jetzt Vorrang; die alten
+            // Namensmuster bleiben nur als Fallback für Material ohne gepflegte Bauart.
             const isIndoor = m => {
+                const bauart = (m.bauart || '').toLowerCase();
+                if (bauart) return bauart.includes('innengerät');
                 const nm = (m.name || '') + ' ' + (m.articleNumber || '');
                 const notes = (m.notes || '').toLowerCase();
                 if (/\b\d\s*(?:MXM|AMW)/i.test(nm) || /\bMU\s*\d\s*R/i.test(nm) || /\bR[XZ][A-Z]?\d/i.test(nm)) return false;
@@ -56,7 +66,11 @@
                 const mm = nm.match(/\b(\d)\s*(?:MXM|AMW)/) || nm.match(/\bMU\s*(\d)\s*R/) || nm.match(/\bAJ\d+TXJ(\d)/);
                 return mm ? parseInt(mm[1], 10) : 0;
             };
+            // Wie bei isIndoor(): bauart-Feld hat Vorrang vor den brüchigen Namensmustern
+            // (siehe Kommentar bei isIndoor oben - derselbe Datenqualitäts-Fund).
             const isOutdoor = (m) => {
+                const bauart = (m.bauart || '').toLowerCase();
+                if (bauart) return bauart.includes('außengerät') || bauart.includes('aussengerät');
                 const nm = ((m.name || '') + ' ' + (m.articleNumber || '')).toUpperCase();
                 const notes = (m.notes || '').toLowerCase();
                 if (/\b\d\s*(?:MXM|AMW)/.test(nm) || /\bMU\s*\d\s*R/.test(nm) || /\bR[XZ][A-Z]?\d/.test(nm) || /\bAS\d.*EW\b/.test(nm) || /\bAJ\d+TXJ/.test(nm)) return true;
