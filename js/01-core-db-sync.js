@@ -350,7 +350,7 @@ if (
     return;
 }
 
-localData._synced = true;
+localData._synced = true; localData._pushedAt = localData._pushedAt || new Date().toISOString();
 localData._remote = true;
 
 await db.putLocalOnly(table, localData);
@@ -398,23 +398,20 @@ await db.putLocalOnly(table, localData);
                         const remoteIds = new Set(data.map(r => String(t === 'settings' ? r.key : r.id)));
                         for (const row of data) {
                             const localData = toCamel(row);
-                            localData._synced = true;
+                            localData._synced = true; localData._pushedAt = localData._pushedAt || new Date().toISOString();
                             localData._remote = true;
                             await db.putLocalOnly(t, localData);
                         }
-                        // ECHTE LÖSCH-SYNCHRONISATION: Was auf dem Server nicht mehr
-                        // existiert, aber lokal als "synchronisiert" markiert ist, wurde
-                        // von einem anderen Gerät gelöscht -> lokal ebenfalls entfernen.
-                        // Lokale, noch nie gepushte Datensätze (_synced !== true) bleiben.
-                        const localRows = await db.getAll(t);
-                        for (const rec of localRows) {
-                            const key = t === 'settings' ? rec.key : rec.id;
-                            if (key === undefined || key === null) continue;
-                            if (t === 'settings' && typeof key === 'string' && key.startsWith('_')) continue;
-                            if (rec._synced === true && !remoteIds.has(String(key))) {
-                                await db.deleteLocalOnly(t, key);
-                            }
-                        }
+                        // HINWEIS (Datenverlust-Fix): Früher wurden hier lokale
+                        // Datensätze gelöscht, die auf dem Server fehlten. Das war die
+                        // Ursache für verlorene Materialien/Anlagen: Kam der Server-Pull
+                        // leer zurück (RLS, fehlende Spalte, Netzfehler), wurden frisch
+                        // angelegte Datensätze fälschlich als "remote gelöscht" behandelt
+                        // und lokal entfernt. Echte Löschungen laufen zuverlässig über
+                        // die explizite Lösch-Warteschlange (deletePendingQueue) auf
+                        // allen Geräten. Automatisches lokales Löschen entfällt daher –
+                        // lokale Daten bleiben immer erhalten, bis sie bewusst gelöscht
+                        // werden.
                     } else if (error) {
                         console.warn(`Sync-Fehler bei Tabelle "${t}":`, error.message);
                         failedTables.push({ table: t, message: error.message });
@@ -589,6 +586,7 @@ async function backgroundSyncPushInner() {
                     if (same) {
                         current._synced = true;
                         current._remote = true;
+                        current._pushedAt = new Date().toISOString();   // Nachweis: erfolgreich zum Server gepusht
                         await db.putLocalOnly(t, current);
                     }
                 } else if (error) {
@@ -717,8 +715,24 @@ async function backgroundSyncPushInner() {
                 overlay.remove();
                 if (onCancel) onCancel();
             });
-            overlay.querySelector('.save-btn')?.addEventListener('click', () => {
-                if (onSave) onSave(overlay);
+            overlay.querySelector('.save-btn')?.addEventListener('click', async (e) => {
+                if (!onSave) return;
+                const btn = e.currentTarget;
+                if (btn.dataset.saving === '1') return;   // Doppelklick-Schutz
+                btn.dataset.saving = '1';
+                btn.disabled = true;
+                const origText = btn.textContent;
+                btn.textContent = 'Speichert…';
+                try {
+                    await onSave(overlay);
+                } finally {
+                    // Modal evtl. schon entfernt – nur zurücksetzen, wenn es noch da ist
+                    if (document.body.contains(btn)) {
+                        btn.dataset.saving = '';
+                        btn.disabled = false;
+                        btn.textContent = origText;
+                    }
+                }
             });
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) { overlay.remove(); if (onCancel) onCancel(); }
