@@ -213,7 +213,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v71</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v72</span></div>
                         </div>
                     </div>`;
             })();
@@ -1203,27 +1203,66 @@
                 try { const t = await getSetting('marginThresholds'); if (t) marginThresholds = JSON.parse(t); } catch (e) {}
 
                 // Interner Gewinn eines (eingefrorenen) Angebots aus seinen Positionen
+                // Einkaufspreis pro VERKAUFTER Einheit (rechnet Rolle/Bund/Stange -> Meter um)
+                const ekPerSalesUnit = (m, it) => {
+                    if (!m) return { ek: 0, known: false };
+                    let ekPack = 0;   // EK der Einkaufseinheit (Rolle/Bund/Stange oder Stück)
+                    if (typeof effectivePurchasePrice === 'function') ekPack = Number(effectivePurchasePrice(m, dealerDiscounts)) || 0;
+                    if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
+                    if (!(ekPack > 0)) return { ek: 0, known: false };
+                    // Verkauf pro Meter, aber Einkauf pro Rolle/Bund/Stange -> auf Meter herunterrechnen
+                    const bl = Number(m.bundleLength) || 0;
+                    const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
+                    const soldPerMeter = (it.unit === 'm') || isPack;
+                    if (isPack && soldPerMeter) return { ek: ekPack / bl, known: true };   // EK pro Meter
+                    return { ek: ekPack, known: true };                                    // EK pro Stück
+                };
+
+                // Vollständige, nachvollziehbare Kalkulation eines (eingefrorenen) Angebots.
+                // Gewinn = Verkaufspreis − Materialeinkauf − Arbeitskosten − sonstige Kosten
                 const offerProfit = (o) => {
-                    const positions = o.positions || [];
-                    let vk = 0, ek = 0, unknown = 0;
-                    const isLabor = (it) => { const c = (it.category || '').toLowerCase(); const n = (it.name || '').toLowerCase(); return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt'); };
+                    const positions = (o.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0 && (Number(it.price) || 0) >= 0);
+                    const isLabor = (it) => { const c = (it.category || '').toLowerCase(); const n = (it.name || '').toLowerCase(); return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || c.includes('lohn') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt') || n.includes('arbeitsstunde'); };
+                    let salesTotal = 0;      // Gesamtverkaufspreis (netto, nach Positionsrabatt)
+                    let materialCost = 0;    // Materialeinkauf
+                    let laborSales = 0;      // Verkaufswert der Arbeitspositionen (= sonstige Kosten hier 0, Arbeit ist Ertrag)
+                    let missingCount = 0;    // Positionen ohne Einkaufspreis
+                    const lines = [];
                     positions.forEach(it => {
                         const qty = Number(it.quantity) || 0;
-                        const line = (Number(it.price) || 0) * qty * (1 - (Number(it.discount) || 0) / 100);
-                        vk += line;
-                        if (isLabor(it)) return;   // Arbeit = reiner Ertrag, kein EK
-                        const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                        let ekUnit = 0;
-                        if (m && typeof effectivePurchasePrice === 'function') ekUnit = effectivePurchasePrice(m, dealerDiscounts);
-                        else if (m && Number(m.purchasePrice) > 0) ekUnit = Number(m.purchasePrice);
-                        if (ekUnit > 0) ek += ekUnit * qty;
-                        else unknown += line;
+                        const disc = Number(it.discount) || 0;
+                        const lineSales = (Number(it.price) || 0) * qty * (1 - disc / 100);
+                        salesTotal += lineSales;
+                        const labor = isLabor(it);
+                        let lineCost = 0, ekKnown = true, ekUnit = 0;
+                        if (labor) {
+                            laborSales += lineSales;   // Arbeit: kein Materialeinkauf
+                        } else {
+                            const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                            const r = ekPerSalesUnit(m, it);
+                            ekKnown = r.known;
+                            ekUnit = r.ek;
+                            if (ekKnown) lineCost = ekUnit * qty;
+                            else missingCount++;
+                        }
+                        materialCost += lineCost;
+                        lines.push({ name: it.name || '(ohne Namen)', qty, unit: it.unit || 'Stk', sales: lineSales, cost: lineCost, ekUnit, labor, ekKnown, discount: disc, hasDiscount: disc > 0 });
                     });
-                    // effektiver Umsatz = vereinbarter Preis falls gesetzt, sonst Netto der Positionen
-                    const agreedNet = (o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : vk;
-                    const profit = agreedNet - ek;
-                    const margin = agreedNet > 0 ? (profit / agreedNet) * 100 : 0;
-                    return { profit, margin, ek, vk, unknown, hasData: (ek > 0 || vk > 0) };
+                    // Verkaufspreis: vereinbarter Preis (netto) falls gesetzt, sonst Summe der Positionen
+                    const salesEffective = (o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : salesTotal;
+                    const otherCost = 0;   // Platzhalter für spätere sonstige Kosten
+                    const profit = salesEffective - materialCost - otherCost;
+                    const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
+                    return {
+                        profit, margin,
+                        salesTotal: salesEffective,
+                        materialCost, laborSales, otherCost,
+                        totalCost: materialCost + otherCost,
+                        missingCount,
+                        complete: missingCount === 0,
+                        hasData: positions.length > 0,
+                        lines
+                    };
                 };
                 const marginColor = (m) => m < marginThresholds.low ? 'mg-red' : (m < marginThresholds.high ? 'mg-yellow' : 'mg-green');
 
@@ -1263,7 +1302,7 @@
                                     const cust = proj ? customers.find(c => String(c.id) === String(proj.customerId)) : null;
                                     const p = offerProfit(o);
                                     const profitCell = p.hasData
-                                        ? `<td><div class="mg-badge ${marginColor(p.margin)}">${p.profit >= 0 ? '+' : ''}${formatCurrency(p.profit)}<span class="mg-pct">${p.margin.toFixed(0)}%</span></div>${p.unknown > 0.005 ? '<div class="mg-note">EK unvollständig</div>' : ''}</td>`
+                                        ? `<td><div class="mg-badge ${p.complete ? marginColor(p.margin) : 'mg-yellow'}" onclick="event.stopPropagation(); app.showOfferDiagnosis(${idJS(o.id)})" title="Klick für Details">${p.profit >= 0 ? '+' : ''}${formatCurrency(p.profit)}<span class="mg-pct">${p.margin.toFixed(0)}%</span></div>${!p.complete ? `<div class="mg-note">⚠️ ${p.missingCount} × EK fehlt</div>` : ''}</td>`
                                         : `<td><span class="mg-na">–</span></td>`;
                                     return `<tr>
                                         <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong></td>

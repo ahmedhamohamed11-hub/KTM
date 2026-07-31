@@ -902,6 +902,88 @@
             },
 
             // ---------- Kategorie verwalten: umbenennen, verschieben, löschen ----------
+            // Interne Gewinn-Diagnose eines Angebots: vollständige, nachvollziehbare
+            // Aufschlüsselung + Position-für-Position, wo EK oder Rabatt fehlt.
+            async showOfferDiagnosis(offerId) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+                const materials = await db.getAll('materials');
+                const dealerDiscounts = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+
+                const isLabor = (it) => { const c = (it.category || '').toLowerCase(); const n = (it.name || '').toLowerCase(); return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || c.includes('lohn') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt') || n.includes('arbeitsstunde'); };
+                const ekPerSalesUnit = (m, it) => {
+                    if (!m) return { ek: 0, known: false };
+                    let ekPack = (typeof effectivePurchasePrice === 'function') ? (Number(effectivePurchasePrice(m, dealerDiscounts)) || 0) : 0;
+                    if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
+                    if (!(ekPack > 0)) return { ek: 0, known: false };
+                    const bl = Number(m.bundleLength) || 0;
+                    const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
+                    if (isPack && ((it.unit === 'm') || isPack)) return { ek: ekPack / bl, known: true };
+                    return { ek: ekPack, known: true };
+                };
+
+                const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
+                let salesTotal = 0, materialCost = 0, laborSales = 0, missing = 0;
+                const rows = positions.map(it => {
+                    const qty = Number(it.quantity) || 0;
+                    const disc = Number(it.discount) || 0;
+                    const lineSales = (Number(it.price) || 0) * qty * (1 - disc / 100);
+                    salesTotal += lineSales;
+                    const labor = isLabor(it);
+                    let cost = 0, known = true, ekUnit = 0, note = '';
+                    if (labor) {
+                        laborSales += lineSales;
+                        note = 'Arbeit (kein Materialeinkauf)';
+                    } else {
+                        const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                        if (!m) { known = false; note = '⚠️ Material nicht mehr in Datenbank'; }
+                        else {
+                            const r = ekPerSalesUnit(m, it); known = r.known; ekUnit = r.ek;
+                            if (known) { cost = ekUnit * qty; if (disc === 0 && !m.dealerDiscount && !(dealerDiscounts[(m.manufacturer||'').trim()])) note = 'kein Rabatt hinterlegt'; }
+                            else note = '⚠️ Einkaufspreis fehlt';
+                        }
+                        if (!known) missing++;
+                    }
+                    const lineProfit = lineSales - cost;
+                    return `<tr class="${!known && !labor ? 'diag-missing' : ''}">
+                        <td>${escapeHtml(it.name || '(ohne Namen)')}<div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div></td>
+                        <td style="text-align:right;">${formatCurrency(lineSales)}</td>
+                        <td style="text-align:right;">${labor ? '—' : (known ? formatCurrency(cost) : '<span style="color:var(--danger);font-weight:600;">fehlt</span>')}</td>
+                        <td style="text-align:right;font-weight:600;color:${lineProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">${known || labor ? formatCurrency(lineProfit) : '?'}</td>
+                    </tr>`;
+                }).join('');
+
+                const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '') ? Number(offer.agreedPrice) : salesTotal;
+                const totalCost = materialCost = positions.reduce((s, it) => {
+                    if (isLabor(it)) return s;
+                    const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                    const r = ekPerSalesUnit(m, it);
+                    return s + (r.known ? r.ek * (Number(it.quantity) || 0) : 0);
+                }, 0);
+                const profit = salesEffective - totalCost;
+                const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
+                const complete = missing === 0;
+
+                showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
+                    ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn beim Material nach, dann stimmt die Marge.</div>` : ''}
+                    <div class="diag-summary">
+                        <div class="diag-row"><span>Verkaufspreis${(offer.agreedPrice != null && offer.agreedPrice !== '') ? ' (vereinbart)' : ''}</span><strong>${formatCurrency(salesEffective)}</strong></div>
+                        <div class="diag-row"><span>− Materialeinkauf</span><strong>${formatCurrency(totalCost)}</strong></div>
+                        <div class="diag-row"><span>− Arbeitskosten</span><strong>0,00 € <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(Arbeit ist Ertrag)</span></strong></div>
+                        <div class="diag-row"><span>− Sonstige Kosten</span><strong>${formatCurrency(0)}</strong></div>
+                        <div class="diag-row diag-total"><span>= Gewinn</span><strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(profit)}</strong></div>
+                        <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
+                        <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>
+                    </div>
+                    <div class="diag-detail-title">Positionen im Detail</div>
+                    <div class="table-container"><table class="diag-table">
+                        <thead><tr><th>Position</th><th style="text-align:right;">Verkauf</th><th style="text-align:right;">Einkauf</th><th style="text-align:right;">Gewinn</th></tr></thead>
+                        <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
+                    </table></div>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Nur für dich sichtbar – erscheint nie im Kundenangebot oder PDF.</div>
+                `, null, null, { wide: true });
+            },
+
             async openCategoryManageModal(cat) {
                 const materials = await db.getAll('materials');
                 const inCat = materials.filter(m => (m.category || 'Ohne Kategorie') === cat);
