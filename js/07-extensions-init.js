@@ -192,23 +192,9 @@
                 const modal = showModal(
                     id ? 'Material bearbeiten' : 'Material zum Projekt hinzufügen',
                     `
-                        <div class="form-group"><label>Material (aus Datenbank) *</label>
-                            <select id="pmMaterial">
-                                ${(() => {
-                                    const groupOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'];
-                                    const groups = {};
-                                    materials.forEach(m => { const g = m.bauart || (m.category || 'Sonstiges'); (groups[g] = groups[g] || []).push(m); });
-                                    const keys = Object.keys(groups).sort((a, b) => {
-                                        const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b);
-                                        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
-                                    });
-                                    const optOf = (m) => {
-                                        const ek = Number(m.purchasePrice) > 0 ? ` · EK ${formatCurrency(m.purchasePrice)}` : '';
-                                        return `<option value="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(m.unit || 'Stk')}" data-size="${escapeHtml(m.size || '')}" ${String(pm?.materialId) === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}${ek}</option>`;
-                                    };
-                                    return keys.map(k => `<optgroup label="${escapeHtml(k)}">${groups[k].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(optOf).join('')}</optgroup>`).join('');
-                                })()}
-                            </select>
+                        <div class="form-group"><label>Material auswählen *</label>
+                            <div id="pmStepPicker" class="step-picker"></div>
+                            <input type="hidden" id="pmMaterial" value="${pm?.materialId != null ? escapeHtml(String(pm.materialId)) : ''}">
                             <div style="font-size:12px;color:var(--text-muted);margin-top:5px;">Fehlt etwas? <a href="#" id="pmNewMat" style="color:var(--accent);font-weight:600;">Neues Material anlegen</a></div>
                         </div>
                         <div class="form-row-3">
@@ -293,11 +279,98 @@
 
                 // Einheit + Preis aus Material vorbelegen
                 const sel = modal.querySelector('#pmMaterial');
+
+                // ===== Mehrstufige Materialauswahl (Kategorie → Marke → Serie → Modell) =====
+                const stepBox = modal.querySelector('#pmStepPicker');
+                if (stepBox) {
+                    // Kategorien nach Bauart (mit sinnvoller Reihenfolge + Icon)
+                    const catOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'];
+                    const catIcon = { 'Innengerät Single-Split': '🌡️', 'Außengerät Single-Split': '🔲', 'Innengerät Multi-Split': '🌡️', 'Außengerät Multi-Split': '🔲', 'Truhengerät': '📦', 'Zubehör': '🔧' };
+                    const state = { cat: null, brand: null, series: null };
+
+                    const catOf = m => m.bauart || m.category || 'Sonstiges';
+                    const cats = [...new Set(materials.map(catOf))].sort((a, b) => {
+                        const ia = catOrder.indexOf(a), ib = catOrder.indexOf(b);
+                        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
+                    });
+
+                    const render = () => {
+                        // aktueller Pfad als Chips + jeweilige Optionen
+                        let html = '';
+                        // Breadcrumb
+                        const crumbs = [];
+                        if (state.cat) crumbs.push(`<button type="button" class="sp-crumb" data-lvl="cat">${escapeHtml(state.cat)} ✕</button>`);
+                        if (state.brand) crumbs.push(`<button type="button" class="sp-crumb" data-lvl="brand">${escapeHtml(state.brand)} ✕</button>`);
+                        if (state.series) crumbs.push(`<button type="button" class="sp-crumb" data-lvl="series">${escapeHtml(state.series)} ✕</button>`);
+                        if (crumbs.length) html += `<div class="sp-crumbs">${crumbs.join('')}</div>`;
+
+                        if (!state.cat) {
+                            html += `<div class="sp-label">1. Kategorie wählen</div><div class="sp-grid">`;
+                            html += cats.map(c => `<button type="button" class="sp-btn" data-cat="${escapeHtml(c)}">${catIcon[c] || '•'} ${escapeHtml(c)}</button>`).join('');
+                            html += `</div>`;
+                        } else if (!state.brand) {
+                            const brands = [...new Set(materials.filter(m => catOf(m) === state.cat).map(m => m.manufacturer).filter(Boolean))].sort();
+                            html += `<div class="sp-label">2. Marke wählen</div><div class="sp-grid">`;
+                            html += brands.map(b => `<button type="button" class="sp-btn" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</button>`).join('');
+                            if (brands.length === 0) html += `<div class="sp-empty">Keine Marken in dieser Kategorie.</div>`;
+                            html += `</div>`;
+                        } else {
+                            const inBrand = materials.filter(m => catOf(m) === state.cat && m.manufacturer === state.brand);
+                            const seriesList = [...new Set(inBrand.map(m => m.series).filter(Boolean))].sort();
+                            if (seriesList.length > 1 && !state.series) {
+                                html += `<div class="sp-label">3. Serie wählen</div><div class="sp-grid">`;
+                                html += seriesList.map(s => `<button type="button" class="sp-btn" data-series="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('');
+                                html += `</div>`;
+                            } else {
+                                const models = inBrand.filter(m => !state.series || m.series === state.series)
+                                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                                html += `<div class="sp-label">${seriesList.length > 1 ? '4.' : '3.'} Modell wählen</div><div class="sp-models">`;
+                                html += models.map(m => {
+                                    const ek = Number(m.purchasePrice) > 0 ? ` · EK ${formatCurrency(m.purchasePrice)}` : '';
+                                    const on = String(sel.value) === String(m.id);
+                                    return `<button type="button" class="sp-model ${on ? 'on' : ''}" data-model="${escapeHtml(String(m.id))}">
+                                        <span class="sp-model-name">${escapeHtml(m.name)}${m.size ? ' – ' + escapeHtml(m.size) : ''}</span>
+                                        <span class="sp-model-meta">${escapeHtml(m.bauart || '')}${ek}</span>
+                                    </button>`;
+                                }).join('');
+                                html += `</div>`;
+                            }
+                        }
+                        stepBox.innerHTML = html;
+                    };
+
+                    stepBox.addEventListener('click', (e) => {
+                        const b = e.target.closest('button'); if (!b) return;
+                        e.preventDefault();
+                        if (b.dataset.cat) { state.cat = b.dataset.cat; state.brand = null; state.series = null; render(); }
+                        else if (b.dataset.brand) { state.brand = b.dataset.brand; state.series = null; render(); }
+                        else if (b.dataset.series) { state.series = b.dataset.series; render(); }
+                        else if (b.dataset.model) {
+                            sel.value = b.dataset.model;
+                            sel.dispatchEvent(new Event('change'));
+                            render();
+                        } else if (b.dataset.lvl) {
+                            // Breadcrumb: eine Ebene zurück
+                            if (b.dataset.lvl === 'cat') { state.cat = null; state.brand = null; state.series = null; }
+                            else if (b.dataset.lvl === 'brand') { state.brand = null; state.series = null; }
+                            else if (b.dataset.lvl === 'series') { state.series = null; }
+                            render();
+                        }
+                    });
+
+                    // Bei Bearbeiten: Pfad aus dem gewählten Material vorbelegen
+                    if (pm?.materialId) {
+                        const m = materials.find(x => String(x.id) === String(pm.materialId));
+                        if (m) { state.cat = catOf(m); state.brand = m.manufacturer || null; state.series = m.series || null; }
+                    }
+                    render();
+                }
+
                 const applyUnit = () => {
                     if (pm) return;
-                    const unit = sel.selectedOptions[0]?.dataset.unit || 'Stk';
-                    modal.querySelector('#pmUnit').value = unit;
                     const m = materials.find(x => String(x.id) === String(sel.value));
+                    const unit = m?.unit || 'Stk';
+                    modal.querySelector('#pmUnit').value = unit;
                     const pf = modal.querySelector('#pmPrice');
                     if (pf && m) pf.value = matUnitPrice(m, unit) || '';
                     updateEkInfo();

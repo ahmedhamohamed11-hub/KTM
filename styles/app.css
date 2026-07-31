@@ -1281,3 +1281,20 @@
         .ord-opt-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; cursor: pointer; font-size: 14px; }
         .ord-opt-row:hover { background: var(--bg-tertiary); }
         .ord-opt-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+        /* ===== Mehrstufige Materialauswahl ===== */
+        .step-picker { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: var(--bg-secondary); }
+        .sp-crumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .sp-crumb { background: var(--accent-light); color: var(--accent); border: none; border-radius: 20px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+        .sp-crumb:hover { background: var(--accent); color: #fff; }
+        .sp-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin-bottom: 8px; }
+        .sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+        .sp-btn { text-align: left; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-content); font-size: 14px; font-weight: 600; cursor: pointer; transition: all var(--transition); }
+        .sp-btn:hover { border-color: var(--accent); background: var(--accent-light); transform: translateY(-1px); }
+        .sp-models { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+        .sp-model { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-content); cursor: pointer; transition: all var(--transition); }
+        .sp-model:hover { border-color: var(--accent); background: var(--accent-light); }
+        .sp-model.on { border-color: var(--accent); background: var(--accent-light); box-shadow: 0 0 0 2px var(--accent-light); }
+        .sp-model-name { font-size: 14px; font-weight: 600; }
+        .sp-model-meta { font-size: 11.5px; color: var(--text-muted); }
+        .sp-empty { color: var(--text-muted); font-size: 13px; padding: 8px; }
