@@ -1444,7 +1444,47 @@
                     }
                 } catch (e) { /* optional */ }
 
-                showModal(
+                // ---- Set-Panel: bei Single-Split IG/AG passendes Gegenstück + Zubehör ----
+                let setHtml = '', isSingleIG = false, isSingleAG = false;
+                const bauart = m.bauart || '';
+                isSingleIG = bauart === 'Innengerät Single-Split';
+                isSingleAG = bauart === 'Außengerät Single-Split';
+                if (isSingleIG || isSingleAG) {
+                    const allMats = await db.getAll('materials');
+                    const norm = s => String(s || '').trim().toLowerCase();
+                    const wantBauart = isSingleIG ? 'Außengerät Single-Split' : 'Innengerät Single-Split';
+                    const partner = allMats.find(x =>
+                        x.bauart === wantBauart &&
+                        norm(x.manufacturer) === norm(m.manufacturer) &&
+                        norm(x.series) === norm(m.series) &&
+                        norm(x.size) === norm(m.size));
+                    const zubehoer = allMats.filter(x => x.bauart === 'Zubehör' && norm(x.manufacturer) === norm(m.manufacturer));
+                    const setTotal = (Number(m.sellingPrice) || 0) + (Number(partner?.sellingPrice) || 0);
+                    const makeCard = (mat, role) => `
+                        <div class="set-panel-card${mat.id === m.id ? ' set-panel-card--current' : ''}" style="cursor:pointer;" onclick="this.closest('.modal-overlay').remove(); app.openMaterialDetail(${idJS(mat.id)})">
+                            <div class="set-panel-role">${escapeHtml(role)}</div>
+                            <div class="set-panel-name">${escapeHtml(mat.name)}</div>
+                            <div class="set-panel-meta">${mat.size ? escapeHtml(mat.size) + ' kW · ' : ''}${mat.articleNumber ? escapeHtml(mat.articleNumber) : ''}</div>
+                            <div class="set-panel-price">${formatCurrency(mat.sellingPrice || 0)}</div>
+                        </div>`;
+                    const igCard = makeCard(isSingleIG ? m : (partner || m), 'Innengerät');
+                    const agCard = partner
+                        ? makeCard(isSingleAG ? m : partner, 'Außengerät')
+                        : `<div class="set-panel-card set-panel-card--missing"><div class="set-panel-role">Außengerät</div><div class="set-panel-name" style="color:var(--text-muted);">Kein passendes Gerät im Katalog</div></div>`;
+                    const zubRows = zubehoer.length
+                        ? `<div class="set-panel-zub"><div class="set-panel-zub-title">Passendes Zubehör (${escapeHtml(m.manufacturer)}):</div>${zubehoer.slice(0, 4).map(z => `<div class="set-panel-zub-row" style="cursor:pointer;" onclick="this.closest('.modal-overlay').remove(); app.openMaterialDetail(${idJS(z.id)})"><span>${escapeHtml(z.name)}</span><span>${formatCurrency(z.sellingPrice || 0)}</span></div>`).join('')}${zubehoer.length > 4 ? `<div class="set-panel-zub-more">+${zubehoer.length - 4} weitere</div>` : ''}</div>`
+                        : '';
+                    setHtml = `
+                        <div class="set-panel">
+                            <div class="set-panel-title">❄️ Single-Split-Set – ${escapeHtml(m.manufacturer)} ${escapeHtml(m.series || '')} ${escapeHtml(m.size || '')} kW</div>
+                            <div class="set-panel-grid">${igCard}${agCard}</div>
+                            ${partner ? `<div class="set-panel-total">Set-Gesamtpreis: <strong>${formatCurrency(setTotal)}</strong></div>` : ''}
+                            ${zubRows}
+                            ${partner ? `<button class="btn btn-primary btn-sm" id="addSetBtn" style="margin-top:10px;">${icon('plus')} Innen + Außen zum Projekt</button>` : ''}
+                        </div>`;
+                }
+
+                const modal = showModal(
                     escapeHtml(m.name || 'Material'),
                     `
                         <div class="mat-detail">
@@ -1477,9 +1517,23 @@
                             <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove(); app.duplicateMaterial(${idJS(m.id)})">⧉ Duplizieren</button>
                             <button class="btn btn-danger" onclick="this.closest('.modal-overlay').remove(); app.deleteMaterial(${idJS(m.id)})">${icon('trash')} Löschen</button>
                         </div>
+                        ${setHtml}
                     `,
                     null, null, { wide: true }
                 );
+                // „Innen + Außen zum Projekt" Button verdrahten
+                modal?.querySelector('#addSetBtn')?.addEventListener('click', async () => {
+                    const allMats2 = await db.getAll('materials');
+                    const norm2 = s => String(s || '').trim().toLowerCase();
+                    const wantBauart2 = isSingleIG ? 'Außengerät Single-Split' : 'Innengerät Single-Split';
+                    const partnerForSet = allMats2.find(x =>
+                        x.bauart === wantBauart2 &&
+                        norm2(x.manufacturer) === norm2(m.manufacturer) &&
+                        norm2(x.series) === norm2(m.series) &&
+                        norm2(x.size) === norm2(m.size)
+                    );
+                    if (partnerForSet) { modal.remove(); this._configuratorAddToProject([m, partnerForSet]); }
+                });
             },
 
             // ---------- "Zum Projekt hinzufügen" ----------
