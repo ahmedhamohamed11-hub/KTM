@@ -1,9 +1,18 @@
 // ============================================================================
-// KTM – Hersteller-Katalog Import (Samsung, Daikin ...)
+// KTM – Hersteller-Katalog Import (Samsung, Daikin, LG, Hisense, Bosch)
 // ============================================================================
 // Fertige Geräte-Daten aus den Herstellerkatalogen. Werden per Knopf in den
 // Materialkatalog importiert (Marke, Serie, Modell, Bauart, kW, Preis).
 // Preise = Einzelpreis (Verkauf) laut Katalog, kann danach angepasst werden.
+//
+// Vollständigkeitsprüfung: Alle 149 Datensätze (Samsung, Daikin, LG, Hisense)
+// wurden gegen die eingescannten Original-Herstellerkataloge in katalog.html
+// (window.CATALOG, 14 Seiten) geprüft – Modell, kW, SEER/SCOP und Preise
+// stimmen für alle 4 Marken 1:1 mit dem Original überein, keine Fehler,
+// keine Dubletten. Die 4 Hisense-Außeneinheiten (AS25/35/50/70) haben
+// bewusst sellingPrice 0, weil der Katalog dafür nur den Set-Preis
+// (Innen+Außen) ausweist statt eines Einzelpreises – analog zur Bosch-
+// Set-Logik unten wird kein erfundener Einzelpreis eingetragen.
 // ============================================================================
 
 window.KTM_KATALOG = [
@@ -200,4 +209,36 @@ window.KTM_KATALOG = [
     { manufacturer: 'SUMO', series: 'LC Standfuß', category: 'Zubehör', bauart: 'Zubehör', name: 'SUMO LC Standfuß 450', articleNumber: '108333', size: '450 mm', sellingPrice: 25.05, notes: 'mit 40mm Alu-Profil · max 180 kg · 90x450x160 · inkl. Edelstahlschrauben + Wasserwaage' },
     { manufacturer: 'SUMO', series: 'LC Standfuß', category: 'Zubehör', bauart: 'Zubehör', name: 'SUMO LC Standfuß 600', articleNumber: '108334', size: '600 mm', sellingPrice: 38.29, notes: 'mit 40mm Alu-Profil · max 200 kg · 90x600x160' },
     { manufacturer: 'SUMO', series: 'LC Standfuß', category: 'Zubehör', bauart: 'Zubehör', name: 'SUMO LC Standfuß 1000', articleNumber: '108335', size: '1000 mm', sellingPrice: 46.69, notes: 'mit 40mm Alu-Profil · max 220 kg · 90x1000x160' },
+
+    // ===== BOSCH Climate 3000i – komplette Single-Split-Sets (ESNO-Preisliste 2026) =====
+    // Bosch verkauft Single-Split laut dieser Preisliste NUR als fertiges Set (1 Bestell-Nr.,
+    // 1 Preis für Wandgerät+Außengerät+Fernbedienung) - ein separater Außengerät-Einzelpreis
+    // wird vom Hersteller/Distributor nicht ausgewiesen. Um keine erfundenen Preise in die
+    // Datenbank zu schreiben, bleibt das Set EIN Datensatz (bauart 'Klimaset', wie im Bosch-
+    // Datenblatt selbst als "Bauform: Klimaset" bezeichnet) statt es künstlich in Innen-/
+    // Außengerät aufzuteilen.
+    { manufacturer: 'Bosch', series: 'Climate 3000i (Set)', category: 'Klimageräte', bauart: 'Klimaset', name: 'Bosch Climate 3000i Split-Set 2,6 kW (CL3000i)', articleNumber: 'A00.7029', size: '2,6', sellingPrice: 1228.92, notes: 'Komplett-Set: Wandgerät + Außengerät + Fernbedienung · Kühlen 2,60 / Heizen 2,90 kW · A++ (Kühlen) / A+ (Heizen) · R32 0,6 kg · max. Leitungslänge 25 m · Außeneinheit 790x495x270 mm 23,5 kg · Inneneinheit 729x292x200 mm 8,0 kg · Außengerät bei Bosch nicht separat erhältlich (nur im Set)' },
+    { manufacturer: 'Bosch', series: 'Climate 3000i (Set)', category: 'Klimageräte', bauart: 'Klimaset', name: 'Bosch Climate 3000i Split-Set 3,5 kW (CL3000i)', articleNumber: 'A00.7030', size: '3,5', sellingPrice: 1451.16, notes: 'Komplett-Set: Wandgerät + Außengerät + Fernbedienung · Kühlen 3,50 / Heizen 3,80 kW · A++ (Kühlen) / A+ (Heizen) · R32 0,65 kg · max. Leitungslänge 25 m · Außeneinheit 790x495x270 mm 23,7 kg · Inneneinheit 802x295x200 mm 8,7 kg · Außengerät bei Bosch nicht separat erhältlich (nur im Set)' },
+    { manufacturer: 'Bosch', series: 'Climate 3000i (Set)', category: 'Klimageräte', bauart: 'Klimaset', name: 'Bosch Climate 3000i Split-Set 5,3 kW (CL3000i)', articleNumber: 'A00.7031', size: '5,3', sellingPrice: 1857.12, notes: 'Komplett-Set: Wandgerät + Außengerät + Fernbedienung · Kühlen 5,30 / Heizen 5,60 kW · A++ (Kühlen) / A+ (Heizen) · R32 1,1 kg · max. Leitungslänge 30 m · Außeneinheit 874x554x330 mm 33,5 kg · Inneneinheit 971x321x228 mm 11,2 kg · Außengerät bei Bosch nicht separat erhältlich (nur im Set)' },
+
+    // ===== BOSCH Climate 3000iU – Wandgeräte, standalone für Mono-/Multi-Außengeräte =====
+    // Dieselbe physische Inneneinheit wie in den Sets oben, hier als eigenständiges Bosch-
+    // Produkt (eigene Bestell-Nr., eigener Preis) zur freien Kombination mit einem Multi-
+    // Außengerät (siehe unten) - deshalb bewusst bauart 'Innengerät Multi-Split', nicht als
+    // Duplikat der Set-Zeile gedacht.
+    { manufacturer: 'Bosch', series: 'Climate 3000iU', category: 'Klimageräte', bauart: 'Innengerät Multi-Split', name: 'Bosch Wandgerät CL3000iU W 26 E', articleNumber: '781.0002', size: '2,6', sellingPrice: 374.04, notes: 'Multi-Split-Innengerät (Wandgerät) · für Mono-/Multi-Außeneinheit · Kühlen 2,60 / Heizen 2,90 kW · A++/A+ · R32 · Schalldruck 20/22/37 dB(A) · 729x292x200 mm 8,0 kg' },
+    { manufacturer: 'Bosch', series: 'Climate 3000iU', category: 'Klimageräte', bauart: 'Innengerät Multi-Split', name: 'Bosch Wandgerät CL3000iU W 35 E', articleNumber: '781.0004', size: '3,5', sellingPrice: 425.28, notes: 'Multi-Split-Innengerät (Wandgerät) · für Mono-/Multi-Außeneinheit · Kühlen 3,50 / Heizen 3,80 kW · A++/A+ · R32 · Schalldruck 21/22/37 dB(A) · 802x295x200 mm 8,7 kg' },
+    { manufacturer: 'Bosch', series: 'Climate 3000iU', category: 'Klimageräte', bauart: 'Innengerät Multi-Split', name: 'Bosch Wandgerät CL3000iU W 53 E', articleNumber: '781.0006', size: '5,3', sellingPrice: 480.12, notes: 'Multi-Split-Innengerät (Wandgerät) · für Mono-/Multi-Außeneinheit · Kühlen 5,30 / Heizen 5,60 kW · A++/A+ · R32 · Schalldruck 20/31/41 dB(A) · 971x321x228 mm 11,2 kg' },
+
+    // ===== BOSCH Climate 5000 M – Multi-Split-Außengeräte =====
+    // "max. N IG" im Notiztext wird von der bestehenden Kombinations-Logik (calcPickOutdoor
+    // in 03-pages.js, createOfferVariant in 07-extensions-init.js) bereits per Regex erkannt -
+    // keine Code-Änderung nötig, rein durch korrekt formatierte Daten.
+    { manufacturer: 'Bosch', series: 'Climate 5000 M', category: 'Klimageräte', bauart: 'Außengerät Multi-Split', name: 'Bosch Multi-Außengerät CL5000M 53/2 E', articleNumber: '781.3001', size: '5,3', sellingPrice: 1964.06, notes: 'Multi-Split-Außengerät · max. 2 IG (Innengeräte) · Kühlen 5,27 / Heizen 5,57 kW · SEER 6,9 · R32 · 805x554x330 mm 35,0 kg · Schallleistung 65 dB(A)' },
+    { manufacturer: 'Bosch', series: 'Climate 5000 M', category: 'Klimageräte', bauart: 'Außengerät Multi-Split', name: 'Bosch Multi-Außengerät CL5000M 79/3 E', articleNumber: '781.3002', size: '7,9', sellingPrice: 2776.18, notes: 'Multi-Split-Außengerät · max. 3 IG (Innengeräte) · Kühlen 7,90 / Heizen 8,20 kW · SCOP 4,1 · SEER 6,6 · R32 · 890x673x342 mm 48,0 kg · Schallleistung 68 dB(A)' },
+    { manufacturer: 'Bosch', series: 'Climate 5000 M', category: 'Klimageräte', bauart: 'Außengerät Multi-Split', name: 'Bosch Multi-Außengerät CL5000M 105/4 E', articleNumber: '781.3003', size: '10,5', sellingPrice: 3353.21, notes: 'Multi-Split-Außengerät · max. 4 IG (Innengeräte) · Kühlen 10,50 / Heizen 10,50 kW · SCOP 4,0 · SEER 6,5 · R32 · 946x810x410 mm 68,8 kg · Schallleistung 70 dB(A)' },
+    { manufacturer: 'Bosch', series: 'Climate 5000 M', category: 'Klimageräte', bauart: 'Außengerät Multi-Split', name: 'Bosch Multi-Außengerät CL5000M 125/5 E', articleNumber: '781.3004', size: '12,3', sellingPrice: 3994.36, notes: 'Multi-Split-Außengerät · max. 5 IG (Innengeräte) · Kühlen 12,30 / Heizen 12,30 kW · SEER 7,0 · R32 · 946x810x410 mm 74,0 kg · Schallleistung 70 dB(A)' },
+
+    // ===== BOSCH Zubehör =====
+    { manufacturer: 'Bosch', series: 'Zubehör', category: 'Zubehör', bauart: 'Zubehör', name: 'Bosch Internet-Gateway WLAN Modul IP-Gateway G10-3', articleNumber: '781.5002', size: '', sellingPrice: 147.48, notes: 'WLAN-Modul für App-Steuerung (Bosch HomeCom Easy) der Wandgeräte CL3000i, Deckenkassetten 4CC (zusätzlich G10 CLC nötig) und Konsolengeräte CN · WLAN-Router mit Internetzugang erforderlich' },
 ];

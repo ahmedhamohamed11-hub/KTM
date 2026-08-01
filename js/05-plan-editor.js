@@ -464,7 +464,11 @@
             for (const x of pm) {
                 const m = materials.find(mm => String(mm.id) === String(x.materialId));
                 const q = Number(x.quantity) || 0;
-                ek += q * (Number(m?.purchasePrice) || 0);
+                // Zentrale Funktion: rechnet Rolle/Bund/Stange auf den EK je verkaufter
+                // Einheit (z.B. Meter) herunter - sonst wurde hier der EK der GANZEN Rolle
+                // mit der Meter-Menge multipliziert -> "Materialwert (EK)" viel zu hoch.
+                const ekInfo = (typeof window.ekPerSalesUnit === 'function') ? window.ekPerSalesUnit(m) : null;
+                ek += q * (ekInfo && ekInfo.known ? ekInfo.ek : (Number(m?.purchasePrice) || 0));
                 vk += q * (x.price !== undefined && x.price !== null ? Number(x.price) : matUnitPrice(m, x.unit || m?.unit || 'Stk'));
             }
             const fm = v => String(Math.round(v * 10) / 10).replace('.', ',');

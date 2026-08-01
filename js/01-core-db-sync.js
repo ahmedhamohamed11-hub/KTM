@@ -798,10 +798,31 @@ async function backgroundSyncPushInner() {
         }
         window.showPriceSaveDialog = showPriceSaveDialog;
 
+        // Sicherheits-Fix (gefunden beim App-Audit): escapeHtml() escapte bisher nur
+        // &, < und > (das reicht für reinen Textinhalt, z.B. <div>${escapeHtml(x)}</div>).
+        // Im ganzen Code wird das Ergebnis aber auch massenhaft in doppelt gequotete
+        // HTML-Attribute eingesetzt (value="${escapeHtml(x)}", data-x="${escapeHtml(x)}",
+        // onclick="...('${escapeHtml(x)}')" usw.). Enthält der Wert ein " (z.B. ein
+        // Kategorie- oder Materialname mit Anführungszeichen), bricht er aus dem
+        // Attribut aus und der Rest wird als neues HTML/Attribut interpretiert
+        // (Attribut-Injection - reproduziert und verifiziert beim App-Audit).
+        // Zusätzliches Escapen von " ist in reinem Textinhalt folgenlos (wird dort nie
+        // ausgewertet) und macht escapeHtml() dadurch für Text- UND Attribut-Kontext
+        // sicher, ohne jede Aufrufstelle einzeln anzupassen.
+        // WICHTIG: ' bewusst NICHT mit-escapen. Etliche Aufrufstellen im Code hängen
+        // zusätzlich .replace(/'/g, "\\'") an escapeHtml() an, um innerhalb von
+        // onclick="...('...')" ein JS-String-Escaping herzustellen. Da " (der äußere
+        // HTML-Attribut-Delimiter) hier bereits sicher ist, ist ein rohes ' im
+        // JS-String-Kontext unkritisch für die HTML-Ebene; würde escapeHtml() es zu
+        // &#39; kodieren, würde der Browser das beim Attribut-Parsen wieder zu einem
+        // rohen ' dekodieren, BEVOR die JS-Engine den Onclick-Code liest - der
+        // nachgelagerte .replace(/'/g, "\\'") liefe dann ins Leere und die Browser-
+        // seitige Dekodierung würde den JS-String erneut vorzeitig beenden (Namen mit
+        // Apostroph, z.B. "d'Anjou", hätten dann kaputte onclick-Handler).
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str ?? '';
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;');
         }
 
         // PDF teilen (natives Teilen-Menü: WhatsApp, E-Mail, ...) oder speichern.
@@ -927,6 +948,26 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             return Number(m.purchasePrice) || 0;
         }
         window.effectivePurchasePrice = effectivePurchasePrice;
+
+        // Zentrale, EINZIGE Stelle für die Umrechnung Einkaufseinheit -> Verkaufseinheit.
+        // Grund: Bei Rollen-/Bund-/Stangenware (z.B. Kupferrohr) wird EINGEKAUFT pro
+        // Rolle, aber VERKAUFT pro Meter. Wird der Rollen-EK direkt mit der Meter-Menge
+        // multipliziert, entsteht ein um ein Vielfaches zu hoher "Einkauf" -> unrealistischer
+        // oder stark negativer Gewinn (Ursache des gemeldeten Fehlers). Jede Stelle, die
+        // einen Gewinn/EK je Position berechnet, MUSS diese Funktion nutzen statt eigener
+        // Kopien - sonst wird ein hier behobener Bug an anderer Stelle erneut eingebaut.
+        // Gibt EK PRO VERKAUFTER EINHEIT zurück (z.B. € je Meter statt € je Rolle).
+        function ekPerSalesUnit(m, dealerDiscounts) {
+            if (!m) return { ek: 0, known: false };
+            let ekPack = Number(effectivePurchasePrice(m, dealerDiscounts)) || 0;   // EK der Einkaufseinheit (Rolle/Bund/Stange oder Stück)
+            if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
+            if (!(ekPack > 0)) return { ek: 0, known: false };
+            const bl = Number(m.bundleLength) || 0;
+            const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
+            if (isPack) return { ek: ekPack / bl, known: true };   // EK pro Meter
+            return { ek: ekPack, known: true };                    // EK pro Stück
+        }
+        window.ekPerSalesUnit = ekPerSalesUnit;
 
         // Bucht den Verbrauch von Metern bei Rollen-/Bund-/Stangen-Material.
         // stock = Anzahl ganzer Rollen, openMeters = Rest der angebrochenen Rolle.

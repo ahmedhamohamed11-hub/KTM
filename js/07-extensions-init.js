@@ -321,7 +321,7 @@
                 const stepBox = modal.querySelector('#pmStepPicker');
                 if (stepBox) {
                     // Kategorien nach Bauart (mit sinnvoller Reihenfolge + Icon)
-                    const catOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'];
+                    const catOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Konsolengerät', 'Unterdeckengerät', 'Truhengerät', 'Klimaset', 'Zubehör'];
                     const catIcon = { 'Innengerät Single-Split': '🌡️', 'Außengerät Single-Split': '🔲', 'Innengerät Multi-Split': '🌡️', 'Außengerät Multi-Split': '🔲', 'Truhengerät': '📦', 'Zubehör': '🔧' };
                     const state = { cat: null, brand: null, series: null };
 
@@ -418,7 +418,12 @@
                     const m = materials.find(x => String(x.id) === String(sel.value));
                     const vk = parseFloat(modal.querySelector('#pmPrice')?.value) || 0;
                     const qty = parseFloat(String(modal.querySelector('#pmQty')?.value).replace(',', '.')) || 1;
-                    const ek = Number(m?.purchasePrice) || 0;
+                    // Zentrale Funktion statt rohem m.purchasePrice: rechnet Rolle/Bund/Stange
+                    // auf den EK je Meter herunter und berücksichtigt den Händlerrabatt - vorher
+                    // wurde hier bei Rollenware der EK der GANZEN Rolle mit der Meter-Menge
+                    // multipliziert, was einen stark negativen "Gewinn" vortäuschte.
+                    const ekInfo = window.ekPerSalesUnit ? window.ekPerSalesUnit(m) : { ek: Number(m?.purchasePrice) || 0, known: (Number(m?.purchasePrice) || 0) > 0 };
+                    const ek = ekInfo.known ? ekInfo.ek : 0;
                     if (ek > 0) {
                         const profit = (vk - ek) * qty;
                         box.innerHTML = `<div class="pm-ek-in">
@@ -719,11 +724,18 @@
                     return mm ? parseInt(mm[1], 10) : 0;
                 };
                 // Gerätetyp: Multi-AG / Single-AG / Innengerät – darf NIE gemischt werden.
-                // WICHTIG: primär über den Modellnamen erkennen (Nomenklatur ist eindeutig),
-                // weil die Kategorie im Katalog nicht immer sauber gepflegt ist
-                // (z. B. Hisense-Außengeräte, die als "Klimagerät" importiert wurden).
+                // Datenqualitäts-Fund: die alten Namensmuster erkannten z.B. Daikin-
+                // Truhengerät-Außeneinheiten (RXXM..) und Samsung-Außeneinheiten (AR..X/EU)
+                // gar nicht, und "truhengerät" im Notiztext einer AUSSENeinheit (weil sie
+                // zum Truhengerät passt) ließ sie sogar fälschlich als Innengerät gelten.
+                // Das gepflegte bauart-Feld ('Innengerät ...'/'Außengerät ...') ist
+                // zuverlässiger und hat jetzt Vorrang; Namensmuster/Kategorie bleiben
+                // Fallback für Material ohne gepflegte Bauart.
                 const devType = (m) => {
                     if (!m) return '?';
+                    const bauartRaw = String(m.bauart || '');
+                    if (bauartRaw.includes('Außengerät') || bauartRaw.includes('Aussengerät')) return maxIG(m) >= 2 ? 'MULTI-AG' : 'AG';
+                    if (bauartRaw.includes('Innengerät')) return 'IG';
                     const nm = (String(m.name || '') + ' ' + String(m.articleNumber || '')).toUpperCase();
                     const notes = String(m.notes || '').toLowerCase();
 
@@ -910,188 +922,195 @@
                 const materials = await db.getAll('materials');
                 const dealerDiscounts = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
 
-                const isLabor = (it) => { const c = (it.category||'').toLowerCase(), n = (it.name||'').toLowerCase(); return c.includes('arbeit')||c.includes('anfahrt')||c.includes('montage')||c.includes('lohn')||n.includes('arbeitsleistung')||n.includes('montage')||n.includes('anfahrt')||n.includes('arbeitsstunde'); };
-                const ekPerUnit = (m, it) => {
-                    if (!m) return { ek: 0, known: false };
-                    let ekPack = (typeof effectivePurchasePrice === 'function') ? (Number(effectivePurchasePrice(m, dealerDiscounts))||0) : 0;
-                    if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
-                    if (!(ekPack > 0)) return { ek: 0, known: false };
-                    const bl = Number(m.bundleLength) || 0;
-                    if (['Rolle','Bund','Stange'].includes(m.unit||'') && bl > 0) return { ek: ekPack / bl, known: true };
-                    return { ek: ekPack, known: true };
-                };
+                const isLabor = (it) => { const c = (it.category || '').toLowerCase(); const n = (it.name || '').toLowerCase(); return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || c.includes('lohn') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt') || n.includes('arbeitsstunde'); };
+                // Zentrale Funktion (01-core-db-sync.js) statt eigener Kopie.
+                const ekPerSalesUnit = (m) => window.ekPerSalesUnit(m, dealerDiscounts);
 
-                // Zentrale Preisberechnung – identisch zu PDF und Liste
+                // Zentrale Preisberechnung – identisch zu PDF und Angebotsliste (offerProfit in 03-pages.js)
                 const R = (typeof recomputeOffer === 'function') ? recomputeOffer(offer) : null;
-                const salesGross    = R ? R.gross          : 0;
-                const salesNet      = R ? R.net            : 0;
-                const globalDisc    = R ? R.globalDiscount : 0;
-                const discRate      = R ? R.rate           : 0;
-                const salesAfter    = R ? R.netAfter       : salesNet;
+                const salesGross     = R ? R.gross          : 0;
+                const salesNet       = R ? R.net            : 0;
+                const globalDisc     = R ? R.globalDiscount : 0;
+                const discRate       = R ? R.rate           : 0;
+                const salesAfter     = R ? R.netAfter       : salesNet;
                 const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '')
                     ? Number(offer.agreedPrice) : salesAfter;
 
-                const positions = (offer.positions||[]).filter(it => it && (Number(it.quantity)||0) > 0);
+                const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
                 let materialCost = 0, laborSales = 0, missing = 0;
-
                 const rows = positions.map((it, idx) => {
-                    const qty  = Number(it.quantity) || 0;
-                    const disc = Number(it.discount)  || 0;
-                    const lineSales = (Number(it.price)||0) * qty * (1 - disc/100);
+                    const qty = Number(it.quantity) || 0;
+                    const disc = Number(it.discount) || 0;
+                    const lineSales = (Number(it.price) || 0) * qty * (1 - disc / 100);
                     const labor = isLabor(it);
-                    let cost = 0, known = true, ekUnit = 0, note = '';
+                    let cost = 0, known = true, ekUnit = 0, note = '', m = null;
                     if (labor) {
                         laborSales += lineSales;
-                        note = 'Arbeit – kein Materialeinkauf';
+                        note = 'Arbeit (kein Materialeinkauf)';
                     } else {
-                        const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                        if (!m) { known = false; note = '⚠️ Material nicht mehr in DB'; }
+                        m = materials.find(mm => String(mm.id) === String(it.materialId));
+                        if (!m) { known = false; note = '⚠️ Material nicht mehr in Datenbank'; }
                         else {
-                            const r = ekPerUnit(m, it); known = r.known; ekUnit = r.ek;
-                            if (known) {
-                                cost = ekUnit * qty;
-                                if (disc === 0 && !m.dealerDiscount && !(dealerDiscounts[(m.manufacturer||'').trim()])) note = 'kein Rabatt hinterlegt';
-                            } else note = '⚠️ Einkaufspreis fehlt';
+                            const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek;
+                            if (known) { cost = ekUnit * qty; if (disc === 0 && !m.dealerDiscount && !(dealerDiscounts[(m.manufacturer||'').trim()])) note = 'kein Rabatt hinterlegt'; }
+                            else note = '⚠️ Einkaufspreis fehlt';
                         }
                         if (!known) missing++;
                     }
                     materialCost += cost;
                     const lineProfit = lineSales - cost;
-                    const ekDisplay = labor ? '—' : (known
-                        ? `<input type="number" class="diag-ek-inp" data-idx="${idx}" data-matid="${escapeHtml(String(it.materialId||''))}" data-name="${escapeHtml(it.name||'')}" value="${ekUnit.toFixed(2)}" step="0.01" style="width:80px;text-align:right;" title="EK/Einheit bearbeiten">`
-                        : `<input type="number" class="diag-ek-inp diag-ek-missing" data-idx="${idx}" data-matid="${escapeHtml(String(it.materialId||''))}" data-name="${escapeHtml(it.name||'')}" value="" placeholder="EK eintragen" step="0.01" style="width:90px;text-align:right;border-color:var(--danger);" title="Einkaufspreis fehlt – hier eintragen">`);
-                    return `<tr class="${!known && !labor ? 'diag-missing' : ''}" data-idx="${idx}">
-                        <td>${escapeHtml(it.name||'(ohne Namen)')}<div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit||'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · <em>${note}</em>` : ''}</div></td>
-                        <td style="text-align:right;" class="diag-lsales">${formatCurrency(lineSales)}</td>
-                        <td style="text-align:right;">${ekDisplay}</td>
-                        <td style="text-align:right;font-weight:600;" class="diag-lprofit" style="color:${lineProfit>=0?'var(--success)':'var(--danger)'};">${known||labor ? formatCurrency(lineProfit) : '?'}</td>
+                    // EK direkt hier bearbeitbar (statt erst zum Material navigieren zu
+                    // müssen) - besonders bei "fehlt" der schnellste Weg, den Gewinn
+                    // sofort korrekt zu sehen. Eingabe ist EK je verkaufter Einheit
+                    // (z.B. €/m bei Rollenware); wird beim Speichern zurück auf den
+                    // Material-Einkaufspreis (ggf. × Gebindelänge) umgerechnet.
+                    const ekCell = labor ? '—' : (m
+                        ? `<div class="diag-ek-edit">
+                             <input type="number" step="0.01" min="0" class="diag-ek-input" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" value="${known ? (Math.round(ekUnit * 100) / 100) : ''}" placeholder="EK/${escapeHtml(it.unit || m.unit || 'Stk')}">
+                             <button type="button" class="btn btn-sm btn-primary diag-ek-save" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" title="Einkaufspreis speichern">✓</button>
+                           </div>`
+                        : '<span style="color:var(--danger);font-weight:600;text-decoration:underline;">fehlt</span>');
+                    // Bei fehlendem EK ist die ganze Zeile klickbar: öffnet direkt das
+                    // passende Material (fokussiert im Einkaufspreis-Feld) bzw. bietet an,
+                    // ein neues Material anzulegen, wenn keins verknüpft ist.
+                    const missingRow = !known && !labor;
+                    return `<tr class="${missingRow ? 'diag-missing diag-row-clickable' : ''}" ${missingRow ? `data-idx="${idx}" title="Klicken, um den Einkaufspreis am Material einzutragen"` : ''}>
+                        <td>${escapeHtml(it.name || '(ohne Namen)')}<div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div></td>
+                        <td style="text-align:right;">${formatCurrency(lineSales)}</td>
+                        <td style="text-align:right;">${ekCell}</td>
+                        <td style="text-align:right;font-weight:600;color:${lineProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">${known || labor ? formatCurrency(lineProfit) : '?'}</td>
                     </tr>`;
                 }).join('');
 
                 const profit = salesEffective - materialCost;
                 const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
                 const complete = missing === 0;
-                const mColor = margin < 10 ? 'mg-red' : (margin < 20 ? 'mg-yellow' : 'mg-green');
 
-                const summaryHtml = () => `
-                    <div class="diag-row"><span>Verkaufspreis (vor Rabatt)</span><strong>${formatCurrency(salesGross)}</strong></div>
-                    ${salesNet < salesGross ? `<div class="diag-row"><span>− Positionsrabatte</span><strong>−${formatCurrency(salesGross - salesNet)}</strong></div>` : ''}
-                    ${globalDisc > 0 ? `<div class="diag-row"><span>− Gesamt-Rabatt (${(discRate*100).toFixed(1)} %)</span><strong>−${formatCurrency(globalDisc)}</strong></div>` : ''}
-                    <div class="diag-row" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px;"><span>Verkaufspreis nach Rabatt</span><strong>${formatCurrency(salesAfter)}</strong></div>
-                    ${offer.agreedPrice != null && offer.agreedPrice !== '' ? `<div class="diag-row"><span>Vereinbarter Preis</span><strong>${formatCurrency(salesEffective)}</strong></div>` : ''}
-                    <div class="diag-row" id="diagMatRow"><span>− Materialeinkauf</span><strong id="diagMatCost">${formatCurrency(materialCost)}</strong></div>
-                    <div class="diag-row"><span>− Arbeitskosten</span><strong>${formatCurrency(0)} <span style="font-weight:400;font-size:11px;color:var(--text-muted);">(Arbeit ist Ertrag)</span></strong></div>
-                    <div class="diag-row"><span>− Sonstige Kosten</span><strong>${formatCurrency(0)}</strong></div>
-                    <div class="diag-row diag-total"><span>= Gewinn</span><strong id="diagProfit" style="color:${profit>=0?'var(--success)':'var(--danger)'};">${formatCurrency(profit)}</strong></div>
-                    <div class="diag-row"><span>Gewinnmarge</span><strong id="diagMargin" class="${mColor}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
-                    <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>`;
-
-                showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber||'Angebot')}`, `
-                    ${!complete ? `<div class="diag-warn" id="diagWarn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing>1?'en':''} der Einkaufspreis fehlt. Trag den EK direkt in der Tabelle ein und wähle dann „Speichern".</div>` : ''}
-                    <div class="diag-summary" id="diagSummary">${summaryHtml()}</div>
-                    <div class="diag-detail-title">Positionen im Detail <span style="font-size:11.5px;font-weight:400;color:var(--text-muted);">— EK direkt bearbeitbar</span></div>
+                const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
+                    ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn direkt unten in der Tabelle nach, dann stimmt die Marge sofort.</div>` : ''}
+                    <div class="diag-summary">
+                        <div class="diag-row"><span>Verkaufspreis (vor Rabatt)</span><strong>${formatCurrency(salesGross)}</strong></div>
+                        ${salesNet < salesGross ? `<div class="diag-row"><span>− Positionsrabatte</span><strong>−${formatCurrency(salesGross - salesNet)}</strong></div>` : ''}
+                        ${globalDisc > 0 ? `<div class="diag-row"><span>− Gesamt-Rabatt (${(discRate * 100).toFixed(1)} %)</span><strong>−${formatCurrency(globalDisc)}</strong></div>` : ''}
+                        <div class="diag-row" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px;"><span>Verkaufspreis nach Rabatt</span><strong>${formatCurrency(salesAfter)}</strong></div>
+                        ${offer.agreedPrice != null && offer.agreedPrice !== '' ? `<div class="diag-row"><span>Vereinbarter Preis</span><strong>${formatCurrency(salesEffective)}</strong></div>` : ''}
+                        <div class="diag-row"><span>− Materialeinkauf</span><strong>${formatCurrency(materialCost)}</strong></div>
+                        <div class="diag-row"><span>− Arbeitskosten</span><strong>0,00 € <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(Arbeit ist Ertrag)</span></strong></div>
+                        <div class="diag-row"><span>− Sonstige Kosten</span><strong>${formatCurrency(0)}</strong></div>
+                        <div class="diag-row diag-total"><span>= Gewinn</span><strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(profit)}</strong></div>
+                        <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
+                        <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>
+                    </div>
+                    <div class="diag-detail-title">Positionen im Detail <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">– EK direkt eintragen &amp; mit ✓ speichern, oder auf eine „fehlt"-Zeile klicken für die volle Materialbearbeitung</span></div>
                     <div class="table-container"><table class="diag-table">
                         <thead><tr><th>Position</th><th style="text-align:right;">VK (netto)</th><th style="text-align:right;">EK / Einheit</th><th style="text-align:right;">Gewinn</th></tr></thead>
-                        <tbody id="diagRows">${rows||'<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
+                        <tbody>${rows||'<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
                     </table></div>
-                    <div id="diagEkSaveBar" style="display:none;margin-top:12px;padding:10px 13px;background:var(--accent-light);border:1px solid var(--accent);border-radius:var(--radius);">
-                        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">EK für <span id="diagEkName">?</span> speichern</div>
-                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <button class="btn btn-outline btn-sm" id="diagSaveOnce">Nur dieses Angebot</button>
-                            <button class="btn btn-primary btn-sm" id="diagSavePerm">Dauerhaft im Materialkatalog</button>
-                            <button class="btn btn-outline btn-sm" id="diagSaveCancel" style="margin-left:auto;">Abbrechen</button>
-                        </div>
-                    </div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Nur für dich sichtbar – erscheint nie im Kundenangebot oder PDF.</div>
                 `, null, null, { wide: true });
 
-                // ---- EK inline bearbeiten + live neurechnen ----
-                const modal = document.querySelector('.modal-overlay');
-                if (!modal) return;
-
-                // Hilfsfunktionen für Live-Update der Summen
-                const posLines = [...positions]; // lokale Kopie der Positionen
-                const ekValues = posLines.map((it, i) => {
-                    const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                    const r = ekPerUnit(m, it);
-                    return r.known ? r.ek : 0;
-                });
-
-                const recompute = () => {
-                    let newMat = 0, newMissing = 0;
-                    posLines.forEach((it, i) => {
-                        if (isLabor(it)) return;
-                        const ek = ekValues[i] || 0;
-                        if (ek <= 0) newMissing++;
-                        else newMat += ek * (Number(it.quantity)||0);
-                    });
-                    const newProfit = salesEffective - newMat;
-                    const newMargin = salesEffective > 0 ? (newProfit / salesEffective) * 100 : 0;
-                    const el = (id) => modal.querySelector('#'+id);
-                    if (el('diagMatCost')) el('diagMatCost').textContent = formatCurrency(newMat);
-                    if (el('diagProfit')) { el('diagProfit').textContent = formatCurrency(newProfit); el('diagProfit').style.color = newProfit >= 0 ? 'var(--success)' : 'var(--danger)'; }
-                    if (el('diagMargin')) { const mc = newMargin < 10 ? 'mg-red' : (newMargin < 20 ? 'mg-yellow' : 'mg-green'); el('diagMargin').className = mc; el('diagMargin').style.cssText='padding:2px 8px;border-radius:12px;'; el('diagMargin').textContent = newMargin.toFixed(1) + ' %'; }
-                    if (el('diagWarn')) el('diagWarn').style.display = newMissing > 0 ? '' : 'none';
-                };
-
-                let activeInp = null, activeIdx = -1;
-                modal.querySelectorAll('.diag-ek-inp').forEach(inp => {
-                    inp.addEventListener('input', (e) => {
-                        const idx = parseInt(e.target.dataset.idx);
-                        const val = parseFloat(e.target.value) || 0;
-                        ekValues[idx] = val;
-                        activeInp = e.target; activeIdx = idx;
-                        const saveBar = modal.querySelector('#diagEkSaveBar');
-                        const nameEl = modal.querySelector('#diagEkName');
-                        if (saveBar) saveBar.style.display = val > 0 ? '' : 'none';
-                        if (nameEl) nameEl.textContent = e.target.dataset.name || posLines[idx]?.name || '?';
-                        recompute();
+                // Einkaufspreis inline speichern: EK je verkaufter Einheit -> zurück auf
+                // den Material-Einkaufspreis umrechnen (bei Rolle/Bund/Stange × Gebindelänge)
+                // und die Diagnose danach mit den neuen Zahlen neu aufbauen.
+                diagModal.querySelectorAll('.diag-ek-save').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const matId = btn.dataset.mat;
+                        const input = diagModal.querySelector(`.diag-ek-input[data-idx="${btn.dataset.idx}"]`);
+                        const val = parseFloat(String(input.value).replace(',', '.'));
+                        if (!(val >= 0)) { showToast('Bitte einen gültigen Einkaufspreis eingeben.', 'info'); return; }
+                        const mat = await db.get('materials', matId);
+                        if (!mat) { showToast('Material nicht gefunden.', 'error'); return; }
+                        const bl = Number(mat.bundleLength) || 0;
+                        const isPack = ['Rolle', 'Bund', 'Stange'].includes(mat.unit || '') && bl > 0;
+                        mat.purchasePrice = isPack ? Math.round(val * bl * 100) / 100 : val;
+                        await db.put('materials', mat);
+                        showToast(`Einkaufspreis für „${escapeHtml(mat.name)}" gespeichert.`, 'success');
+                        diagModal.remove();
+                        app.showOfferDiagnosis(offerId);
                     });
                 });
 
-                const doSave = async (permanent) => {
-                    if (activeIdx < 0 || !activeInp) return;
-                    const it = posLines[activeIdx];
-                    const newEk = parseFloat(activeInp.value) || 0;
-                    if (newEk <= 0) { showToast('Bitte einen gültigen EK eingeben.', 'error'); return; }
-                    if (permanent && it.materialId) {
-                        const m = await db.get('materials', it.materialId);
-                        if (m) { m.purchasePrice = newEk; await db.put('materials', m); showToast(`EK für „${m.name}" dauerhaft gespeichert.`, 'success'); }
-                        else showToast('Material nicht gefunden.', 'error');
-                    } else {
-                        showToast('EK nur für diese Anzeige übernommen.', 'info');
+                // Ganze Zeile klickbar (bei fehlendem EK): öffnet die volle
+                // Material-Bearbeitung statt nur des schnellen Inline-Felds - u.a. wenn
+                // noch mehr als der EK gepflegt werden muss, oder das Material im Katalog
+                // fehlt (dann Rückfrage zum Neuanlegen + automatische Verknüpfung).
+                diagModal.querySelectorAll('tr.diag-row-clickable[data-idx]').forEach(tr => {
+                    tr.addEventListener('click', (e) => {
+                        if (e.target.closest('.diag-ek-edit')) return; // Inline-Feld/Button hat Vorrang
+                        app.fixMissingEkFromDiagnosis(offerId, parseInt(tr.dataset.idx, 10), diagModal);
+                    });
+                });
+            },
+
+            // Öffnet aus der Gewinn-Diagnose heraus direkt das verknüpfte Material
+            // (fokussiert im Einkaufspreis-Feld) bzw. bietet an, ein fehlendes Material
+            // neu anzulegen und automatisch mit der Angebotsposition zu verknüpfen.
+            // Nach dem Speichern baut sich die Diagnose automatisch neu auf.
+            async fixMissingEkFromDiagnosis(offerId, idx, diagModal) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
+                const it = (offer.positions || [])[idx];
+                if (!it) return;
+                const materials = await db.getAll('materials');
+                const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                const afterSave = async () => { diagModal?.remove(); app.showOfferDiagnosis(offerId); };
+
+                if (m) {
+                    app.openMaterialModal(m.id, { focusField: 'matPurchasePrice', skipNavigate: true, onSaved: afterSave });
+                    return;
+                }
+                const wantsCreate = await showConfirm(
+                    `Material „${escapeHtml(it.name || 'Position')}" wurde im Katalog nicht gefunden. Jetzt anlegen?`,
+                    { title: 'Material nicht gefunden', okText: 'Jetzt anlegen', danger: false }
+                );
+                if (!wantsCreate) return;
+                app.openMaterialModal(null, {
+                    prefill: {
+                        name: it.name || '', manufacturer: it.manufacturer || '', articleNumber: it.articleNumber || '',
+                        category: it.category || '', unit: it.unit || 'Stk', sellingPrice: Number(it.price) || 0,
+                        description: it.description || ''
+                    },
+                    focusField: 'matPurchasePrice',
+                    skipNavigate: true,
+                    onSaved: async (newId) => {
+                        // Neues Material automatisch mit dieser Angebotsposition verknüpfen
+                        it.materialId = newId;
+                        await db.put('offers', offer);
+                        await afterSave();
                     }
-                    activeInp.classList.remove('diag-ek-missing');
-                    activeInp.style.borderColor = '';
-                    const saveBar = modal.querySelector('#diagEkSaveBar');
-                    if (saveBar) saveBar.style.display = 'none';
-                    recompute();
-                };
-
-                modal.querySelector('#diagSavePerm')?.addEventListener('click', () => doSave(true));
-                modal.querySelector('#diagSaveOnce')?.addEventListener('click', () => doSave(false));
-                modal.querySelector('#diagSaveCancel')?.addEventListener('click', () => { if (modal.querySelector('#diagEkSaveBar')) modal.querySelector('#diagEkSaveBar').style.display='none'; });
+                });
             },
 
             async openCategoryManageModal(cat) {
                 const materials = await db.getAll('materials');
-                const inCat = materials.filter(m => (m.category || 'Ohne Kategorie') === cat);
-                const otherCats = [...new Set(materials.map(m => m.category || 'Ohne Kategorie'))].filter(c => c !== cat).sort();
+                // Präfix-Treffer statt nur exaktem Treffer: erfasst bei einem Ordner MIT
+                // Unterordnern auch alle Produkte in dessen Unterordnern (kaskadierend).
+                const inCat = materials.filter(m => { const c = m.category || 'Ohne Kategorie'; return c === cat || c.startsWith(cat + '/'); });
+                const hasChildren = inCat.some(m => (m.category || '') !== cat);
+                const otherCats = [...new Set(materials.map(m => m.category || 'Ohne Kategorie'))].filter(c => c !== cat && !c.startsWith(cat + '/')).sort();
                 const known = ['Außengeräte', 'Innengeräte', 'Multisplit-Systeme', 'VRF-Systeme', 'Kupferrohr', 'Isolierung', 'Elektromaterial', 'Kabel', 'Kondensat', 'Befestigung', 'Montagematerial', 'Werkzeug', 'Kältemittel', 'Arbeitszeit', 'Ersatzteile', 'Steuerungen', 'Zubehör'];
                 const targets = [...new Set([...otherCats, ...known.filter(k => k !== cat)])];
+                const cascadeHint = hasChildren ? ` (inkl. Unterordner)` : '';
 
                 const modal = showModal(
-                    `Kategorie verwalten – ${escapeHtml(cat)}`,
+                    `Ordner verwalten – ${escapeHtml(cat)}`,
                     `
                         <div class="form-card">
                             <div class="form-card-title">✏️ Umbenennen</div>
-                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Alle ${inCat.length} Produkte dieser Kategorie erhalten den neuen Namen.</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Alle ${inCat.length} Produkte${cascadeHint} erhalten den neuen Pfad. Unterordner bleiben als Unterordner erhalten.</div>
                             <div class="form-group"><label>Neuer Name</label><input type="text" id="catNewName" value="${escapeHtml(cat)}" list="dl_catNames"><datalist id="dl_catNames">${known.map(k => `<option value="${escapeHtml(k)}">`).join('')}</datalist></div>
                             <button class="btn btn-primary btn-sm" id="catRenameBtn">Umbenennen</button>
                         </div>
                         <div class="form-card">
+                            <div class="form-card-title">📁 Unterordner anlegen</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Verschiebt ausgewählte Produkte dieses Ordners in einen neuen Unterordner „${escapeHtml(cat)}/...".</div>
+                            <div class="form-group"><label>Name des Unterordners</label><input type="text" id="catSubName" placeholder="z. B. Kabel"></div>
+                            <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">Tipp: Du kannst auch beim Anlegen/Bearbeiten eines Materials direkt "${escapeHtml(cat)}/Neuer Unterordner" als Kategorie eintippen.</div>
+                            <button class="btn btn-outline btn-sm" id="catSubBtn">Alle ${inCat.filter(m => (m.category || '') === cat).length} direkten Produkte in Unterordner verschieben</button>
+                        </div>
+                        <div class="form-card">
                             <div class="form-card-title">📦 Alle Produkte verschieben</div>
-                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Falsch einsortiert? Verschiebe alle ${inCat.length} Produkte in eine andere Kategorie – diese Kategorie verschwindet danach.</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Falsch einsortiert? Verschiebe alle ${inCat.length} Produkte${cascadeHint} in eine andere Kategorie – dieser Ordner verschwindet danach.</div>
                             <div class="form-group"><label>Ziel-Kategorie</label>
                                 <input type="text" id="catMoveTarget" list="dl_catTargets" placeholder="Bestehende wählen oder neue eintippen...">
                                 <datalist id="dl_catTargets">${targets.map(t => `<option value="${escapeHtml(t)}">`).join('')}</datalist>
@@ -1099,35 +1118,57 @@
                             <button class="btn btn-outline btn-sm" id="catMoveBtn">Alle verschieben</button>
                         </div>
                         <div class="form-card" style="border-color:var(--danger);">
-                            <div class="form-card-title">🗑 Kategorie löschen</div>
-                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Die ${inCat.length} Produkte werden dabei NICHT gelöscht, sondern nach „Zubehör" verschoben. Zum Löschen einzelner Produkte: Produkt öffnen → Löschen.</div>
-                            <button class="btn btn-danger btn-sm" id="catDeleteBtn">Kategorie auflösen</button>
+                            <div class="form-card-title">🗑 Ordner löschen</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Die ${inCat.length} Produkte${cascadeHint} werden dabei NICHT gelöscht, sondern nach „Zubehör" verschoben. Zum Löschen einzelner Produkte: Produkt öffnen → Löschen, oder Mehrfachauswahl nutzen.</div>
+                            <button class="btn btn-danger btn-sm" id="catDeleteBtn">Ordner auflösen</button>
                         </div>
                     `,
                     null, null, { wide: true }
                 );
 
-                const bulkMove = async (target, msg) => {
-                    for (const m of inCat) { m.category = target; await db.put('materials', m); }
+                // Verschiebt jedes Produkt einzeln unter Beibehaltung des restlichen
+                // Pfads: aus "cat" bzw. "cat/Rest" wird "target" bzw. "target/Rest".
+                const cascadeMove = async (target, msg) => {
+                    for (const m of inCat) {
+                        const c = m.category || 'Ohne Kategorie';
+                        m.category = c === cat ? target : (target + c.slice(cat.length));
+                        await db.put('materials', m);
+                    }
                     modal.remove();
                     showToast(msg, 'success');
-                    listFilters.materials.cat = ''; listFilters.materials.level = 'cats';
+                    listFilters.materials.cat = ''; listFilters.materials.hersteller = ''; listFilters.materials.serie = ''; listFilters.materials.level = 'cats';
                     renderMaterials();
                 };
+                // Kategorienamen sind frei eingebbarer Nutzertext - showToast()/showConfirm()
+                // setzen ihre Nachricht per innerHTML, also IMMER escapeHtml() auf alles, was
+                // in eine Toast-/Bestätigungs-Nachricht eingebaut wird (sonst XSS-Lücke über
+                // einen präparierten Kategorienamen).
                 modal.querySelector('#catRenameBtn').addEventListener('click', async () => {
                     const name = modal.querySelector('#catNewName').value.trim();
                     if (!name || name === cat) { showToast('Bitte einen neuen Namen eingeben.', 'info'); return; }
-                    await bulkMove(name, `Kategorie „${cat}" heißt jetzt „${name}" (${inCat.length} Produkte aktualisiert).`);
+                    await cascadeMove(name, `„${escapeHtml(cat)}" heißt jetzt „${escapeHtml(name)}" (${inCat.length} Produkte${cascadeHint} aktualisiert).`);
+                });
+                modal.querySelector('#catSubBtn').addEventListener('click', async () => {
+                    const sub = modal.querySelector('#catSubName').value.trim();
+                    if (!sub) { showToast('Bitte einen Namen für den Unterordner eingeben.', 'info'); return; }
+                    const direct = inCat.filter(m => (m.category || '') === cat);
+                    if (!direct.length) { showToast('Keine direkten Produkte in diesem Ordner zum Verschieben.', 'info'); return; }
+                    const target = `${cat}/${sub}`;
+                    for (const m of direct) { m.category = target; await db.put('materials', m); }
+                    modal.remove();
+                    showToast(`Unterordner „${escapeHtml(sub)}" angelegt (${direct.length} Produkt${direct.length !== 1 ? 'e' : ''} verschoben).`, 'success');
+                    listFilters.materials.cat = cat; listFilters.materials.level = 'subcats';
+                    renderMaterials();
                 });
                 modal.querySelector('#catMoveBtn').addEventListener('click', async () => {
                     const target = modal.querySelector('#catMoveTarget').value.trim();
                     if (!target) { showToast('Bitte Ziel-Kategorie wählen.', 'info'); return; }
-                    if (!(await showConfirm(`Alle ${inCat.length} Produkte von „${cat}" nach „${target}" verschieben?`))) return;
-                    await bulkMove(target, `${inCat.length} Produkte nach „${target}" verschoben.`);
+                    if (!(await showConfirm(`Alle ${inCat.length} Produkte${cascadeHint} von „${escapeHtml(cat)}" nach „${escapeHtml(target)}" verschieben?`))) return;
+                    await cascadeMove(target, `${inCat.length} Produkte nach „${escapeHtml(target)}" verschoben.`);
                 });
                 modal.querySelector('#catDeleteBtn').addEventListener('click', async () => {
-                    if (!(await showConfirm(`Kategorie „${cat}" auflösen und alle ${inCat.length} Produkte nach „Zubehör" verschieben?`))) return;
-                    await bulkMove('Zubehör', `Kategorie „${cat}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
+                    if (!(await showConfirm(`Ordner „${escapeHtml(cat)}" auflösen und alle ${inCat.length} Produkte${cascadeHint} nach „Zubehör" verschieben?`))) return;
+                    await cascadeMove('Zubehör', `Ordner „${escapeHtml(cat)}" aufgelöst – ${inCat.length} Produkte liegen jetzt unter „Zubehör".`);
                 });
             },
 
@@ -1233,12 +1274,132 @@
                 if (level === 'cats') { F.cat = ''; F.hersteller = ''; F.serie = ''; }
                 if (level === 'hersteller') { F.hersteller = ''; F.serie = ''; }
                 if (level === 'serien') { F.serie = ''; }
-                F.level = level; F.q = '';
+                F.level = level; F.q = ''; F.selectMode = false; F.selected = new Set();
                 renderMaterials();
             },
-            matOpenCat(c) { const F = listFilters.materials; F.cat = c; F.hersteller = ''; F.serie = ''; F.level = 'hersteller'; renderMaterials(); },
-            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.serie = ''; F.level = 'serien'; renderMaterials(); },
+            // Öffnet einen Kategorie-Pfad (kann "Ordner" oder "Ordner/Unterordner" sein).
+            // Hat der Pfad noch echte Unterordner, geht es erst in die Unterordner-Ansicht
+            // ('subcats'), sonst direkt zu den Herstellern - forceExact überspringt das
+            // (genutzt von der "Direkt in ..."-Karte, die exakt diesen Pfad ohne
+            // Unterordner-Zwischenschritt anzeigen soll).
+            async matOpenCatPath(path, forceExact = false) {
+                const F = listFilters.materials;
+                F.hersteller = ''; F.serie = ''; F.selectMode = false; F.selected = new Set();
+                if (!forceExact) {
+                    const materials = await db.getAll('materials');
+                    const hasChildren = materials.some(m => (m.category || 'Ohne Kategorie').startsWith(path + '/'));
+                    if (hasChildren) { F.cat = path; F.level = 'subcats'; renderMaterials(); return; }
+                }
+                F.cat = path; F.level = 'hersteller'; renderMaterials();
+            },
+            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.serie = ''; F.level = 'serien'; F.selectMode = false; F.selected = new Set(); renderMaterials(); },
             matOpenSerie(s) { const F = listFilters.materials; F.serie = s === 'Ohne Serie' ? '' : s; F.level = 'produkte'; renderMaterials(); },
+
+            // ---------- Material-Katalog: Mehrfachauswahl ----------
+            matToggleSelect(id) {
+                const F = listFilters.materials;
+                const key = String(id);
+                if (!F.selected) F.selected = new Set();
+                if (F.selected.has(key)) F.selected.delete(key); else F.selected.add(key);
+                renderMaterials();
+            },
+            async matBulkMove() {
+                const F = listFilters.materials;
+                const ids = [...(F.selected || [])];
+                if (!ids.length) return;
+                const cats = getMaterialCategories();
+                const modal = showModal(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} verschieben`, `
+                    <div class="form-group"><label>Ziel-Kategorie</label>
+                        <input type="text" id="bulkMoveTarget" list="dl_bulkCats" placeholder="Bestehende wählen oder neue eintippen (z. B. 'Ordner/Unterordner')...">
+                        <datalist id="dl_bulkCats">${cats.map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
+                    </div>
+                `, async (overlay) => {
+                    const target = overlay.querySelector('#bulkMoveTarget').value.trim();
+                    if (!target) { showToast('Bitte eine Ziel-Kategorie angeben.', 'info'); return; }
+                    for (const id of ids) {
+                        const m = await db.get('materials', id);
+                        if (m) { m.category = target; await db.put('materials', m); }
+                    }
+                    overlay.remove();
+                    showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${escapeHtml(target)}" verschoben.`, 'success');
+                    F.selectMode = false; F.selected = new Set();
+                    renderMaterials();
+                }, 'Verschieben');
+            },
+            async matBulkDelete() {
+                const F = listFilters.materials;
+                const ids = [...(F.selected || [])];
+                if (!ids.length) return;
+                if (!(await showConfirm(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} wirklich unwiderruflich löschen?`))) return;
+                for (const id of ids) await db.delete('materials', id);
+                showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} gelöscht.`, 'info');
+                F.selectMode = false; F.selected = new Set();
+                renderMaterials();
+            },
+
+            // ---------- Material-Katalog: Drag & Drop ----------
+            // Ordner-auf-Ordner: verschiebt alle Materialien der Quell-Kategorie (inkl.
+            // etwaiger Unterordner) in die Ziel-Kategorie (Umbenennen des Pfad-Präfixes).
+            matCatDragStart(event, path) {
+                event.dataTransfer.setData('application/x-ktm-category', path);
+                event.dataTransfer.effectAllowed = 'move';
+            },
+            matProductDragStart(event, id) {
+                event.dataTransfer.setData('application/x-ktm-material', String(id));
+                event.dataTransfer.effectAllowed = 'move';
+            },
+            async matCatDrop(event, targetPath) {
+                event.preventDefault();
+                event.currentTarget?.classList.remove('drag-over');
+                const srcCat = event.dataTransfer.getData('application/x-ktm-category');
+                const matId = event.dataTransfer.getData('application/x-ktm-material');
+                if (srcCat && srcCat !== targetPath) {
+                    await app._moveCategoryInto(srcCat, targetPath);
+                } else if (matId) {
+                    await app._moveMaterialsToCategory([matId], targetPath);
+                }
+            },
+            async matDropOnCrumb(event, targetPath) {
+                event.preventDefault();
+                const srcCat = event.dataTransfer.getData('application/x-ktm-category');
+                const matId = event.dataTransfer.getData('application/x-ktm-material');
+                const target = targetPath || 'Zubehör';
+                if (srcCat && srcCat !== targetPath) {
+                    await app._moveCategoryInto(srcCat, target);
+                } else if (matId) {
+                    await app._moveMaterialsToCategory([matId], target);
+                }
+            },
+            // Verschiebt ALLE Materialien einer Quell-Kategorie (inkl. Unterordner) unter
+            // die Ziel-Kategorie: aus "Quelle" bzw. "Quelle/Rest" wird "Ziel" bzw.
+            // "Ziel/Quelle" bzw. "Ziel/Quelle/Rest" (Ordner wird UNTER das Ziel gehängt,
+            // nicht mit ihm zusammengeführt - so bleiben gleichnamige Unterordner erhalten).
+            async _moveCategoryInto(srcCat, targetPath) {
+                if (!srcCat || srcCat === targetPath) return;
+                const srcLeaf = srcCat.split('/').pop();
+                const newBase = targetPath ? `${targetPath}/${srcLeaf}` : srcLeaf;
+                if (newBase === srcCat || newBase.startsWith(srcCat + '/')) { showToast('Ein Ordner kann nicht in sich selbst verschoben werden.', 'error'); return; }
+                const materials = await db.getAll('materials');
+                const affected = materials.filter(m => { const c = m.category || 'Ohne Kategorie'; return c === srcCat || c.startsWith(srcCat + '/'); });
+                if (!affected.length) return;
+                for (const m of affected) {
+                    const c = m.category || 'Ohne Kategorie';
+                    m.category = c === srcCat ? newBase : (newBase + c.slice(srcCat.length));
+                    await db.put('materials', m);
+                }
+                showToast(`„${escapeHtml(srcLeaf)}" (${affected.length} Produkt${affected.length !== 1 ? 'e' : ''}) nach „${escapeHtml(newBase)}" verschoben.`, 'success');
+                const F = listFilters.materials; F.cat = ''; F.hersteller = ''; F.serie = ''; F.level = 'cats';
+                renderMaterials();
+            },
+            async _moveMaterialsToCategory(ids, targetPath) {
+                if (!ids.length) return;
+                for (const id of ids) {
+                    const m = await db.get('materials', id);
+                    if (m) { m.category = targetPath; await db.put('materials', m); }
+                }
+                showToast(`${ids.length} Material${ids.length !== 1 ? 'ien' : ''} nach „${escapeHtml(targetPath)}" verschoben.`, 'success');
+                renderMaterials();
+            },
 
             async toggleFavorite(id) {
                 const m = await db.get('materials', id);
@@ -1264,7 +1425,11 @@
                 const m = await db.get('materials', id);
                 if (!m) return;
                 const st = matStockStatus(m);
-                const marge = (Number(m.sellingPrice) || 0) - (Number(m.purchasePrice) || 0);
+                // Effektiver EK (Händlerrabatt berücksichtigen) statt rohem purchasePrice -
+                // sonst zeigt die Detailseite "EK 0,00 €" / volle Marge, obwohl über den
+                // Markenrabatt längst ein Einkaufspreis errechnet wird.
+                const ekEffective = (typeof effectivePurchasePrice === 'function') ? (Number(effectivePurchasePrice(m)) || 0) : (Number(m.purchasePrice) || 0);
+                const marge = (Number(m.sellingPrice) || 0) - ekEffective;
 
                 // QR-Code (Artikelnummer bzw. Modellname) für Lager-Etiketten
                 let qrHtml = '';
@@ -1290,7 +1455,7 @@
                                     ${m.articleNumber ? `<div class="survey-chip"><span>Artikelnummer</span><strong>${escapeHtml(m.articleNumber)}</strong></div>` : ''}
                                     <div class="survey-chip"><span>Kategorie</span><strong>${escapeHtml(m.category || '-')}</strong></div>
                                     <div class="survey-chip"><span>Einheit</span><strong>${escapeHtml(m.unit || 'Stk')}</strong></div>
-                                    <div class="survey-chip"><span>EK-Preis</span><strong>${formatCurrency(m.purchasePrice || 0)}</strong></div>
+                                    <div class="survey-chip"><span>EK-Preis</span><strong>${formatCurrency(ekEffective)}</strong>${(!(Number(m.purchasePrice) > 0) && ekEffective > 0) ? '<small style="display:block;color:var(--text-muted);font-weight:400;">via Händlerrabatt</small>' : ''}</div>
                                     <div class="survey-chip" style="border-color:var(--accent);"><span>VK-Preis</span><strong style="color:var(--accent);">${formatCurrency(m.sellingPrice || 0)}</strong></div>
                                     ${marge > 0 ? `<div class="survey-chip"><span>Marge</span><strong style="color:var(--success);">${formatCurrency(marge)}</strong></div>` : ''}
                                     <div class="survey-chip"><span>Lagerbestand</span><strong class="${st.cls === 'st-low' ? 'text-danger' : ''}">${m.stock ?? 0} ${escapeHtml(m.unit || 'Stk')}${m.minStock > 0 ? ' (min. ' + m.minStock + ')' : ''}</strong></div>
@@ -1405,6 +1570,258 @@
                 });
                 showToast(`${partner.name} als Set ergänzt.`, 'success');
                 if (this.currentPage === 'projects' && this.currentProjectId === projectId) this.navigate('projects', projectId);
+            },
+
+            // ============================================================
+            // ============ INTELLIGENTER GERÄTE-KONFIGURATOR =============
+            // ============================================================
+            // Marke -> Gerätetyp -> Leistung -> zeigt NUR die tatsächlich zueinander
+            // passende Innen-/Außengerät-Kombination (Preis, Typennummern, technische
+            // Daten). Bei Multi-Split werden ausschließlich Innengeräte derselben Marke
+            // UND derselben Bauart ('Innengerät Multi-Split') angeboten - Single-Split-
+            // Geräte können hier nie erscheinen, weil die Auswahl strikt über das
+            // bauart-Feld läuft (dieselbe robuste Logik wie im Schnellrechner-Fix).
+            async openDeviceConfigurator() {
+                const allMats = await db.getAll('materials');
+                const materials = allMats.filter(m => m.category === 'Klimageräte' && m.manufacturer);
+                if (!materials.length) { showToast('Noch keine Klimageräte im Katalog – erst Geräte anlegen oder Hersteller-Katalog importieren.', 'info'); return; }
+
+                const typeGroupOf = (bauart) => (bauart || '').replace(/^Innengerät\s*/, '').replace(/^Außengerät\s*/, '').trim();
+                const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+                const parseRefrigerant = (notes) => { const m = String(notes || '').match(/\bR\d{2,4}[A-Z]?\b/); return m ? m[0] : ''; };
+                const parseEnergy = (notes) => { const m = String(notes || '').match(/A\+{1,3}(?:\s*\/\s*A\+{0,3})?/); return m ? m[0] : ''; };
+                // Anschlusszahl eines Multi-Außengeräts: dieselbe Erkennung wie im
+                // Schnellrechner (calcPickOutdoor) - Notiz "max. N IG" zuerst, sonst
+                // markentypische Namensmuster (inkl. Bosch CL..M NN/N).
+                const maxIGof = (m) => {
+                    const n = String(m.notes || ''); const mn = n.match(/max\.?\s*(\d+)\s*IG/i); if (mn) return parseInt(mn[1], 10);
+                    const nm = (String(m.name || '') + ' ' + String(m.articleNumber || '')).toUpperCase();
+                    const mm = nm.match(/\b(\d)\s*(?:MXM|AMW)/) || nm.match(/\bMU\s*(\d)\s*R/) || nm.match(/\bAJ\d+TXJ(\d)/) || nm.match(/\bCL\d+M\s*\d+\/(\d)/);
+                    return mm ? parseInt(mm[1], 10) : 0;
+                };
+
+                const state = { brand: '', type: '', outdoorId: '', indoorQty: {} };
+
+                const modal = showModal('🔧 Geräte-Konfigurator', `<div id="cfgBody"></div>`, null, null, { wide: true });
+                const body = modal.querySelector('#cfgBody');
+
+                const deviceCard = (m, roleLabel) => {
+                    const ref = parseRefrigerant(m.notes);
+                    const energy = parseEnergy(m.notes);
+                    return `<div class="cfg-card">
+                        <div class="cfg-card-role">${roleLabel}</div>
+                        <div class="cfg-card-name">${escapeHtml(m.name)}</div>
+                        <div class="cfg-card-meta">
+                            ${m.articleNumber ? `<span>Art.-Nr. ${escapeHtml(m.articleNumber)}</span>` : ''}
+                            ${m.size ? `<span>${escapeHtml(m.size)} kW</span>` : ''}
+                            ${ref ? `<span>${escapeHtml(ref)}</span>` : ''}
+                            ${energy ? `<span>${escapeHtml(energy)}</span>` : ''}
+                        </div>
+                        <div class="cfg-card-price">${formatCurrency(m.sellingPrice || 0)}</div>
+                    </div>`;
+                };
+
+                function render() {
+                    let html = '';
+                    const crumbs = [`<button class="crumb ${!state.brand ? 'active' : ''}" data-nav="brand">Marke</button>`];
+                    if (state.brand) crumbs.push(`<button class="crumb ${state.brand && !state.type ? 'active' : ''}" data-nav="type">${escapeHtml(state.brand)}</button>`);
+                    if (state.type) crumbs.push(`<button class="crumb active">${escapeHtml(state.type)}</button>`);
+                    html += `<div class="mat-crumbs" style="margin-bottom:14px;">${crumbs.join('<span class="crumb-sep">›</span>')}</div>`;
+
+                    if (!state.brand) {
+                        // ---------- Schritt 1: Marke ----------
+                        const brands = [...new Set(materials.map(m => m.manufacturer))].sort();
+                        html += `<div class="sp-label">1. Marke wählen</div><div class="sp-grid">${brands.map(b => `<button type="button" class="sp-btn" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</button>`).join('')}</div>`;
+                    } else if (!state.type) {
+                        // ---------- Schritt 2: Gerätetyp ----------
+                        const types = [...new Set(materials.filter(m => m.manufacturer === state.brand && m.bauart).map(m => typeGroupOf(m.bauart)))]
+                            .filter(t => t && t !== 'Zubehör').sort();
+                        html += `<div class="sp-label">2. Gerätetyp wählen</div><div class="sp-grid">${types.map(t => `<button type="button" class="sp-btn" data-type="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}</div>`;
+                        if (!types.length) html += `<div class="sp-empty">Keine Klimageräte-Typen für ${escapeHtml(state.brand)} gefunden.</div>`;
+                    } else if (state.type === 'Multi-Split') {
+                        renderMulti();
+                        return;
+                    } else {
+                        renderSingleOrSelfContained();
+                        return;
+                    }
+                    body.innerHTML = html;
+                    wireNav();
+                }
+
+                // Single-Split / VRF: 1 Außengerät + 1 Innengerät passender Leistung.
+                // Klimaset / Truhengerät: bereits vollständige Positionen, direkt gelistet
+                // (keine Preise erfinden - Bosch-Sets z.B. haben keinen separaten AG-Preis).
+                function renderSingleOrSelfContained() {
+                    const outdoor = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Außengerät ' + state.type);
+                    const indoor = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Innengerät ' + state.type);
+                    const selfContained = materials.filter(m => m.manufacturer === state.brand && m.bauart === state.type);
+
+                    let html = `<div class="sp-label">3. Leistung wählen</div><div class="sp-grid">`;
+                    if (outdoor.length && indoor.length) {
+                        const sizes = [...new Set(outdoor.map(m => m.size).filter(Boolean))].sort((a, b) => kwOf(a) - kwOf(b));
+                        html += sizes.map(s => `<button type="button" class="sp-btn" data-power="${escapeHtml(s)}">${escapeHtml(s)} kW</button>`).join('');
+                    } else if (selfContained.length) {
+                        const sizes = [...new Set(selfContained.map(m => m.size).filter(Boolean))].sort((a, b) => kwOf(a) - kwOf(b));
+                        html += sizes.map(s => `<button type="button" class="sp-btn" data-power-self="${escapeHtml(s)}">${escapeHtml(s)} kW</button>`).join('');
+                    } else {
+                        html += `<div class="sp-empty">Keine passenden Geräte gefunden.</div>`;
+                    }
+                    html += `</div><div id="cfgResult"></div>`;
+                    body.innerHTML = html;
+                    wireNav();
+
+                    body.querySelectorAll('[data-power]').forEach(btn => btn.addEventListener('click', () => {
+                        const target = kwOf(btn.dataset.power);
+                        const bestOutdoor = [...outdoor].sort((a, b) => Math.abs(kwOf(a.size) - target) - Math.abs(kwOf(b.size) - target))[0];
+                        const bestIndoor = [...indoor].sort((a, b) => Math.abs(kwOf(a.size) - target) - Math.abs(kwOf(b.size) - target))[0];
+                        const total = (Number(bestOutdoor?.sellingPrice) || 0) + (Number(bestIndoor?.sellingPrice) || 0);
+                        body.querySelector('#cfgResult').innerHTML = `
+                            <div class="cfg-result-title">Kombination – ${escapeHtml(state.brand)} ${escapeHtml(state.type)}</div>
+                            <div class="cfg-grid">${deviceCard(bestIndoor, 'Innengerät')}${deviceCard(bestOutdoor, 'Außengerät')}</div>
+                            <div class="cfg-total">Gesamtpreis: <strong>${formatCurrency(total)}</strong></div>
+                            <button class="btn btn-primary" id="cfgAddCombo">${icon('plus')} Beide zum Projekt hinzufügen</button>`;
+                        body.querySelector('#cfgAddCombo').addEventListener('click', () => app._configuratorAddToProject([bestIndoor, bestOutdoor].filter(Boolean)));
+                    }));
+                    body.querySelectorAll('[data-power-self]').forEach(btn => btn.addEventListener('click', () => {
+                        const target = kwOf(btn.dataset.powerSelf);
+                        const best = [...selfContained].sort((a, b) => Math.abs(kwOf(a.size) - target) - Math.abs(kwOf(b.size) - target))[0];
+                        body.querySelector('#cfgResult').innerHTML = `
+                            <div class="cfg-result-title">${escapeHtml(state.brand)} ${escapeHtml(state.type)}</div>
+                            <div class="cfg-grid">${deviceCard(best, state.type)}</div>
+                            <div class="cfg-total">Gesamtpreis: <strong>${formatCurrency(best?.sellingPrice || 0)}</strong></div>
+                            <button class="btn btn-primary" id="cfgAddCombo">${icon('plus')} Zum Projekt hinzufügen</button>`;
+                        body.querySelector('#cfgAddCombo').addEventListener('click', () => app._configuratorAddToProject([best].filter(Boolean)));
+                    }));
+                }
+
+                // Multi-Split: erst Außengerät (Leistung + Anschlusszahl) wählen, danach
+                // NUR dazu passende Innengeräte (gleiche Marke, bauart 'Innengerät
+                // Multi-Split') bis zur maximalen Anschlusszahl - nie Single-Split-Geräte.
+                function renderMulti() {
+                    const outdoor = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Außengerät Multi-Split');
+                    if (!state.outdoorId) {
+                        let html = `<div class="sp-label">3. Außengerät wählen</div><div class="cfg-grid">`;
+                        html += outdoor.sort((a, b) => kwOf(a.size) - kwOf(b.size)).map(m => `
+                            <div class="cfg-card cfg-card-select" data-pick-outdoor="${escapeHtml(String(m.id))}">
+                                <div class="cfg-card-name">${escapeHtml(m.name)}</div>
+                                <div class="cfg-card-meta"><span>${escapeHtml(m.size || '')} kW</span><span>max. ${maxIGof(m)} Innengeräte</span></div>
+                                <div class="cfg-card-price">${formatCurrency(m.sellingPrice || 0)}</div>
+                            </div>`).join('');
+                        html += `</div>`;
+                        if (!outdoor.length) html += `<div class="sp-empty">Keine Multi-Split-Außengeräte für ${escapeHtml(state.brand)} gefunden.</div>`;
+                        body.innerHTML = html;
+                        wireNav();
+                        body.querySelectorAll('[data-pick-outdoor]').forEach(el => el.addEventListener('click', () => {
+                            state.outdoorId = el.dataset.pickOutdoor; state.indoorQty = {}; render();
+                        }));
+                        return;
+                    }
+
+                    const ag = materials.find(m => String(m.id) === String(state.outdoorId));
+                    const maxIG = maxIGof(ag);
+                    const indoorPool = materials.filter(m => m.manufacturer === state.brand && m.bauart === 'Innengerät Multi-Split')
+                        .sort((a, b) => kwOf(a.size) - kwOf(b.size));
+                    const usedSlots = Object.values(state.indoorQty).reduce((s, q) => s + q, 0);
+                    const indoorTotal = indoorPool.reduce((s, m) => s + (Number(state.indoorQty[m.id]) || 0) * (Number(m.sellingPrice) || 0), 0);
+                    const total = (Number(ag?.sellingPrice) || 0) + indoorTotal;
+
+                    let html = `
+                        <div class="sp-label">4. Passende Innengeräte wählen (${escapeHtml(state.brand)}, nur Multi-Split-kompatibel) <button type="button" class="crumb" id="cfgBackOutdoor" style="margin-left:8px;">‹ anderes Außengerät</button></div>
+                        <div class="cfg-grid" style="margin-bottom:10px;">${deviceCard(ag, 'Außengerät (gewählt)')}</div>
+                        <div class="cfg-slots">Belegt: <strong>${usedSlots} / ${maxIG}</strong> Innengeräte</div>
+                        <div class="cfg-indoor-list">`;
+                    indoorPool.forEach(m => {
+                        const qty = state.indoorQty[m.id] || 0;
+                        const disableAdd = usedSlots >= maxIG;
+                        html += `<div class="cfg-indoor-row">
+                            <div class="cfg-indoor-name">${escapeHtml(m.name)}<div class="cfg-card-meta"><span>${escapeHtml(m.size || '')} kW</span><span>${formatCurrency(m.sellingPrice || 0)}</span></div></div>
+                            <div class="cfg-qty-ctl">
+                                <button type="button" class="btn btn-sm btn-outline" data-qty-dec="${escapeHtml(String(m.id))}" ${qty <= 0 ? 'disabled' : ''}>−</button>
+                                <span>${qty}</span>
+                                <button type="button" class="btn btn-sm btn-outline" data-qty-inc="${escapeHtml(String(m.id))}" ${disableAdd ? 'disabled' : ''}>+</button>
+                            </div>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                    if (!indoorPool.length) html += `<div class="sp-empty">Keine Multi-Split-Innengeräte für ${escapeHtml(state.brand)} im Katalog.</div>`;
+                    html += `<div class="cfg-total">Gesamtpreis: <strong>${formatCurrency(total)}</strong> <small>(Außengerät + ${usedSlots} Innengerät${usedSlots !== 1 ? 'e' : ''})</small></div>`;
+                    html += `<button class="btn btn-primary" id="cfgAddCombo" ${usedSlots === 0 ? 'disabled' : ''}>${icon('plus')} Alle zum Projekt hinzufügen</button>`;
+                    body.innerHTML = html;
+                    wireNav();
+
+                    body.querySelector('#cfgBackOutdoor').addEventListener('click', () => { state.outdoorId = ''; state.indoorQty = {}; render(); });
+                    body.querySelectorAll('[data-qty-inc]').forEach(btn => btn.addEventListener('click', () => {
+                        const id = btn.dataset.qtyInc;
+                        if (usedSlots >= maxIG) return;
+                        state.indoorQty[id] = (state.indoorQty[id] || 0) + 1;
+                        render();
+                    }));
+                    body.querySelectorAll('[data-qty-dec]').forEach(btn => btn.addEventListener('click', () => {
+                        const id = btn.dataset.qtyDec;
+                        state.indoorQty[id] = Math.max(0, (state.indoorQty[id] || 0) - 1);
+                        render();
+                    }));
+                    const addBtn = body.querySelector('#cfgAddCombo');
+                    if (addBtn) addBtn.addEventListener('click', () => {
+                        const items = [];
+                        if (ag) items.push({ m: ag, qty: 1 });
+                        indoorPool.forEach(m => { const q = state.indoorQty[m.id] || 0; if (q > 0) items.push({ m, qty: q }); });
+                        app._configuratorAddToProject(items.map(i => i.m), items.map(i => i.qty));
+                    });
+                }
+
+                function wireNav() {
+                    body.querySelectorAll('.sp-btn[data-brand]').forEach(btn => btn.addEventListener('click', () => { state.brand = btn.dataset.brand; render(); }));
+                    body.querySelectorAll('.sp-btn[data-type]').forEach(btn => btn.addEventListener('click', () => { state.type = btn.dataset.type; state.outdoorId = ''; state.indoorQty = {}; render(); }));
+                    const crumbBrand = modal.querySelector('.crumb[data-nav="brand"]');
+                    const crumbType = modal.querySelector('.crumb[data-nav="type"]');
+                    crumbBrand?.addEventListener('click', () => { state.brand = ''; state.type = ''; state.outdoorId = ''; state.indoorQty = {}; render(); });
+                    crumbType?.addEventListener('click', () => { state.type = ''; state.outdoorId = ''; state.indoorQty = {}; render(); });
+                }
+
+                render();
+            },
+
+            // Fügt eine im Konfigurator zusammengestellte Kombination (Innen+Außen bzw.
+            // Außengerät + mehrere Innengeräte) gesammelt einem Projekt hinzu.
+            async _configuratorAddToProject(mats, qtys = null) {
+                mats = mats.filter(Boolean);
+                if (!mats.length) return;
+                const projects = (await db.getAll('projects')).filter(p => !['Bezahlt', 'Archiviert', 'Archiv'].includes(p.status))
+                    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                if (projects.length === 0) { showToast('Kein offenes Projekt vorhanden – lege zuerst ein Projekt an.', 'info'); return; }
+
+                const modal = showModal('Kombination zum Projekt hinzufügen', `
+                    <div class="form-group"><label>Projekt *</label>
+                        <select id="cap_project">${projects.map(p => `<option value="${escapeHtml(String(p.id))}">${escapeHtml(p.title || 'Projekt')}</option>`).join('')}</select>
+                    </div>
+                    <div class="form-group"><label>Raum (optional)</label><select id="cap_room"><option value="">Projekt gesamt</option></select></div>
+                    <div style="font-size:12.5px;color:var(--text-muted);">${mats.length} Position${mats.length !== 1 ? 'en' : ''}: ${mats.map(m => escapeHtml(m.name)).join(', ')}</div>
+                `, async (overlay) => {
+                    const projectId = parseId(overlay.querySelector('#cap_project').value);
+                    const roomId = overlay.querySelector('#cap_room').value || null;
+                    if (!projectId) { showToast('Bitte ein Projekt wählen.', 'error'); return; }
+                    for (let i = 0; i < mats.length; i++) {
+                        const m = mats[i];
+                        const qty = qtys ? (qtys[i] || 1) : 1;
+                        await db.add('projectMaterials', {
+                            projectId, materialId: m.id, roomId: roomId ? parseId(roomId) : null,
+                            quantity: qty, unit: m.unit || 'Stk', size: m.size || '',
+                            price: matUnitPrice(m, m.unit || 'Stk'), note: 'Aus Geräte-Konfigurator'
+                        });
+                    }
+                    overlay.remove();
+                    showToast(`${mats.length} Position${mats.length !== 1 ? 'en' : ''} zum Projekt hinzugefügt.`, 'success');
+                }, null);
+                const loadRooms = async () => {
+                    const pid = modal.querySelector('#cap_project').value;
+                    const rooms = (await db.getByIndex('rooms', 'projectId', pid)) || [];
+                    modal.querySelector('#cap_room').innerHTML = '<option value="">Projekt gesamt</option>' +
+                        rooms.map(r => `<option value="${escapeHtml(String(r.id))}">${escapeHtml(r.name || 'Raum')}</option>`).join('');
+                };
+                modal.querySelector('#cap_project').addEventListener('change', loadRooms);
+                loadRooms();
             },
 
             async openRoomModal(projectId, roomId = null) {
@@ -3579,7 +3996,7 @@
             // ===== Hersteller-Katalog importieren (Samsung, Daikin ...) =====
             async confirmImportKatalog() {
                 const count = (window.KTM_KATALOG || []).length;
-                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung, Daikin, LG, Hisense + Zubehör wie SUMO-Standfüße, Verteilerboxen) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
+                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung, Daikin, LG, Hisense, Bosch + Zubehör wie SUMO-Standfüße, Verteilerboxen, WLAN-Gateway) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
                 if (ok) this.importHerstellerKatalog();
             },
 
@@ -3924,8 +4341,17 @@
                 win.document.title = 'Bildvorschau';
             },
 
-            async openMaterialModal(id = null) {
-                const mat = id ? await db.get('materials', id) : null;
+            // opts.prefill: Felder für ein NEUES Material vorbelegen (z.B. aus einer
+            //   Angebotsposition ohne Katalog-Treffer).
+            // opts.focusField: Element-ID, die nach dem Öffnen fokussiert/markiert wird
+            //   (z.B. 'matPurchasePrice', damit man sofort tippen kann).
+            // opts.onSaved(savedId, data): wird nach erfolgreichem Speichern aufgerufen,
+            //   BEVOR zur Materialliste navigiert wird.
+            // opts.skipNavigate: unterdrückt die sonst übliche Navigation zu 'materials'
+            //   danach (z.B. wenn der Aufrufer selbst weiterleitet, etwa zurück in eine
+            //   Gewinn-Diagnose).
+            async openMaterialModal(id = null, opts = {}) {
+                const mat = id ? await db.get('materials', id) : (opts.prefill ? { ...opts.prefill } : null);
                 // Bilder als Array; alte Einzelbilder (mat.image) werden übernommen
                 let images = Array.isArray(mat?.images) ? [...mat.images] : (mat?.image ? [mat.image] : []);
                 const modal = showModal(
@@ -3957,13 +4383,13 @@
                             <div class="form-group"><label>Kategorie</label>
                                 <input type="text" id="matCategory" value="${escapeHtml(mat?.category || '')}" list="dl_matCats" placeholder="z. B. Kältemittel, Kupferrohr, Werkzeug ...">
                                 <datalist id="dl_matCats">${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
-                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Frei wählbar – vorhandene Gruppe wählen oder neue eintippen.</div>
+                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Frei wählbar – vorhandene Gruppe wählen oder neue eintippen. Mit "/" entstehen Unterordner, z. B. "Elektromaterial/Kabel".</div>
                             </div>
                             <div class="form-group"><label>Einheit</label><input type="text" id="matUnit" value="${escapeHtml(mat?.unit || 'Stk')}"></div>
                         </div>
                         <div class="form-group"><label>Bauart (optional – für Sortierung Innen/Außen, Single/Multi)</label>
                             <select id="matBauart">
-                                ${['', 'Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Truhengerät', 'Zubehör'].map(b => `<option value="${b}" ${(mat?.bauart || '') === b ? 'selected' : ''}>${b || '– keine –'}</option>`).join('')}
+                                ${['', 'Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Konsolengerät', 'Unterdeckengerät', 'Truhengerät', 'Klimaset', 'Zubehör'].map(b => `<option value="${b}" ${(mat?.bauart || '') === b ? 'selected' : ''}>${b || '– keine –'}</option>`).join('')}
                             </select>
                         </div>
                         <div class="form-row">
@@ -4004,16 +4430,18 @@
                             image: images[0] || '',
                         };
                         if (!data.name) { showToast('Artikelname ist erforderlich.', 'error'); return; }
+                        let savedId = id;
                         if (id) {
                             data.id = id;
                             data.createdAt = mat.createdAt;
                             await db.put('materials', data);
                         } else {
-                            await db.add('materials', data);
+                            savedId = await db.add('materials', data);
                         }
                         overlay.remove();
                         showToast(id ? 'Material aktualisiert.' : 'Material angelegt.', 'success');
-                        this.navigate('materials');
+                        if (typeof opts.onSaved === 'function') await opts.onSaved(savedId, data);
+                        if (!opts.skipNavigate) this.navigate('materials');
                     }
                 );
                 // Galerie-Vorschau rendern (mit Löschen-Knopf je Bild)
@@ -4135,6 +4563,10 @@
                     renderGallery();
                     e.target.value = ''; // erlaubt erneutes Wählen derselben Datei
                 });
+                if (opts.focusField) {
+                    const focusEl = modal.querySelector('#' + opts.focusField);
+                    if (focusEl) { focusEl.focus(); focusEl.select?.(); }
+                }
             },
 
             viewImage(src) {
@@ -4701,16 +5133,19 @@
         return c.includes('arbeit') || c.includes('anfahrt') || c.includes('montage') || n.includes('arbeitsleistung') || n.includes('montage') || n.includes('anfahrt');
     }
 
-    // Einkaufspreis je Einheit für eine Position – nutzt die zentrale Logik
-    // (individueller Rabatt → Markenrabatt → fester EK).
+    // Einkaufspreis je VERKAUFTER Einheit für eine Position – nutzt die zentrale
+    // Logik (individueller Rabatt → Markenrabatt → fester EK, inkl. Rolle/Bund/
+    // Stange -> Meter-Umrechnung). Vorher wurde hier bei Rollenware der EK der
+    // GANZEN Rolle mit der Meter-Menge multipliziert -> massiv negativer Gewinn
+    // in der Live-Kalkulation beim Angebot-Erstellen, obwohl die Angebotsliste
+    // (offerProfit) bereits korrekt rechnete. Jetzt dieselbe zentrale Funktion.
     function purchaseUnitFor(it) {
         const m = materials.find(mm => String(mm.id) === String(it.materialId));
         if (m) {
-            // Position kann Preis überschrieben haben; Material-Listenpreis für EK nutzen
-            const ek = effectivePurchasePrice(m, dealerDiscounts);
-            if (ek > 0) return ek;
+            const r = window.ekPerSalesUnit(m, dealerDiscounts);
+            if (r.known && r.ek > 0) return r.ek;
         }
-        // Fallback: Markenrabatt direkt auf den Positionspreis
+        // Fallback: Markenrabatt direkt auf den Positionspreis (kein Material verknüpft)
         const brand = (it.manufacturer || m?.manufacturer || '').trim();
         const disc = dealerDiscounts && brand ? Number(dealerDiscounts[brand]) : 0;
         if (disc > 0) {
@@ -4745,13 +5180,19 @@
         });
         const totalVK = materialVK + laborVK;
         const materialProfit = materialVK - materialEK;
-        const totalProfit = totalVK - materialEK; // Arbeit = reiner Ertrag (kein EK)
-        const margin = totalVK > 0 ? (totalProfit / totalVK) * 100 : 0;
+        // Gesamtrabatt (auf das ganze Angebot, separat von Positions-Rabatten) muss hier
+        // ebenfalls abgezogen werden - sonst zeigt die Live-Kalkulation einen höheren
+        // Gewinn als tatsächlich beim Speichern als netAfterDiscount herauskommt.
+        const globalDiscRate = (offerSettings && offerSettings.discountEnabled) ? (Math.min(100, Math.max(0, Number(offerSettings.discountRate) || 0)) / 100) : 0;
+        const totalVKAfterDiscount = totalVK * (1 - globalDiscRate);
+        const totalProfit = totalVKAfterDiscount - materialEK; // Arbeit = reiner Ertrag (kein EK)
+        const margin = totalVKAfterDiscount > 0 ? (totalProfit / totalVKAfterDiscount) * 100 : 0;
         const row = (label, val, cls = '') => `<div class="calc-row ${cls}"><span>${label}</span><span>${val}</span></div>`;
         let html = `<div class="calc-head">🔒 Interne Kalkulation <span>nur für dich – nicht im Angebot/PDF</span></div>`;
         html += row('Materialkosten (EK)', formatCurrency(materialEK));
         html += row('Materialverkauf (VK)', formatCurrency(materialVK));
         html += row('Materialgewinn', formatCurrency(materialProfit), materialProfit < 0 ? 'neg' : 'pos');
+        if (globalDiscRate > 0) html += row(`Gesamtrabatt (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(totalVK - totalVKAfterDiscount));
         html += row('Arbeitskosten (VK)', formatCurrency(laborVK));
         html += row('Reingewinn gesamt', formatCurrency(totalProfit), totalProfit < 0 ? 'neg' : 'pos');
         html += row('Gewinnmarge', `${margin.toFixed(1)} %`, margin < 10 ? 'neg' : 'pos');
@@ -4795,8 +5236,16 @@
         const existing = selected.find(s => s.materialId === materialId);
         if (existing) { existing.quantity += 1; }
         else {
+            // Rolle/Bund/Stange wird laut Materialstammdaten "pro Meter verkauft" - die
+            // Position bekommt deshalb sofort den Meter-Verkaufspreis (wie im Projekt-
+            // Material-Dialog via matUnitPrice), statt des vollen Rollen-Listenpreises.
+            // Sonst startet die Position mit VK = Rollenpreis, während der EK bereits
+            // pro Meter gerechnet wird -> Gewinn/Marge in der Live-Kalkulation viel zu hoch.
+            const isRollGoods = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && Number(m.bundleLength) > 0;
+            const unit = isRollGoods ? 'm' : (m.unit || 'Stk');
+            const price = isRollGoods ? (matUnitPrice(m, 'm') || 0) : (Number(m.sellingPrice) || 0);
             selected.push({
-                materialId: m.id, name: m.name, unit: m.unit || 'Stk', price: m.sellingPrice || 0,
+                materialId: m.id, name: m.name, unit, price,
                 quantity: 1, manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
                 category: m.category || '', description: m.description || '', image: m.image || ''
             });
