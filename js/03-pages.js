@@ -47,7 +47,7 @@
                 const nm = (m.name || '') + ' ' + (m.articleNumber || '');
                 const notes = (m.notes || '').toLowerCase();
                 if (/\b\d\s*(?:MXM|AMW)/i.test(nm) || /\bMU\s*\d\s*R/i.test(nm) || /\bR[XZ][A-Z]?\d/i.test(nm)) return false;
-                return m.category === 'Innengeräte' || m.category === 'Klimageräte' || notes.includes('innengerät');
+                return m.category === 'Innengeräte' || m.category === 'Klimageräte' || m.category === 'Klimaanlagen' || notes.includes('innengerät');
             };
             let pool = mats.filter(m => isIndoor(m) && kwOf(m.size) > 0 && Number(m.sellingPrice) > 0);
             if (brand) pool = pool.filter(m => (m.manufacturer || '') === brand);
@@ -75,7 +75,7 @@
                 const notes = (m.notes || '').toLowerCase();
                 if (/\b\d\s*(?:MXM|AMW)/.test(nm) || /\bMU\s*\d\s*R/.test(nm) || /\bR[XZ][A-Z]?\d/.test(nm) || /\bAS\d.*EW\b/.test(nm) || /\bAJ\d+TXJ/.test(nm)) return true;
                 if (notes.includes('außengerät') || notes.includes('aussengerät') || notes.includes('multi-split-ag')) return true;
-                return m.category === 'Außengeräte';
+                return m.category === 'Außengeräte' || m.category === 'Klimaanlagen';
             };
             let pool = mats.filter(m => isOutdoor(m) && Number(m.sellingPrice) > 0);
             if (brand) { const b = pool.filter(m => (m.manufacturer || '') === brand); if (b.length) pool = b; }
@@ -138,7 +138,7 @@
         function renderCalc() {
             (async () => {
                 const brands = [...new Set((await db.getAll('materials'))
-                    .filter(m => m.category === 'Innengeräte' && m.manufacturer).map(m => m.manufacturer))].sort();
+                    .filter(m => (m.category === 'Innengeräte' || m.category === 'Klimaanlagen') && m.manufacturer).map(m => m.manufacturer))].sort();
                 const res = await calcCompute();
                 const S = CALC_STATE;
                 const cur = v => formatCurrency(v);
@@ -227,7 +227,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v73</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v74</span></div>
                         </div>
                     </div>`;
             })();
@@ -970,7 +970,7 @@
         // ============================================================
         // Material-Katalog: Icons je Kategorie
         const MAT_CAT_ICONS = {
-            'Außengeräte': '🧊', 'Innengeräte': '❄️', 'Klimageräte': '❄️', 'Multisplit-Systeme': '🔀',
+            'Klimaanlagen': '❄️', 'Außengeräte': '🧊', 'Innengeräte': '❄️', 'Klimageräte': '❄️', 'Multisplit-Systeme': '🔀',
             'VRF-Systeme': '🏢', 'Kupferrohr': '🟠', 'Kupferrohre': '🟠', 'Isolierung': '🧵',
             'Elektromaterial': '⚡', 'Kabel': '🔌', 'Kondensat': '💧', 'Befestigung': '🔩',
             'Montagematerial': '🧰', 'Montagezubehör': '🧰', 'Werkzeug': '🛠️', 'Werkzeuge': '🛠️',
@@ -1032,7 +1032,7 @@
             (async () => {
                 const materials = await db.getAll('materials');
                 const F = listFilters.materials;
-                if (F.level === undefined) Object.assign(F, { level: 'cats', cat: '', hersteller: '', serie: '', fav: false, stockF: '' });
+                if (F.level === undefined) Object.assign(F, { level: 'cats', cat: '', hersteller: '', splitType: '', serie: '', fav: false, stockF: '' });
                 const q = (F.q || '').toLowerCase().trim();
 
                 // --------- Basis-Filter (Favoriten / Bestand) ---------
@@ -1049,11 +1049,21 @@
                     pool = pool.filter(m => `${m.name || ''} ${m.manufacturer || ''} ${m.series || ''} ${m.articleNumber || ''} ${m.size || ''} ${m.category || ''} ${m.bauart || ''} ${m.notes || ''}`.toLowerCase().includes(q));
                 }
 
-                const inScope = pool.filter(m =>
-                    (!F.cat || (m.category || 'Ohne Kategorie') === F.cat) &&
-                    (!F.hersteller || (m.manufacturer || 'Ohne Hersteller') === F.hersteller) &&
-                    (!F.serie || (m.series || 'Ohne Serie') === F.serie)
-                );
+                const inScope = pool.filter(m => {
+                    if (F.cat && (m.category || 'Ohne Kategorie') !== F.cat) return false;
+                    if (F.hersteller && (m.manufacturer || 'Ohne Hersteller') !== F.hersteller) return false;
+                    if (F.serie && (m.series || 'Ohne Serie') !== F.serie) return false;
+                    // splitType-Filter: Single Split / Multi Split / Zubehör
+                    if (F.splitType) {
+                        const b = m.bauart || '';
+                        const isSingle = b.includes('Single-Split') || b === 'Klimaset' || b === 'Truhengerät';
+                        const isMulti  = b.includes('Multi-Split') || b.includes('Multi Split');
+                        if (F.splitType === 'Single Split' && !isSingle) return false;
+                        if (F.splitType === 'Multi Split'  && !isMulti)  return false;
+                        if (F.splitType === 'Zubehör' && (isSingle || isMulti)) return false;
+                    }
+                    return true;
+                });
 
                 const level = searching ? 'produkte' : F.level;
 
@@ -1065,7 +1075,8 @@
                     const isLastSeg = i === catSegs.length - 1;
                     crumbs.push(`<button class="crumb ${isLastSeg && level === 'hersteller' ? 'active' : ''}" onclick="app.matOpenCatPath('${escapeHtml(partial).replace(/'/g, "\\'")}')" ondragover="event.preventDefault();" ondrop="app.matDropOnCrumb(event, '${escapeHtml(partial).replace(/'/g, "\\'")}')">${i === 0 ? matCatIcon(partial) + ' ' : ''}${escapeHtml(seg)}</button>`);
                 });
-                if (F.hersteller) crumbs.push(`<button class="crumb ${level === 'serien' ? 'active' : ''}" onclick="app.matNav('serien')">${escapeHtml(F.hersteller)}</button>`);
+                if (F.hersteller) crumbs.push(`<button class="crumb ${level === 'splittype' ? 'active' : (level === 'serien' && !F.splitType ? 'active' : '')}" onclick="app.matNav('splittype')">${escapeHtml(F.hersteller)}</button>`);
+                if (F.splitType) crumbs.push(`<button class="crumb ${level === 'serien' ? 'active' : ''}" onclick="app.matNav('serien')">${escapeHtml(F.splitType)}</button>`);
                 if (F.serie) crumbs.push(`<button class="crumb active">${escapeHtml(F.serie)}</button>`);
 
                 // --------- Ebenen-Inhalt ---------
@@ -1119,7 +1130,7 @@
                         (groups[h] = groups[h] || []).push(m);
                     }
                     const hs = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
-                    if (hs.length <= 1) { F.hersteller = hs[0] || ''; F.level = 'serien'; renderMaterials(); return; }
+                    if (hs.length <= 1) { F.hersteller = hs[0] || ''; F.level = 'splittype'; renderMaterials(); return; }
                     body = `<div class="mat-grid">${hs.map(h => {
                         const list = groups[h];
                         const avail = list.filter(m => Number(m.stock) > 0).length;
@@ -1128,6 +1139,31 @@
                             <div class="mat-card-body">
                                 <div class="mat-card-title">${escapeHtml(h)}</div>
                                 <div class="mat-card-sub">${list.length} Produkte · ${avail} auf Lager</div>
+                            </div>
+                            <div class="mat-card-arrow">›</div>
+                        </div>`;
+                    }).join('')}</div>`;
+                } else if (level === 'splittype') {
+                    // Neue Ebene: Single Split / Multi Split / Zubehör
+                    const isSingle = m => m.bauart?.includes('Single-Split') || m.bauart === 'Klimaset' || m.bauart === 'Truhengerät';
+                    const isMulti  = m => m.bauart?.includes('Multi-Split') || m.bauart?.includes('Multi Split');
+                    const isZub    = m => m.bauart === 'Zubehör' || (!isSingle(m) && !isMulti(m) && m.category === 'Klimaanlagen');
+                    const singleList = inScope.filter(isSingle);
+                    const multiList  = inScope.filter(isMulti);
+                    const zubList    = inScope.filter(m => !isSingle(m) && !isMulti(m));
+                    // Wenn nur eine Gruppe: direkt durchgehen
+                    const groups = [];
+                    if (singleList.length) groups.push({ key: 'Single Split', label: 'Single Split', icon: '❄️', list: singleList, desc: 'Ein Innen- + ein Außengerät' });
+                    if (multiList.length)  groups.push({ key: 'Multi Split',  label: 'Multi Split',  icon: '🔀', list: multiList,  desc: 'Ein Außengerät für mehrere Innengeräte' });
+                    if (zubList.length)    groups.push({ key: 'Zubehör',      label: 'Zubehör',      icon: '🔧', list: zubList,    desc: `${zubList.length} Zubehörartikel` });
+                    if (groups.length <= 1) { F.splitType = groups[0]?.key || ''; F.level = 'serien'; renderMaterials(); return; }
+                    body = `<div class="mat-grid">${groups.map(g => {
+                        const avail = g.list.filter(m => Number(m.stock) > 0).length;
+                        return `<div class="mat-card mat-cat" onclick="app.matOpenSplitType('${escapeHtml(g.key).replace(/'/g, "\\'")}')">
+                            <div class="mat-cat-ico" style="font-size:28px;">${g.icon}</div>
+                            <div class="mat-card-body">
+                                <div class="mat-card-title">${escapeHtml(g.label)}</div>
+                                <div class="mat-card-sub">${g.list.length} Produkte${avail ? ' · ' + avail + ' auf Lager' : ''} · ${escapeHtml(g.desc)}</div>
                             </div>
                             <div class="mat-card-arrow">›</div>
                         </div>`;

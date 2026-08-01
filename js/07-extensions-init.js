@@ -663,7 +663,7 @@
                 const wanted = [];
                 if (!hasByName('Außengerät')) {
                     const cooling = calculateCoolingCapacity(rooms);
-                    wanted.push({ name: 'Außengerät', size: cooling.recommendation ? `ca. ${cooling.recommendation} kW` : '', qty: 1, unit: 'Stk', category: 'Außengeräte', note: 'Auslegung prüfen' });
+                    wanted.push({ name: 'Außengerät', size: cooling.recommendation ? `ca. ${cooling.recommendation} kW` : '', qty: 1, unit: 'Stk', category: 'Klimaanlagen', note: 'Auslegung prüfen' });
                 }
                 if (totals.pipe > 0) {
                     if (!hasByName('Kabelbinder')) wanted.push({ name: 'Kabelbinder', size: '', qty: Math.ceil(totals.pipe * 3), unit: 'Stk', category: 'Befestigung', note: '3 Stk je Meter Leitung' });
@@ -700,7 +700,7 @@
                 const offer = await db.get('offers', offerId);
                 if (!offer) return;
                 const mats = await db.getAll('materials');
-                const DEV_CATS = ['Innengeräte', 'Außengeräte', 'Klimageräte', 'Multisplit-Systeme', 'Multi Split'];
+                const DEV_CATS = ['Klimaanlagen', 'Innengeräte', 'Außengeräte', 'Klimageräte', 'Multisplit-Systeme', 'Multi Split'];
                 const isDevice = (p) => {
                     const m = mats.find(x => String(x.id) === String(p.materialId));
                     return DEV_CATS.includes(m?.category || p.category || '');
@@ -1088,7 +1088,7 @@
                 const inCat = materials.filter(m => { const c = m.category || 'Ohne Kategorie'; return c === cat || c.startsWith(cat + '/'); });
                 const hasChildren = inCat.some(m => (m.category || '') !== cat);
                 const otherCats = [...new Set(materials.map(m => m.category || 'Ohne Kategorie'))].filter(c => c !== cat && !c.startsWith(cat + '/')).sort();
-                const known = ['Außengeräte', 'Innengeräte', 'Multisplit-Systeme', 'VRF-Systeme', 'Kupferrohr', 'Isolierung', 'Elektromaterial', 'Kabel', 'Kondensat', 'Befestigung', 'Montagematerial', 'Werkzeug', 'Kältemittel', 'Arbeitszeit', 'Ersatzteile', 'Steuerungen', 'Zubehör'];
+                const known = ['Klimaanlagen', 'Außengeräte', 'Innengeräte', 'Multisplit-Systeme', 'VRF-Systeme', 'Kupferrohr', 'Isolierung', 'Elektromaterial', 'Kabel', 'Kondensat', 'Befestigung', 'Montagematerial', 'Werkzeug', 'Kältemittel', 'Arbeitszeit', 'Ersatzteile', 'Steuerungen', 'Zubehör'];
                 const targets = [...new Set([...otherCats, ...known.filter(k => k !== cat)])];
                 const cascadeHint = hasChildren ? ` (inkl. Unterordner)` : '';
 
@@ -1271,9 +1271,10 @@
             // ---------- Material-Katalog: Navigation ----------
             matNav(level) {
                 const F = listFilters.materials;
-                if (level === 'cats') { F.cat = ''; F.hersteller = ''; F.serie = ''; }
-                if (level === 'hersteller') { F.hersteller = ''; F.serie = ''; }
-                if (level === 'serien') { F.serie = ''; }
+                if (level === 'cats')      { F.cat = ''; F.hersteller = ''; F.splitType = ''; F.serie = ''; }
+                if (level === 'hersteller'){ F.hersteller = ''; F.splitType = ''; F.serie = ''; }
+                if (level === 'splittype') { F.splitType = ''; F.serie = ''; }
+                if (level === 'serien')    { F.serie = ''; }
                 F.level = level; F.q = ''; F.selectMode = false; F.selected = new Set();
                 renderMaterials();
             },
@@ -1292,7 +1293,8 @@
                 }
                 F.cat = path; F.level = 'hersteller'; renderMaterials();
             },
-            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.serie = ''; F.level = 'serien'; F.selectMode = false; F.selected = new Set(); renderMaterials(); },
+            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.splitType = ''; F.serie = ''; F.level = 'splittype'; F.selectMode = false; F.selected = new Set(); renderMaterials(); },
+            matOpenSplitType(t) { const F = listFilters.materials; F.splitType = t; F.serie = ''; F.level = 'serien'; renderMaterials(); },
             matOpenSerie(s) { const F = listFilters.materials; F.serie = s === 'Ohne Serie' ? '' : s; F.level = 'produkte'; renderMaterials(); },
 
             // ---------- Material-Katalog: Mehrfachauswahl ----------
@@ -1583,7 +1585,7 @@
             // bauart-Feld läuft (dieselbe robuste Logik wie im Schnellrechner-Fix).
             async openDeviceConfigurator() {
                 const allMats = await db.getAll('materials');
-                const materials = allMats.filter(m => m.category === 'Klimageräte' && m.manufacturer);
+                const materials = allMats.filter(m => (m.category === 'Klimaanlagen' || m.category === 'Klimageräte') && m.manufacturer);
                 if (!materials.length) { showToast('Noch keine Klimageräte im Katalog – erst Geräte anlegen oder Hersteller-Katalog importieren.', 'info'); return; }
 
                 const typeGroupOf = (bauart) => (bauart || '').replace(/^Innengerät\s*/, '').replace(/^Außengerät\s*/, '').trim();
@@ -2136,12 +2138,12 @@
                     // Innengerät: zuerst echtes Katalog-Gerät suchen (Modell/Hersteller), sonst generisch
                     const model = String(tech.devModel || '').trim();
                     const dev = allMats.find(m => model && `${m.name || ''}`.toLowerCase().includes(model.toLowerCase()))
-                        || allMats.find(m => (m.category === 'Innengeräte' || m.category === 'Klimageräte')
+                        || allMats.find(m => (m.category === 'Innengeräte' || m.category === 'Klimageräte' || m.category === 'Klimaanlagen')
                             && (m.manufacturer || '').toLowerCase() === String(tech.devManufacturer).toLowerCase()
                             && num(tech.devCapacity) && parseFloat(String(m.size).replace(',', '.')) === num(tech.devCapacity));
                     wanted.push(dev
                         ? { mat: dev, qty: 1, unit: 'Stk' }
-                        : { name: `Innengerät ${tech.devManufacturer}`, size: model || (num(tech.devCapacity) ? `${tech.devCapacity} kW` : ''), qty: 1, unit: 'Stk', category: 'Innengeräte' });
+                        : { name: `Innengerät ${tech.devManufacturer}`, size: model || (num(tech.devCapacity) ? `${tech.devCapacity} kW` : ''), qty: 1, unit: 'Stk', category: 'Klimaanlagen' });
                 }
                 if (tech.bigFoot === true) wanted.push({ name: 'Big Foot Konsole', size: '', qty: 1, unit: 'Set', category: 'Befestigung' });
                 if (tech.wallBracket === true) wanted.push({ name: 'Wandkonsole Außengerät', size: '', qty: 1, unit: 'Stk', category: 'Befestigung' });
@@ -4015,7 +4017,7 @@
                         name: item.name,
                         manufacturer: item.manufacturer,
                         series: item.series,
-                        category: item.category || 'Klimageräte',
+                        category: item.category || 'Klimaanlagen',
                         bauart: item.bauart || '',
                         articleNumber: item.articleNumber || '',
                         size: item.size || '',
