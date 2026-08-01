@@ -914,8 +914,8 @@
             },
 
             // ---------- Kategorie verwalten: umbenennen, verschieben, löschen ----------
-            // Interne Gewinn-Diagnose eines Angebots: vollständige, nachvollziehbare
-            // Aufschlüsselung + Position-für-Position, wo EK oder Rabatt fehlt.
+            // Interne Gewinn-Diagnose: nutzt dieselbe recomputeOffer-Logik wie Liste+PDF.
+            // Zeigt: VK vor/nach Rabatt, EK, Arbeitsanteil, Gewinn, Marge – Position für Position.
             async showOfferDiagnosis(offerId) {
                 const offer = await db.get('offers', offerId);
                 if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
@@ -926,13 +926,22 @@
                 // Zentrale Funktion (01-core-db-sync.js) statt eigener Kopie.
                 const ekPerSalesUnit = (m) => window.ekPerSalesUnit(m, dealerDiscounts);
 
+                // Zentrale Preisberechnung – identisch zu PDF und Angebotsliste (offerProfit in 03-pages.js)
+                const R = (typeof recomputeOffer === 'function') ? recomputeOffer(offer) : null;
+                const salesGross     = R ? R.gross          : 0;
+                const salesNet       = R ? R.net            : 0;
+                const globalDisc     = R ? R.globalDiscount : 0;
+                const discRate       = R ? R.rate           : 0;
+                const salesAfter     = R ? R.netAfter       : salesNet;
+                const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '')
+                    ? Number(offer.agreedPrice) : salesAfter;
+
                 const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
-                let salesTotal = 0, materialCost = 0, laborSales = 0, missing = 0;
+                let materialCost = 0, laborSales = 0, missing = 0;
                 const rows = positions.map((it, idx) => {
                     const qty = Number(it.quantity) || 0;
                     const disc = Number(it.discount) || 0;
                     const lineSales = (Number(it.price) || 0) * qty * (1 - disc / 100);
-                    salesTotal += lineSales;
                     const labor = isLabor(it);
                     let cost = 0, known = true, ekUnit = 0, note = '', m = null;
                     if (labor) {
@@ -948,6 +957,7 @@
                         }
                         if (!known) missing++;
                     }
+                    materialCost += cost;
                     const lineProfit = lineSales - cost;
                     // EK direkt hier bearbeitbar (statt erst zum Material navigieren zu
                     // müssen) - besonders bei "fehlt" der schnellste Weg, den Gewinn
@@ -972,27 +982,19 @@
                     </tr>`;
                 }).join('');
 
-                // Wie in offerProfit() (03-pages.js): nach Gesamtrabatt hinterlegten Netto-
-                // Betrag nutzen, sonst wird ein Gesamtrabatt hier ignoriert und der Gewinn
-                // zu hoch ausgewiesen.
-                const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '')
-                    ? Number(offer.agreedPrice)
-                    : ((Number(offer.netAfterDiscount) > 0) ? Number(offer.netAfterDiscount) : salesTotal);
-                const totalCost = materialCost = positions.reduce((s, it) => {
-                    if (isLabor(it)) return s;
-                    const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                    const r = ekPerSalesUnit(m);
-                    return s + (r.known ? r.ek * (Number(it.quantity) || 0) : 0);
-                }, 0);
-                const profit = salesEffective - totalCost;
+                const profit = salesEffective - materialCost;
                 const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
                 const complete = missing === 0;
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
                     ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn direkt unten in der Tabelle nach, dann stimmt die Marge sofort.</div>` : ''}
                     <div class="diag-summary">
-                        <div class="diag-row"><span>Verkaufspreis${(offer.agreedPrice != null && offer.agreedPrice !== '') ? ' (vereinbart)' : ''}</span><strong>${formatCurrency(salesEffective)}</strong></div>
-                        <div class="diag-row"><span>− Materialeinkauf</span><strong>${formatCurrency(totalCost)}</strong></div>
+                        <div class="diag-row"><span>Verkaufspreis (vor Rabatt)</span><strong>${formatCurrency(salesGross)}</strong></div>
+                        ${salesNet < salesGross ? `<div class="diag-row"><span>− Positionsrabatte</span><strong>−${formatCurrency(salesGross - salesNet)}</strong></div>` : ''}
+                        ${globalDisc > 0 ? `<div class="diag-row"><span>− Gesamt-Rabatt (${(discRate * 100).toFixed(1)} %)</span><strong>−${formatCurrency(globalDisc)}</strong></div>` : ''}
+                        <div class="diag-row" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px;"><span>Verkaufspreis nach Rabatt</span><strong>${formatCurrency(salesAfter)}</strong></div>
+                        ${offer.agreedPrice != null && offer.agreedPrice !== '' ? `<div class="diag-row"><span>Vereinbarter Preis</span><strong>${formatCurrency(salesEffective)}</strong></div>` : ''}
+                        <div class="diag-row"><span>− Materialeinkauf</span><strong>${formatCurrency(materialCost)}</strong></div>
                         <div class="diag-row"><span>− Arbeitskosten</span><strong>0,00 € <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(Arbeit ist Ertrag)</span></strong></div>
                         <div class="diag-row"><span>− Sonstige Kosten</span><strong>${formatCurrency(0)}</strong></div>
                         <div class="diag-row diag-total"><span>= Gewinn</span><strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(profit)}</strong></div>
@@ -1001,8 +1003,8 @@
                     </div>
                     <div class="diag-detail-title">Positionen im Detail <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">– EK direkt eintragen &amp; mit ✓ speichern, oder auf eine „fehlt"-Zeile klicken für die volle Materialbearbeitung</span></div>
                     <div class="table-container"><table class="diag-table">
-                        <thead><tr><th>Position</th><th style="text-align:right;">Verkauf</th><th style="text-align:right;">Einkauf</th><th style="text-align:right;">Gewinn</th></tr></thead>
-                        <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
+                        <thead><tr><th>Position</th><th style="text-align:right;">VK (netto)</th><th style="text-align:right;">EK / Einheit</th><th style="text-align:right;">Gewinn</th></tr></thead>
+                        <tbody>${rows||'<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
                     </table></div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Nur für dich sichtbar – erscheint nie im Kundenangebot oder PDF.</div>
                 `, null, null, { wide: true });
