@@ -1445,10 +1445,13 @@
                 } catch (e) { /* optional */ }
 
                 // ---- Set-Panel: bei Single-Split IG/AG passendes Gegenstück + Zubehör ----
+                // ---- Multi-Split: kompatible Außengeräte anzeigen ----
                 let setHtml = '', isSingleIG = false, isSingleAG = false;
                 const bauart = m.bauart || '';
                 isSingleIG = bauart === 'Innengerät Single-Split';
                 isSingleAG = bauart === 'Außengerät Single-Split';
+                const isMultiIG = bauart === 'Innengerät Multi-Split';
+                const isMultiAG = bauart === 'Außengerät Multi-Split';
                 if (isSingleIG || isSingleAG) {
                     const allMats = await db.getAll('materials');
                     const norm = s => String(s || '').trim().toLowerCase();
@@ -1482,7 +1485,58 @@
                             ${zubRows}
                             ${partner ? `<button class="btn btn-primary btn-sm" id="addSetBtn" style="margin-top:10px;">${icon('plus')} Innen + Außen zum Projekt</button>` : ''}
                         </div>`;
-                }
+                } else if (isMultiIG || isMultiAG) {
+                    // Multi-Split: kompatible Geräte (gleicher Hersteller, passende Bauart)
+                    const allMats = await db.getAll('materials');
+                    const norm = s => String(s || '').trim().toLowerCase();
+                    const maxIGfromNotes = (mat) => {
+                        const n = String(mat.notes || '');
+                        const match = n.match(/max\.?\s*(\d+)\s*(?:IE|IG|Innengeräte?)/i);
+                        return match ? parseInt(match[1]) : 0;
+                    };
+                    if (isMultiIG) {
+                        // Innengerät Multi-Split: zeigt kompatible Außengeräte (gleicher Hersteller)
+                        const compatAG = allMats
+                            .filter(x => x.bauart === 'Außengerät Multi-Split' && norm(x.manufacturer) === norm(m.manufacturer))
+                            .sort((a, b) => (parseFloat(String(a.size||'0').replace(',','.')) || 0) - (parseFloat(String(b.size||'0').replace(',','.')) || 0));
+                        const agCards = compatAG.slice(0, 6).map(ag => {
+                            const maxIG = maxIGfromNotes(ag);
+                            return `<div class="set-panel-card" style="cursor:pointer;" onclick="this.closest('.modal-overlay').remove(); app.openMaterialDetail(${idJS(ag.id)})">
+                                <div class="set-panel-role">Außengerät Multi-Split</div>
+                                <div class="set-panel-name">${escapeHtml(ag.name)}</div>
+                                <div class="set-panel-meta">${ag.size ? escapeHtml(ag.size) + ' kW · ' : ''}${maxIG ? 'max. ' + maxIG + ' IE' : ''}${ag.articleNumber ? ' · ' + escapeHtml(ag.articleNumber) : ''}</div>
+                                <div class="set-panel-price">${formatCurrency(ag.sellingPrice || 0)}</div>
+                            </div>`;
+                        }).join('');
+                        setHtml = `
+                            <div class="set-panel">
+                                <div class="set-panel-title">🔀 Multi-Split – ${escapeHtml(m.manufacturer)} – kompatible Außengeräte</div>
+                                <div class="set-panel-compat-note">Dieses Innengerät ist mit allen ${escapeHtml(m.manufacturer)} Multi-Split-Außengeräten kombinierbar. Außengerät wählen → dann Innengeräte zuweisen:</div>
+                                <div class="set-panel-grid set-panel-grid--multi">${agCards || '<div class="set-panel-card--missing" style="padding:10px;">Keine kompatiblen Außengeräte im Katalog.</div>'}</div>
+                                <button class="btn btn-primary btn-sm" id="openCfgBtn" style="margin-top:10px;">🔧 Multi-Split-Konfigurator öffnen</button>
+                            </div>`;
+                    } else {
+                        // Außengerät Multi-Split: zeigt kompatible Innengeräte
+                        const maxIG = maxIGfromNotes(m);
+                        const compatIG = allMats
+                            .filter(x => x.bauart === 'Innengerät Multi-Split' && norm(x.manufacturer) === norm(m.manufacturer))
+                            .sort((a, b) => (parseFloat(String(a.size||'0').replace(',','.')) || 0) - (parseFloat(String(b.size||'0').replace(',','.')) || 0));
+                        const igCards = compatIG.map(ig => `
+                            <div class="set-panel-card" style="cursor:pointer;" onclick="this.closest('.modal-overlay').remove(); app.openMaterialDetail(${idJS(ig.id)})">
+                                <div class="set-panel-role">Innengerät Multi-Split</div>
+                                <div class="set-panel-name">${escapeHtml(ig.name)}</div>
+                                <div class="set-panel-meta">${ig.size ? escapeHtml(ig.size) + ' kW' : ''}${ig.articleNumber ? ' · ' + escapeHtml(ig.articleNumber) : ''}</div>
+                                <div class="set-panel-price">${formatCurrency(ig.sellingPrice || 0)}</div>
+                            </div>`).join('');
+                        setHtml = `
+                            <div class="set-panel">
+                                <div class="set-panel-title">🔀 Multi-Split-Außengerät – ${escapeHtml(m.manufacturer)} – ${escapeHtml(m.size || '')} kW</div>
+                                <div class="set-panel-compat-note">${maxIG ? `Dieses Außengerät nimmt <strong>bis zu ${maxIG} Innengeräte</strong> auf.` : ''} Alle ${escapeHtml(m.manufacturer)} Multi-Split-Innengeräte sind kompatibel (klickbar):</div>
+                                <div class="set-panel-grid set-panel-grid--multi">${igCards || '<div style="color:var(--text-muted);padding:10px;">Keine kompatiblen Innengeräte im Katalog.</div>'}</div>
+                                <button class="btn btn-primary btn-sm" id="openCfgBtn" style="margin-top:10px;">🔧 Multi-Split-Konfigurator öffnen (mit diesem Außengerät)</button>
+                            </div>`;
+                    }  // Ende else (isMultiAG)
+                }  // Ende else if (isMultiIG || isMultiAG)
 
                 const modal = showModal(
                     escapeHtml(m.name || 'Material'),
@@ -1521,7 +1575,7 @@
                     `,
                     null, null, { wide: true }
                 );
-                // „Innen + Außen zum Projekt" Button verdrahten
+                // „Innen + Außen zum Projekt" Button verdrahten (Single-Split)
                 modal?.querySelector('#addSetBtn')?.addEventListener('click', async () => {
                     const allMats2 = await db.getAll('materials');
                     const norm2 = s => String(s || '').trim().toLowerCase();
@@ -1533,6 +1587,12 @@
                         norm2(x.size) === norm2(m.size)
                     );
                     if (partnerForSet) { modal.remove(); this._configuratorAddToProject([m, partnerForSet]); }
+                });
+                // Konfigurator-Button bei Multi-Split (öffnet Konfigurator vorgewählt auf diese Marke)
+                modal?.querySelector('#openCfgBtn')?.addEventListener('click', () => {
+                    modal.remove();
+                    // Konfigurator öffnen, direkt auf die Marke des Geräts vorspringen
+                    this.openDeviceConfigurator(m.manufacturer, isMultiAG ? m.id : null);
                 });
             },
 
@@ -1637,7 +1697,7 @@
             // UND derselben Bauart ('Innengerät Multi-Split') angeboten - Single-Split-
             // Geräte können hier nie erscheinen, weil die Auswahl strikt über das
             // bauart-Feld läuft (dieselbe robuste Logik wie im Schnellrechner-Fix).
-            async openDeviceConfigurator() {
+            async openDeviceConfigurator(presetBrand = '', presetOutdoorId = null) {
                 const allMats = await db.getAll('materials');
                 const materials = allMats.filter(m => (m.category === 'Klimaanlagen' || m.category === 'Klimageräte') && m.manufacturer);
                 if (!materials.length) { showToast('Noch keine Klimageräte im Katalog – erst Geräte anlegen oder Hersteller-Katalog importieren.', 'info'); return; }
@@ -1656,7 +1716,7 @@
                     return mm ? parseInt(mm[1], 10) : 0;
                 };
 
-                const state = { brand: '', type: '', outdoorId: '', indoorQty: {} };
+                const state = { brand: presetBrand || '', type: presetBrand ? 'Multi-Split' : '', outdoorId: presetOutdoorId ? String(presetOutdoorId) : '', indoorQty: {} };
 
                 const modal = showModal('🔧 Geräte-Konfigurator', `<div id="cfgBody"></div>`, null, null, { wide: true });
                 const body = modal.querySelector('#cfgBody');
