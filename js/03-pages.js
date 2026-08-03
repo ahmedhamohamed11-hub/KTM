@@ -227,7 +227,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v78</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v79</span></div>
                         </div>
                     </div>`;
             })();
@@ -970,13 +970,31 @@
         // ============================================================
         // Material-Katalog: Icons je Kategorie
         const MAT_CAT_ICONS = {
-            'Klimaanlagen': '❄️', 'Außengeräte': '🧊', 'Innengeräte': '❄️', 'Klimageräte': '❄️', 'Multisplit-Systeme': '🔀',
-            'VRF-Systeme': '🏢', 'Kupferrohr': '🟠', 'Kupferrohre': '🟠', 'Isolierung': '🧵',
-            'Elektromaterial': '⚡', 'Kabel': '🔌', 'Kondensat': '💧', 'Befestigung': '🔩',
-            'Montagematerial': '🧰', 'Montagezubehör': '🧰', 'Werkzeug': '🛠️', 'Werkzeuge': '🛠️',
-            'Kältemittel': '🧪', 'Arbeitszeit': '⏱️', 'Ersatzteile': '⚙️', 'Steuerungen': '🎛️', 'Zubehör': '📦'
+            // Neue Hauptkategorien
+            'Klimageräte':           '🌡️',
+            'Kupfer & Rohrsysteme':  '🔧',
+            'Kältemittel':           '❄️',
+            'Elektroinstallation':   '⚡',
+            'Steuerung & Regelung':  '🎛️',
+            'Kondensat':             '💧',
+            'Befestigung & Montage': '🔩',
+            'Kabelkanäle':           '📦',
+            'Zubehör':               '🗂️',
+            'Arbeitsleistung':       '⏱️',
+            // Alte Namen (Rückwärtskompatibilität)
+            'Klimaanlagen': '🌡️', 'Außengeräte': '🌡️', 'Innengeräte': '🌡️',
+            'Multisplit-Systeme': '🔀', 'VRF-Systeme': '🏢',
+            'Kupferrohr': '🔧', 'Kupferrohre': '🔧', 'Isolierung': '🧵',
+            'Elektromaterial': '⚡', 'Kabel': '⚡',
+            'Befestigung': '🔩', 'Montagematerial': '🔩', 'Montagezubehör': '🔩',
+            'Werkzeug': '🛠️', 'Werkzeuge': '🛠️',
+            'Steuerungen': '🎛️', 'Arbeitszeit': '⏱️',
+            'Ersatzteile': '⚙️',
         };
-        const matCatIcon = c => MAT_CAT_ICONS[c] || '📦';
+        const matCatIcon = c => {
+            if (typeof MAT_CAT_META !== 'undefined' && MAT_CAT_META[c]) return MAT_CAT_META[c].icon;
+            return MAT_CAT_ICONS[c] || '📦';
+        };
 
         // Einheiten-Preis: Rollen-/Bundware (z.B. Kupferrohr 50 m Bund) wird
         // bei Verwendung in Metern automatisch auf den METERPREIS umgerechnet.
@@ -1032,7 +1050,7 @@
             (async () => {
                 const materials = await db.getAll('materials');
                 const F = listFilters.materials;
-                if (F.level === undefined) Object.assign(F, { level: 'cats', cat: '', hersteller: '', splitType: '', serie: '', fav: false, stockF: '' });
+                if (F.level === undefined) Object.assign(F, { level: 'cats', cat: '', hersteller: '', splitType: '', leistung: '', serie: '', fav: false, stockF: '' });
                 const q = (F.q || '').toLowerCase().trim();
 
                 // --------- Basis-Filter (Favoriten / Bestand) ---------
@@ -1053,7 +1071,7 @@
                     if (F.cat && (m.category || 'Ohne Kategorie') !== F.cat) return false;
                     if (F.hersteller && (m.manufacturer || 'Ohne Hersteller') !== F.hersteller) return false;
                     if (F.serie && (m.series || 'Ohne Serie') !== F.serie) return false;
-                    // splitType-Filter: Single Split / Multi Split / Zubehör
+                    // splitType-Filter
                     if (F.splitType) {
                         const b = m.bauart || '';
                         const isSingle = b.includes('Single-Split') || b === 'Klimaset' || b === 'Truhengerät';
@@ -1062,6 +1080,8 @@
                         if (F.splitType === 'Multi Split'  && !isMulti)  return false;
                         if (F.splitType === 'Zubehör' && (isSingle || isMulti)) return false;
                     }
+                    // Leistungs-Filter (kW) für Single-Split
+                    if (F.leistung && (m.size || '') !== F.leistung) return false;
                     return true;
                 });
 
@@ -1075,8 +1095,9 @@
                     const isLastSeg = i === catSegs.length - 1;
                     crumbs.push(`<button class="crumb ${isLastSeg && level === 'hersteller' ? 'active' : ''}" onclick="app.matOpenCatPath('${escapeHtml(partial).replace(/'/g, "\\'")}')" ondragover="event.preventDefault();" ondrop="app.matDropOnCrumb(event, '${escapeHtml(partial).replace(/'/g, "\\'")}')">${i === 0 ? matCatIcon(partial) + ' ' : ''}${escapeHtml(seg)}</button>`);
                 });
-                if (F.hersteller) crumbs.push(`<button class="crumb ${level === 'splittype' ? 'active' : (level === 'serien' && !F.splitType ? 'active' : '')}" onclick="app.matNav('splittype')">${escapeHtml(F.hersteller)}</button>`);
-                if (F.splitType) crumbs.push(`<button class="crumb ${level === 'serien' ? 'active' : ''}" onclick="app.matNav('serien')">${escapeHtml(F.splitType)}</button>`);
+                if (F.hersteller) crumbs.push(`<button class="crumb ${level === 'splittype' ? 'active' : ''}" onclick="app.matNav('splittype')">${escapeHtml(F.hersteller)}</button>`);
+                if (F.splitType) crumbs.push(`<button class="crumb ${level === 'leistung' ? 'active' : (level === 'serien' && !F.leistung ? 'active' : '')}" onclick="app.matNav('leistung')">${escapeHtml(F.splitType)}</button>`);
+                if (F.leistung) crumbs.push(`<button class="crumb ${level === 'serien' ? 'active' : ''}" onclick="app.matNav('serien')">${escapeHtml(F.leistung)} kW</button>`);
                 if (F.serie) crumbs.push(`<button class="crumb active">${escapeHtml(F.serie)}</button>`);
 
                 // --------- Ebenen-Inhalt ---------
@@ -1168,6 +1189,28 @@
                             <div class="mat-card-arrow">›</div>
                         </div>`;
                     }).join('')}</div>`;
+                } else if (level === 'leistung') {
+                    // Leistungs-Ebene: kW-Gruppen als Kacheln (Single-Split)
+                    const sizes = [...new Set(inScope.map(m => m.size || '').filter(Boolean))]
+                        .sort((a, b) => (parseFloat(String(a).replace(',', '.')) || 0) - (parseFloat(String(b).replace(',', '.')) || 0));
+                    const isSingle = F.splitType === 'Single Split';
+                    if (sizes.length === 0) { body = '<div class="empty-state">Keine Geräte gefunden.</div>'; }
+                    else body = `<div class="mat-grid">${sizes.map(sz => {
+                        const inThisSize = inScope.filter(m => (m.size || '') === sz);
+                        const hasIG = inThisSize.some(m => m.bauart?.includes('Innen'));
+                        const hasAG = inThisSize.some(m => m.bauart?.includes('Außen'));
+                        const pairOk = isSingle && hasIG && hasAG;
+                        const pairHint = isSingle ? (pairOk ? '✅ Paar komplett' : (hasIG && !hasAG ? '⚠️ AG fehlt' : !hasIG && hasAG ? '⚠️ IG fehlt' : '')) : '';
+                        const avail = inThisSize.filter(m => Number(m.stock) > 0).length;
+                        return `<div class="mat-card mat-cat" onclick="app.matOpenLeistung('${escapeHtml(sz).replace(/'/g, "\\'")}')">
+                            <div class="mat-cat-ico" style="font-size:26px;">⚡</div>
+                            <div class="mat-card-body">
+                                <div class="mat-card-title">${escapeHtml(sz)} kW</div>
+                                <div class="mat-card-sub">${inThisSize.length} Gerät${inThisSize.length!==1?'e':''}${avail ? ' · ' + avail + ' auf Lager' : ''}${pairHint ? ' · ' + pairHint : ''}</div>
+                            </div>
+                            <div class="mat-card-arrow">›</div>
+                        </div>`;
+                    }).join('')}</div>`;
                 } else if (level === 'serien') {
                     const groups = {};
                     for (const m of inScope) {
@@ -1175,7 +1218,7 @@
                         (groups[s] = groups[s] || []).push(m);
                     }
                     const ss = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
-                    if (ss.length <= 1) { F.serie = ''; F.level = 'produkte'; renderMaterials(); return; }
+                    if (ss.length <= 1) { F.serie = ss[0] || ''; F.level = 'produkte'; renderMaterials(); return; }
                     body = `<div class="mat-grid">${ss.map(s => {
                         const list = groups[s];
                         const kws = list.map(m => parseFloat(String(m.size).replace(',', '.'))).filter(n => !isNaN(n));
@@ -1596,6 +1639,10 @@
                         <div class="nav-card" onclick="app.navigate('backup')">
                             <div class="card-icon amber">💾</div>
                             <div><div class="card-title">Backup &amp; Export</div><div class="card-subtitle">Daten sichern / importieren</div></div>
+                        </div>
+                        <div class="nav-card" onclick="app.migrateMaterialCategories()">
+                            <div class="card-icon" style="background:rgba(16,185,129,0.12);color:#059669;">🗂️</div>
+                            <div><div class="card-title">Materialien neu zuordnen</div><div class="card-subtitle">Kategorien automatisch bereinigen</div></div>
                         </div>
                         <div class="nav-card" onclick="app.resetAllData()">
                             <div class="card-icon red">⚠️</div>

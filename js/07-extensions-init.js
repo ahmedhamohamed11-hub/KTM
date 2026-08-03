@@ -1081,6 +1081,51 @@
                 });
             },
 
+            // Kategorien aller Materialien automatisch auf neue Struktur migrieren
+            async migrateMaterialCategories() {
+                const mats = await db.getAll('materials');
+                const changes = mats.map(m => {
+                    const neu = (typeof autoCategory === 'function') ? autoCategory(m) : m.category;
+                    return { m, old: m.category || '(leer)', neu, changed: neu !== (m.category || '') };
+                }).filter(c => c.changed);
+
+                if (changes.length === 0) {
+                    showToast('Alle Materialien sind bereits korrekt zugeordnet. ✅', 'success');
+                    return;
+                }
+
+                // Vorschau gruppiert nach neuer Kategorie
+                const byNew = {};
+                changes.forEach(c => { (byNew[c.neu] = byNew[c.neu] || []).push(c); });
+                const previewRows = Object.entries(byNew).sort(([a],[b])=>a.localeCompare(b,'de')).map(([neu, items]) =>
+                    `<div style="margin-bottom:10px;">
+                        <div style="font-weight:700;color:var(--accent);margin-bottom:4px;">📁 ${escapeHtml(neu)} (${items.length})</div>
+                        ${items.slice(0,5).map(c=>`<div style="font-size:12px;padding:2px 0;display:flex;gap:8px;"><span style="color:var(--text-muted);width:160px;flex-shrink:0;">${escapeHtml(c.old)}</span><span>→</span><span>${escapeHtml(c.m.name||'').slice(0,40)}</span></div>`).join('')}
+                        ${items.length > 5 ? `<div style="font-size:11px;color:var(--text-muted);padding:2px 0;">... und ${items.length-5} weitere</div>` : ''}
+                    </div>`
+                ).join('');
+
+                showModal('🗂️ Materialien neu zuordnen', `
+                    <div style="font-size:13.5px;margin-bottom:14px;">
+                        <strong>${changes.length} von ${mats.length}</strong> Materialien werden in neue Kategorien verschoben:
+                    </div>
+                    <div style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;background:var(--bg-secondary);">
+                        ${previewRows}
+                    </div>
+                    <div style="margin-top:12px;font-size:12.5px;color:var(--text-muted);">
+                        Die Migration kann nicht automatisch rückgängig gemacht werden. Backup empfohlen.
+                    </div>
+                `, async () => {
+                    let n = 0;
+                    for (const { m, neu } of changes) {
+                        await db.put('materials', { ...m, category: neu });
+                        n++;
+                    }
+                    showToast(`✅ ${n} Materialien erfolgreich neu zugeordnet.`, 'success');
+                    renderMaterials();
+                }, null, { okText: 'Jetzt migrieren' });
+            },
+
             async openCategoryManageModal(cat) {
                 const materials = await db.getAll('materials');
                 // Präfix-Treffer statt nur exaktem Treffer: erfasst bei einem Ordner MIT
@@ -1271,9 +1316,10 @@
             // ---------- Material-Katalog: Navigation ----------
             matNav(level) {
                 const F = listFilters.materials;
-                if (level === 'cats')      { F.cat = ''; F.hersteller = ''; F.splitType = ''; F.serie = ''; }
-                if (level === 'hersteller'){ F.hersteller = ''; F.splitType = ''; F.serie = ''; }
-                if (level === 'splittype') { F.splitType = ''; F.serie = ''; }
+                if (level === 'cats')      { F.cat = ''; F.hersteller = ''; F.splitType = ''; F.leistung = ''; F.serie = ''; }
+                if (level === 'hersteller'){ F.hersteller = ''; F.splitType = ''; F.leistung = ''; F.serie = ''; }
+                if (level === 'splittype') { F.splitType = ''; F.leistung = ''; F.serie = ''; }
+                if (level === 'leistung')  { F.leistung = ''; F.serie = ''; }
                 if (level === 'serien')    { F.serie = ''; }
                 F.level = level; F.q = ''; F.selectMode = false; F.selected = new Set();
                 renderMaterials();
@@ -1293,8 +1339,15 @@
                 }
                 F.cat = path; F.level = 'hersteller'; renderMaterials();
             },
-            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.splitType = ''; F.serie = ''; F.level = 'splittype'; F.selectMode = false; F.selected = new Set(); renderMaterials(); },
-            matOpenSplitType(t) { const F = listFilters.materials; F.splitType = t; F.serie = ''; F.level = 'serien'; renderMaterials(); },
+            matOpenHersteller(h) { const F = listFilters.materials; F.hersteller = h; F.splitType = ''; F.leistung = ''; F.serie = ''; F.level = 'splittype'; F.selectMode = false; F.selected = new Set(); renderMaterials(); },
+            matOpenSplitType(t) {
+                const F = listFilters.materials;
+                F.splitType = t; F.leistung = ''; F.serie = '';
+                // Single Split → Leistungs-Ebene (kW-Gruppen), Multi Split → direkt Serien
+                F.level = t === 'Single Split' ? 'leistung' : 'serien';
+                renderMaterials();
+            },
+            matOpenLeistung(sz) { const F = listFilters.materials; F.leistung = sz; F.serie = ''; F.level = 'produkte'; renderMaterials(); },
             matOpenSerie(s) { const F = listFilters.materials; F.serie = s === 'Ohne Serie' ? '' : s; F.level = 'produkte'; renderMaterials(); },
 
             // ---------- Material-Katalog: Mehrfachauswahl ----------
@@ -5015,7 +5068,7 @@
     // Klimageräte (Kategorie Klimaanlagen/Klimageräte/Innengeräte/Außengeräte)
     // → immer 20% MwSt, unabhängig vom Angebots-Toggle.
     // Alles andere → MwSt-Rate aus dem Angebot-Toggle (0 wenn deaktiviert).
-    const KLIMA_CATS = new Set(['Klimaanlagen','Klimageräte','Innengeräte','Außengeräte','Multisplit-Systeme']);
+    const KLIMA_CATS = new Set(['Klimageräte','Klimaanlagen','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
     function vatForPos(it) {
         const cat = (it.category || '').trim();
         if (KLIMA_CATS.has(cat)) return 0.20;   // Klimageräte: immer 20%

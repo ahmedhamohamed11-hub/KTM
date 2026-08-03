@@ -1053,7 +1053,70 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             await db.put('settings', { key, value });
         }
 
-        const MATERIAL_CATEGORIES = ['Klimageräte','Außengeräte','Multisplit','Wärmepumpen','Kupferrohre','Isolierung','Kabel','Kondensat','Elektromaterial','Befestigung','Arbeitszeit','Anfahrt','Zubehör','Sonstiges'];
+        // Hauptkategorien für Kälte- und Klimatechnik (alphabetisch, mit Icon)
+        // Klimageräte sind speziell: Navigation geht Hersteller → Single/Multi → kW → Paar
+        const MATERIAL_CATEGORIES = [
+            'Arbeitsleistung',
+            'Befestigung & Montage',
+            'Elektroinstallation',
+            'Kabelkanäle',
+            'Kältemittel',
+            'Klimageräte',
+            'Kondensat',
+            'Kupfer & Rohrsysteme',
+            'Steuerung & Regelung',
+            'Zubehör',
+        ];
+        const MAT_CAT_META = {
+            'Arbeitsleistung':      { icon: '⏱️', vat: false },
+            'Befestigung & Montage':{ icon: '🔩', vat: false },
+            'Elektroinstallation':  { icon: '⚡', vat: false },
+            'Kabelkanäle':          { icon: '📦', vat: false },
+            'Kältemittel':          { icon: '❄️', vat: false },
+            'Klimageräte':          { icon: '🌡️', vat: true  },
+            'Kondensat':            { icon: '💧', vat: false },
+            'Kupfer & Rohrsysteme': { icon: '🔧', vat: false },
+            'Steuerung & Regelung': { icon: '🎛️', vat: false },
+            'Zubehör':              { icon: '🗂️', vat: false },
+        };
+        window.MAT_CAT_META = MAT_CAT_META;
+
+        // Automatisches Kategorie-Mapping (für Migration + neues Material-Anlegen)
+        const KLIMA_BAUARTS = new Set([
+            'Innengerät Single-Split','Außengerät Single-Split',
+            'Innengerät Multi-Split','Außengerät Multi-Split',
+            'Truhengerät','Klimaset'
+        ]);
+        const KLIMA_CATS_OLD = new Set([
+            'Klimaanlagen','Klimageräte','Innengeräte','Außengeräte',
+            'Multisplit-Systeme','Multi Split','VRF-Systeme'
+        ]);
+        function autoCategory(m) {
+            // 1. Bauart-Erkennung (Klimageräte)
+            if (KLIMA_BAUARTS.has(m.bauart || '')) return 'Klimageräte';
+            // 2. Alte Klimakategorie
+            if (KLIMA_CATS_OLD.has(m.category || '')) return 'Klimageräte';
+            // 3. Keyword-Matching auf Name
+            const n = (m.name || '').toLowerCase();
+            const c = (m.category || '').toLowerCase();
+            if (/kabel(?!kanal)|leitung|nym|h05|h07|kommunikationskabel|ls-schalter|fi-schalter|relais|schütz|klemm|sicherung/.test(n)) return 'Elektroinstallation';
+            if (/kabelkanal|formteil|abdeckung/.test(n) || c === 'kabelkanäle') return 'Kabelkanäle';
+            if (/kupferrohr|rohr|fitting|bördelwerkzeug|lötmaterial|isolier|armaflex|kautschuk/.test(n) || /kupfer|isolierung/.test(c)) return 'Kupfer & Rohrsysteme';
+            if (/kältemittel|kälteöl|lecksuch|stickstoff|r32|r410|r454|r744|co2/.test(n) || c === 'kältemittel') return 'Kältemittel';
+            if (/wandhalter|bodenkonsole|big foot|schwingung|schraube|dübel|schelle|kabelbinder|gewindestange|konsole/.test(n) || /befestigung|montagemat/.test(c)) return 'Befestigung & Montage';
+            if (/kondensatschlauch|kondensatpumpe|kondensatwanne/.test(n) || c === 'kondensat') return 'Kondensat';
+            if (/steuerung|thermostat|regler|sensor|fernbedienung|knx|modbus|wlan.*klima/.test(n) || c === 'steuerungen') return 'Steuerung & Regelung';
+            if (/montage|inbetriebnahme|wartung|kernbohrung|elektroanschluss|anfahrt|arbeitsstunde/.test(n) || /arbeitszeit|anfahrt/.test(c)) return 'Arbeitsleistung';
+            if (c === 'arbeitsleistung' || c === 'arbeitszeit') return 'Arbeitsleistung';
+            if (c === 'elektroinstallation') return 'Elektroinstallation';
+            if (c === 'kupfer & rohrsysteme') return 'Kupfer & Rohrsysteme';
+            if (c === 'befestigung & montage' || c === 'befestigung') return 'Befestigung & Montage';
+            if (c === 'steuerung & regelung') return 'Steuerung & Regelung';
+            // Bekannte neue Kategorien direkt durchreichen
+            if (MATERIAL_CATEGORIES.includes(m.category || '')) return m.category;
+            return 'Zubehör';
+        }
+        window.autoCategory = autoCategory;
 const OFFER_DEFAULTS = {
     autoNumber: true,
     lastNumber: 0,
