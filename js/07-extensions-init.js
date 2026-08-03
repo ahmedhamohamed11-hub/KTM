@@ -5011,21 +5011,52 @@
         { wide: true }
     );
 
+    // MwSt-Rate pro Position:
+    // Klimageräte (Kategorie Klimaanlagen/Klimageräte/Innengeräte/Außengeräte)
+    // → immer 20% MwSt, unabhängig vom Angebots-Toggle.
+    // Alles andere → MwSt-Rate aus dem Angebot-Toggle (0 wenn deaktiviert).
+    const KLIMA_CATS = new Set(['Klimaanlagen','Klimageräte','Innengeräte','Außengeräte','Multisplit-Systeme']);
+    function vatForPos(it) {
+        const cat = (it.category || '').trim();
+        if (KLIMA_CATS.has(cat)) return 0.20;   // Klimageräte: immer 20%
+        return offerSettings.vatEnabled ? (offerSettings.vatRate || 0) : 0;
+    }
+
     function computeOfferTotals() {
-        // Bruttosumme der Positionen OHNE jeden Rabatt (nur zur Info)
-        const grossSubtotal = selected.reduce((s, it) => s + it.price * it.quantity, 0);
-        // Nettobetrag = Summe der Positionen NACH Positions-Rabatt.
-        // Das ist genau die Summe der "Gesamt"-Spalte im PDF -> keine Widersprüche.
-        const subtotal = selected.reduce((s, it) => s + it.price * it.quantity * (1 - (Number(it.discount) || 0) / 100), 0);
+        // Rechenreihenfolge: Rabatt auf Netto, dann MwSt pro Position drauf.
+        // Klimageraete: immer 20% MwSt | Rest: nach offerSettings-Toggle.
+        // Beispiel Netto 3.000, Rabatt 15%, Klima 20%:
+        //   3.000 - 450 = 2.550 Netto -> + 510 MwSt = 3.060 Brutto
+
+        // Schritt 1: Netto pro Position nach Positions-Rabatt
+        const netPerPos = selected.map(it =>
+            (Number(it.price) || 0) * (Number(it.quantity) || 0) * (1 - (Number(it.discount) || 0) / 100)
+        );
+        const grossSubtotal = selected.reduce((s, it) =>
+            s + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
+        const subtotal = netPerPos.reduce((s, v) => s + v, 0);
         const posDiscountAmount = grossSubtotal - subtotal;
-        // danach optionaler Gesamt-Rabatt auf den Nettobetrag
+
+        // Schritt 2: Gesamt-Rabatt auf Netto
         const discountRateVal = offerSettings.discountEnabled ? (offerSettings.discountRate / 100) : 0;
         const globalDiscountAmount = subtotal * discountRateVal;
         const netAfterDiscount = subtotal - globalDiscountAmount;
-        const discountAmount = globalDiscountAmount;   // der ausgewiesene "Rabatt (x%)" bezieht sich auf den Nettobetrag
-        const vatAmount = offerSettings.vatEnabled ? netAfterDiscount * offerSettings.vatRate : 0;
+
+        // Schritt 3: MwSt pro Position (nach anteiligem Gesamt-Rabatt)
+        let vatAmount = 0;
+        selected.forEach((it, i) => {
+            const netLine = netPerPos[i] * (1 - discountRateVal);
+            vatAmount += netLine * vatForPos(it);
+        });
+
+        // Schritt 4: Brutto-Endbetrag
         const total = netAfterDiscount + vatAmount;
-        return { grossSubtotal, subtotal, posDiscountAmount, discountRate: discountRateVal, globalDiscountAmount, discountAmount, netAfterDiscount, vatAmount, total };
+
+        return {
+            grossSubtotal, subtotal, posDiscountAmount,
+            discountRate: discountRateVal, globalDiscountAmount, discountAmount: globalDiscountAmount,
+            netAfterDiscount, vatAmount, total
+        };
     }
 
     function updateSettingsFromUI() {
@@ -5223,21 +5254,37 @@
         updateSettingsFromUI();
         const calc = computeOfferTotals();
         let html = '';
+
+        // Nettobetrag (Listenpreise ohne MwSt)
         if (calc.posDiscountAmount > 0.001) {
-            // Es gibt Positions-Rabatte -> transparent aufschlüsseln
-            html += `<div class="offer-summary-row"><span>Zwischensumme</span><span>${formatCurrency(calc.grossSubtotal)}</span></div>`;
+            html += `<div class="offer-summary-row"><span>Listenpreis (netto)</span><span>${formatCurrency(calc.grossSubtotal)}</span></div>`;
             html += `<div class="offer-summary-row"><span>Positions-Rabatte</span><span>- ${formatCurrency(calc.posDiscountAmount)}</span></div>`;
-            html += `<div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>`;
-        } else {
-            html += `<div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>`;
         }
-        if (offerSettings.discountEnabled && calc.globalDiscountAmount > 0) {
-            html += `<div class="offer-summary-row"><span>Rabatt (${(calc.discountRate*100).toFixed(1)}%)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
+        html += `<div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>`;
+
+        // Gesamt-Rabatt auf Netto
+        if (offerSettings.discountEnabled && calc.globalDiscountAmount > 0.005) {
+            html += `<div class="offer-summary-row" style="color:var(--success);"><span>Rabatt (${(calc.discountRate*100).toFixed(1).replace('.',',')}%)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
+            html += `<div class="offer-summary-row"><span>Netto nach Rabatt</span><span>${formatCurrency(calc.netAfterDiscount)}</span></div>`;
         }
-        if (offerSettings.vatEnabled) {
-            html += `<div class="offer-summary-row"><span>MwSt. (${(offerSettings.vatRate*100).toFixed(0)}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
+
+        // MwSt
+        if (calc.vatAmount > 0.005) {
+            const hasKlima  = selected.some(it => ['Klimaanlagen','Klimageraete','Klimageräte','Innengeraete','Innengeräte','Außengeräte','Aussengeraete','Multisplit-Systeme'].includes((it.category||'').trim()));
+            const hasOther  = offerSettings.vatEnabled && selected.some(it => !['Klimaanlagen','Klimageraete','Klimageräte','Innengeraete','Innengeräte','Außengeräte','Aussengeraete','Multisplit-Systeme'].includes((it.category||'').trim()));
+            const vatPct = (offerSettings.vatRate * 100).toFixed(0);
+            if (hasKlima && hasOther) {
+                html += `<div class="offer-summary-row"><span>+ MwSt (Klimageraete 20% / Rest ${vatPct}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
+            } else if (hasKlima) {
+                html += `<div class="offer-summary-row"><span>+ MwSt 20% (Klimageraete)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
+            } else {
+                html += `<div class="offer-summary-row"><span>+ MwSt (${vatPct}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
+            }
         }
-        html += `<div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>`;
+
+        // Brutto-Endbetrag
+        html += `<div class="offer-summary-row total"><span>Gesamtbetrag (brutto)</span><span>${formatCurrency(calc.total)}</span></div>`;
+
         modal.querySelector('#offerSummaryBox').innerHTML = html;
         renderInternalCalc();
     }

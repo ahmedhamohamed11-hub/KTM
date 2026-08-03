@@ -884,23 +884,42 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             if (typeof id === 'number') return String(id);
             return "'" + String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
         }
-        // Rechnet ein Angebot IMMER frisch aus den Positionen durch – unabhängig
-        // von evtl. veralteten gespeicherten Summen (behebt falsche Nettobeträge
-        // in alten Angeboten und Varianten).
+        // Rechnet ein Angebot IMMER frisch aus den Positionen durch.
+        // Rechenreihenfolge: Rabatt auf Netto, dann MwSt pro Position.
+        // Klimageraete (Klimaanlagen, Klimageraete, Innen/Aussengeraete): immer 20% MwSt.
+        // Alle anderen Positionen: MwSt-Rate aus dem Angebot (vatRate), wenn vatEnabled.
         function recomputeOffer(offer) {
             const positions = offer.positions || [];
-            const gross = positions.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
-            const net = positions.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0) * (1 - (Number(p.discount) || 0) / 100), 0);
+            const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
+            const vatBase = offer.vatEnabled !== false ? (Number(offer.vatRate) || 0.20) : 0;
+
+            // Netto pro Position nach Positions-Rabatt
+            const netPerPos = positions.map(p =>
+                (Number(p.price) || 0) * (Number(p.quantity) || 0) * (1 - (Number(p.discount) || 0) / 100)
+            );
+            const gross = positions.reduce((s, p) =>
+                s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
+            const net = netPerPos.reduce((s, v) => s + v, 0);
             const posDiscount = gross - net;
-            // Rabatt-Rate robust normalisieren (mal als 0,15 mal als 15 gespeichert)
+
+            // Gesamt-Rabatt auf Netto
             let rate = Number(offer.discountRate) || 0;
             if (rate > 1) rate = rate / 100;
             const discountEnabled = !!offer.discountEnabled && rate > 0;
             const globalDiscount = discountEnabled ? net * rate : 0;
             const netAfter = net - globalDiscount;
-            const vatRate = Number(offer.vatRate) || 0;
-            const vatAmount = offer.vatEnabled ? netAfter * vatRate : 0;
+
+            // MwSt pro Position (nach anteiligem Rabatt)
+            let vatAmount = 0;
+            positions.forEach((p, i) => {
+                const netLine = netPerPos[i] * (1 - (discountEnabled ? rate : 0));
+                const cat = (p.category || '').trim();
+                const posVat = KLIMA.has(cat) ? 0.20 : vatBase;
+                vatAmount += netLine * posVat;
+            });
+
             const total = netAfter + vatAmount;
+            const vatRate = vatBase;
             return { gross, net, posDiscount, rate, discountEnabled, globalDiscount, netAfter, vatRate, vatAmount, total };
         }
 
