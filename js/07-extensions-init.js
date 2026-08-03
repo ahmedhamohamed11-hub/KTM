@@ -5253,42 +5253,90 @@
     function renderSummary() {
         updateSettingsFromUI();
         const calc = computeOfferTotals();
+        const discRate = calc.discountRate;   // z.B. 0.15
+
+        // Klimageräte-Kategorien (immer 20% MwSt)
+        const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete',
+            'Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
+        const isKlima = it => KLIMA.has((it.category || '').trim());
+
+        // Pro Position: Netto, Rabattanteil, Netto-nach-Rabatt, MwSt, Brutto
+        const posDetails = selected.map(it => {
+            const qty  = Number(it.quantity) || 0;
+            const disc = Number(it.discount)  || 0;
+            const netto      = (Number(it.price) || 0) * qty * (1 - disc / 100);
+            const nettoAfter = netto * (1 - discRate);
+            const vat        = isKlima(it) ? nettoAfter * 0.20
+                             : (offerSettings.vatEnabled ? nettoAfter * (offerSettings.vatRate || 0) : 0);
+            return { ...it, qty, disc, netto, nettoAfter, vat, brutto: nettoAfter + vat, klima: isKlima(it) };
+        });
+
+        // Summen Klimageräte
+        const klimaPos   = posDetails.filter(p => p.klima);
+        const klimaNetto = klimaPos.reduce((s, p) => s + p.nettoAfter, 0);
+        const klimaVat   = klimaPos.reduce((s, p) => s + p.vat, 0);
+
         let html = '';
 
-        // Nettobetrag (Listenpreise ohne MwSt)
+        // ── Nettobetrag ──────────────────────────────────────────────────────
         if (calc.posDiscountAmount > 0.001) {
             html += `<div class="offer-summary-row"><span>Listenpreis (netto)</span><span>${formatCurrency(calc.grossSubtotal)}</span></div>`;
-            html += `<div class="offer-summary-row"><span>Positions-Rabatte</span><span>- ${formatCurrency(calc.posDiscountAmount)}</span></div>`;
+            html += `<div class="offer-summary-row sm"><span>− Positions-Rabatte</span><span>- ${formatCurrency(calc.posDiscountAmount)}</span></div>`;
         }
         html += `<div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>`;
 
-        // Gesamt-Rabatt auf Netto
+        // ── Gesamt-Rabatt ─────────────────────────────────────────────────────
         if (offerSettings.discountEnabled && calc.globalDiscountAmount > 0.005) {
-            html += `<div class="offer-summary-row" style="color:var(--success);"><span>Rabatt (${(calc.discountRate*100).toFixed(1).replace('.',',')}%)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
+            const pct = (discRate * 100).toFixed(1).replace('.', ',');
+            html += `<div class="offer-summary-row discount"><span>− Rabatt (${pct} %)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
             html += `<div class="offer-summary-row"><span>Netto nach Rabatt</span><span>${formatCurrency(calc.netAfterDiscount)}</span></div>`;
         }
 
-        // MwSt
-        if (calc.vatAmount > 0.005) {
-            const hasKlima  = selected.some(it => ['Klimaanlagen','Klimageraete','Klimageräte','Innengeraete','Innengeräte','Außengeräte','Aussengeraete','Multisplit-Systeme'].includes((it.category||'').trim()));
-            const hasOther  = offerSettings.vatEnabled && selected.some(it => !['Klimaanlagen','Klimageraete','Klimageräte','Innengeraete','Innengeräte','Außengeräte','Aussengeraete','Multisplit-Systeme'].includes((it.category||'').trim()));
-            const vatPct = (offerSettings.vatRate * 100).toFixed(0);
-            if (hasKlima && hasOther) {
-                html += `<div class="offer-summary-row"><span>+ MwSt (Klimageraete 20% / Rest ${vatPct}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
-            } else if (hasKlima) {
-                html += `<div class="offer-summary-row"><span>+ MwSt 20% (Klimageraete)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
-            } else {
-                html += `<div class="offer-summary-row"><span>+ MwSt (${vatPct}%)</span><span>${formatCurrency(calc.vatAmount)}</span></div>`;
+        // ── MwSt-Block: nur wenn Klimageräte vorhanden ────────────────────────
+        if (klimaNetto > 0.005) {
+            html += `<div class="offer-summary-row sm muted"><span>Davon Klimageräte (Netto nach Rabatt)</span><span>${formatCurrency(klimaNetto)}</span></div>`;
+            html += `<div class="offer-summary-row"><span>+ 20 % MwSt. auf Klimageräte</span><span>${formatCurrency(klimaVat)}</span></div>`;
+
+            // Detailtabelle Klimageräte
+            if (klimaPos.length > 0) {
+                html += `<div class="offer-vat-table-wrap">
+                    <table class="offer-vat-table">
+                        <thead><tr>
+                            <th>Klimagerät</th>
+                            <th class="num">Netto</th>
+                            <th class="num">Rabatt</th>
+                            <th class="num">Netto n. R.</th>
+                            <th class="num">20% MwSt.</th>
+                            <th class="num">Brutto</th>
+                        </tr></thead>
+                        <tbody>${klimaPos.map(p => `<tr>
+                            <td>${escapeHtml(p.name||'')}<div class="pos-meta-sm">${p.qty} ${escapeHtml(p.unit||'Stk')}</div></td>
+                            <td class="num">${formatCurrency(p.netto)}</td>
+                            <td class="num">${discRate > 0 ? '- ' + (discRate*100).toFixed(1).replace('.',',') + ' %' : '—'}</td>
+                            <td class="num">${formatCurrency(p.nettoAfter)}</td>
+                            <td class="num">${formatCurrency(p.vat)}</td>
+                            <td class="num fw">${formatCurrency(p.brutto)}</td>
+                        </tr>`).join('')}</tbody>
+                    </table>
+                </div>`;
             }
         }
 
-        // Brutto-Endbetrag
-        html += `<div class="offer-summary-row total"><span>Gesamtbetrag (brutto)</span><span>${formatCurrency(calc.total)}</span></div>`;
+        // Sonstige MwSt (falls Toggle an und Nicht-Klimageräte)
+        if (offerSettings.vatEnabled) {
+            const otherVat = posDetails.filter(p => !p.klima).reduce((s, p) => s + p.vat, 0);
+            if (otherVat > 0.005) {
+                const pct = ((offerSettings.vatRate || 0) * 100).toFixed(0);
+                html += `<div class="offer-summary-row"><span>+ ${pct} % MwSt. (Sonstige)</span><span>${formatCurrency(otherVat)}</span></div>`;
+            }
+        }
+
+        // ── Gesamtbetrag ──────────────────────────────────────────────────────
+        html += `<div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>`;
 
         modal.querySelector('#offerSummaryBox').innerHTML = html;
         renderInternalCalc();
     }
-
     // Ist eine Position Arbeitszeit/Anfahrt (zählt zu Arbeitskosten, nicht Material)?
     function isLabor(it) {
         const c = (it.category || '').toLowerCase();
