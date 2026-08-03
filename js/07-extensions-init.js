@@ -3153,6 +3153,44 @@
                 try { this.setupNavigation(); } catch (e) { console.warn(e); }
                 try { this.setupSearch(); } catch (e) { console.warn(e); }
                 try { this.setupTheme(); } catch (e) { console.warn(e); }
+
+                // Einmalige Kategorien-Migration (läuft nur beim ersten Start nach v79)
+                try {
+                    const migDone = await getSetting('catMigrationV79', '');
+                    if (!migDone) {
+                        // autoCategory inline (aus 01-core-db-sync.js, timing-sicher)
+                        const _KLIMA_B = new Set(['Innengerät Single-Split','Außengerät Single-Split','Innengerät Multi-Split','Außengerät Multi-Split','Truhengerät','Klimaset']);
+                        const _KLIMA_C = new Set(['Klimaanlagen','Klimageräte','Innengeräte','Außengeräte','Multisplit-Systeme','Multi Split','VRF-Systeme']);
+                        const _NEW_C = new Set(['Arbeitsleistung','Befestigung & Montage','Elektroinstallation','Kabelkanäle','Kältemittel','Klimageräte','Kondensat','Kupfer & Rohrsysteme','Steuerung & Regelung','Zubehör']);
+                        const _autoCat = m => {
+                            if (_KLIMA_B.has(m.bauart || '')) return 'Klimageräte';
+                            if (_KLIMA_C.has(m.category || '')) return 'Klimageräte';
+                            const n = (m.name || '').toLowerCase();
+                            const c = (m.category || '').toLowerCase();
+                            if (/kabel(?!kanal)|leitung|nym|h05|h07|kommunikationskabel|ls-schalter|fi-schalter|relais|sch[üu]tz|klemm|sicherung/.test(n)) return 'Elektroinstallation';
+                            if (/kabelkanal|formteil|abdeckung/.test(n) || c === 'kabelkan') return 'Kabelkanäle';
+                            if (/kupferrohr|rohr|fitting|b[öo]rdelwerkzeug|l[öo]tmaterial|isolier|armaflex|kautschuk/.test(n) || /kupfer|isolier/.test(c)) return 'Kupfer & Rohrsysteme';
+                            if (/k[äa]ltemittel|k[äa]lte[öo]l|lecksuch|stickstoff|r32|r410|r454|r744|co2/.test(n) || c.includes('k\u00e4ltemittel')) return 'Kältemittel';
+                            if (/wandhalter|bodenkonsole|big foot|schwingung|schraube|d[üu]bel|schelle|kabelbinder|gewindestange|konsole/.test(n) || /befestigung|montagemat/.test(c)) return 'Befestigung & Montage';
+                            if (/kondensatschlauch|kondensatpumpe|kondensatwanne/.test(n) || c === 'kondensat') return 'Kondensat';
+                            if (/steuerung|thermostat|regler|sensor|fernbedienung|knx|modbus/.test(n) || c === 'steuerungen') return 'Steuerung & Regelung';
+                            if (/montage|inbetriebnahme|wartung|kernbohrung|elektroanschluss|anfahrt|arbeitsstunde/.test(n) || /arbeitszeit|anfahrt/.test(c)) return 'Arbeitsleistung';
+                            if (_NEW_C.has(m.category || '')) return m.category;
+                            return 'Zubehör';
+                        };
+                        const mats = await db.getAll('materials');
+                        let n = 0;
+                        for (const m of mats) {
+                            const neu = _autoCat(m);
+                            if (neu && neu !== (m.category || '')) {
+                                await db.put('materials', { ...m, category: neu });
+                                n++;
+                            }
+                        }
+                        await setSetting('catMigrationV79', '1');
+                        if (n > 0) console.log(`Kategorien-Migration v79: ${n} Materialien automatisch neu zugeordnet.`);
+                    }
+                } catch (e) { console.warn('Kategorien-Migration fehlgeschlagen (nicht kritisch):', e); }
                 // QR-Code einer Anlage gescannt? -> direkt öffnen
                 // Splash SOFORT ausblenden - egal was danach kommt, der Nutzer
                 // sieht die App und bleibt nicht im Ladebildschirm hängen.
