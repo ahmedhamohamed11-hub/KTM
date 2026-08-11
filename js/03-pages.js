@@ -213,46 +213,151 @@
                 // ── DIREKT-MODUS ─────────────────────────────────────────
                 if (S.calcMode !== 'kuehlast') {
                     const D = await calcDirectCompute();
-                    const kwOf = v => parseFloat(String(v||'').replace(',','.')) || 0;
+                    // Falls gewählte Leistung nicht mehr verfügbar → erste nehmen
+                    if (D.availKw.length > 0 && !D.availKw.includes(S.directKw)) {
+                        S.directKw = D.availKw[0];
+                        const D2 = await calcDirectCompute();
+                        Object.assign(D, D2);
+                    }
+                    // Editierbare Pair-Preise aus State (oder Defaults aus D)
+                    if (!S.directPrices) S.directPrices = {};
+                    if (!S.directDiscount) S.directDiscount = {};  // pairId → {type:'gesamt'|'pos', gesamtPct:0, igPct:0, agPct:0, matPct:0, montPct:0}
+                    if (!S.directVat) S.directVat = {};            // pairId → {klima:true, rest:false}
 
-                    // Pair-Cards
-                    const pairCards = D.pairs.length ? D.pairs.map(({ig, ag}) => {
-                        const igVK = Number(ig?.sellingPrice) || 0;
-                        const agVK = Number(ag?.sellingPrice) || 0;
-                        const setTotal = igVK + agVK + D.montage + D.leitungen;
+                    const pairCards = D.pairs.length ? D.pairs.map(({ig, ag}, pIdx) => {
+                        const pid = ig?.id || ag?.id || String(pIdx);
+                        // Preise aus State oder Defaults
+                        if (!S.directPrices[pid]) S.directPrices[pid] = {
+                            ig: Number(ig?.sellingPrice) || 0,
+                            ag: Number(ag?.sellingPrice) || 0,
+                            ku: +(D.kupferpreis * D.len).toFixed(2),
+                            km: +(D.kommupreis  * D.len).toFixed(2),
+                            ko: +(D.kondpreis   * D.len).toFixed(2),
+                            mo: +D.montage.toFixed(2),
+                        };
+                        if (!S.directDiscount[pid]) S.directDiscount[pid] = {type:'gesamt', gesamtPct:0, igPct:0, agPct:0, matPct:0, montPct:0};
+                        if (!S.directVat[pid])     S.directVat[pid]     = {klima:true, rest:false};
+                        const P = S.directPrices[pid];
+                        const Disc = S.directDiscount[pid];
+                        const Vat  = S.directVat[pid];
+
+                        // Berechnung nach deiner Formel:
+                        // Netto → Rabatt abziehen → MwSt drauf (nur auf Klimageräte oder alle je Toggle)
+                        const applyDisc = (v, pct) => v * (1 - (Number(pct)||0)/100);
+                        let igN, agN, kuN, kmN, koN, moN;
+                        if (Disc.type === 'gesamt') {
+                            const gd = Number(Disc.gesamtPct)||0;
+                            igN = applyDisc(P.ig, gd); agN = applyDisc(P.ag, gd);
+                            kuN = applyDisc(P.ku, gd); kmN = applyDisc(P.km, gd);
+                            koN = applyDisc(P.ko, gd); moN = applyDisc(P.mo, gd);
+                        } else {
+                            igN = applyDisc(P.ig, Disc.igPct);  agN = applyDisc(P.ag, Disc.agPct);
+                            kuN = applyDisc(P.ku, Disc.matPct); kmN = applyDisc(P.km, Disc.matPct);
+                            koN = applyDisc(P.ko, Disc.matPct); moN = applyDisc(P.mo, Disc.montPct);
+                        }
+                        const klimaVat = Vat.klima ? 0.20 : 0;
+                        const restVat  = Vat.rest  ? 0.20 : 0;
+                        const igB = igN * (1 + klimaVat); const agB = agN * (1 + klimaVat);
+                        const kuB = kuN * (1 + restVat);  const kmB = kmN * (1 + restVat);
+                        const koB = koN * (1 + restVat);  const moB = moN * (1 + restVat);
+                        const total = igB + agB + kuB + kmB + koB + moB;
+                        const totalNetto = igN + agN + kuN + kmN + koN + moN;
+                        const totalMwSt  = total - totalNetto;
+
+                        const inp = (field, val, step='0.01') =>
+                            `<input type="number" step="${step}" min="0" value="${(Number(val)||0).toFixed(2)}"
+                             onchange="app.calcDirectSetPrice('${pid}','${field}',this.value)"
+                             style="width:90px;text-align:right;font-size:13px;padding:3px 5px;">`;
+                        const discInp = (field, val) =>
+                            `<input type="number" step="1" min="0" max="100" value="${Number(val)||0}"
+                             onchange="app.calcDirectSetDiscount('${pid}','${field}',this.value)"
+                             style="width:52px;text-align:right;font-size:13px;padding:3px 5px;"> %`;
+
                         return `<div class="calc-direct-pair">
                             <div class="calc-direct-pair-head">
                                 <span class="calc-direct-mfr">${escapeHtml(ig?.manufacturer || ag?.manufacturer || '')}</span>
                                 <span class="calc-direct-kw">${escapeHtml(ig?.size || ag?.size || '')} kW</span>
                             </div>
+
+                            <!-- Klimageräte editierbar -->
                             <div class="calc-direct-devices">
-                                ${ig ? `<div class="calc-direct-device">
+                                <div class="calc-direct-device">
                                     <div class="calc-direct-role">Innengerät</div>
-                                    <div class="calc-direct-name">${escapeHtml(ig.name)}</div>
-                                    <div class="calc-direct-an">${ig.articleNumber ? escapeHtml(ig.articleNumber) : ''}</div>
-                                    <div class="calc-direct-price">${cur(igVK)}</div>
-                                </div>` : '<div class="calc-direct-device missing">Kein Innengerät</div>'}
-                                ${ag ? `<div class="calc-direct-device">
+                                    <div class="calc-direct-name">${ig ? escapeHtml(ig.name) : '—'}</div>
+                                    <div class="calc-direct-an">${ig?.articleNumber ? escapeHtml(ig.articleNumber) : ''}</div>
+                                    <div class="calc-direct-price-row">
+                                        <label style="font-size:11px;">Netto €</label> ${inp('ig', P.ig)}
+                                    </div>
+                                    ${Disc.type==='pos' ? `<div class="calc-direct-price-row" style="margin-top:4px;"><label style="font-size:11px;">Rabatt</label> ${discInp('igPct', Disc.igPct)}</div>` : ''}
+                                    ${klimaVat > 0 ? `<div style="font-size:11px;color:var(--accent);margin-top:3px;">+ 20% MwSt = ${cur(igB)}</div>` : `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${cur(igN)} (netto)</div>`}
+                                </div>
+                                <div class="calc-direct-device">
                                     <div class="calc-direct-role">Außengerät</div>
-                                    <div class="calc-direct-name">${escapeHtml(ag.name)}</div>
-                                    <div class="calc-direct-an">${ag.articleNumber ? escapeHtml(ag.articleNumber) : ''}</div>
-                                    <div class="calc-direct-price">${cur(agVK)}</div>
-                                </div>` : '<div class="calc-direct-device missing">Kein Außengerät</div>'}
+                                    <div class="calc-direct-name">${ag ? escapeHtml(ag.name) : '—'}</div>
+                                    <div class="calc-direct-an">${ag?.articleNumber ? escapeHtml(ag.articleNumber) : ''}</div>
+                                    <div class="calc-direct-price-row">
+                                        <label style="font-size:11px;">Netto €</label> ${inp('ag', P.ag)}
+                                    </div>
+                                    ${Disc.type==='pos' ? `<div class="calc-direct-price-row" style="margin-top:4px;"><label style="font-size:11px;">Rabatt</label> ${discInp('agPct', Disc.agPct)}</div>` : ''}
+                                    ${klimaVat > 0 ? `<div style="font-size:11px;color:var(--accent);margin-top:3px;">+ 20% MwSt = ${cur(agB)}</div>` : `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${cur(agN)} (netto)</div>`}
+                                </div>
                             </div>
+
+                            <!-- Zubehör + Montage editierbar -->
                             <div class="calc-direct-zub">
-                                <div class="calc-direct-zub-row"><span>Kupferrohr + Isolierung (${D.len} m × ${cur(D.kupferpreis)}/m)</span><span>${cur(D.len * D.kupferpreis)}</span></div>
-                                <div class="calc-direct-zub-row"><span>Kommunikationskabel (${D.len} m × ${cur(D.kommupreis)}/m)</span><span>${cur(D.len * D.kommupreis)}</span></div>
-                                <div class="calc-direct-zub-row"><span>Kondensatschlauch (${D.len} m × ${cur(D.kondpreis)}/m)</span><span>${cur(D.len * D.kondpreis)}</span></div>
-                                <div class="calc-direct-zub-row"><span>Montage & Inbetriebnahme</span><span>${cur(D.montage)}</span></div>
+                                <div class="calc-direct-zub-row">
+                                    <span>Kupferrohr/Isolierung</span>
+                                    <span style="display:flex;align-items:center;gap:6px;">${inp('ku', P.ku)}${Disc.type==='pos'?discInp('matPct',Disc.matPct):''}</span>
+                                </div>
+                                <div class="calc-direct-zub-row">
+                                    <span>Kommunikationskabel</span>
+                                    <span style="display:flex;align-items:center;gap:6px;">${inp('km', P.km)}</span>
+                                </div>
+                                <div class="calc-direct-zub-row">
+                                    <span>Kondensatschlauch</span>
+                                    <span style="display:flex;align-items:center;gap:6px;">${inp('ko', P.ko)}</span>
+                                </div>
+                                <div class="calc-direct-zub-row">
+                                    <span>Montage & Inbetriebnahme</span>
+                                    <span style="display:flex;align-items:center;gap:6px;">${inp('mo', P.mo)}${Disc.type==='pos'?discInp('montPct',Disc.montPct):''}</span>
+                                </div>
                             </div>
-                            <div class="calc-direct-total">
-                                <span>Gesamtpreis (netto)</span>
-                                <strong>${cur(setTotal)}</strong>
+
+                            <!-- MwSt + Rabatt Optionen -->
+                            <div class="calc-direct-opts">
+                                <div class="calc-direct-opts-row">
+                                    <label class="calc-check">
+                                        <input type="checkbox" ${Vat.klima?'checked':''} onchange="app.calcDirectSetVat('${pid}','klima',this.checked)">
+                                        20% MwSt auf Klimageräte
+                                    </label>
+                                    <label class="calc-check" style="margin-left:12px;">
+                                        <input type="checkbox" ${Vat.rest?'checked':''} onchange="app.calcDirectSetVat('${pid}','rest',this.checked)">
+                                        20% MwSt auf Rest
+                                    </label>
+                                </div>
+                                <div class="calc-direct-opts-row" style="margin-top:8px;">
+                                    <label class="calc-check">
+                                        <input type="radio" name="disctype_${pid}" value="gesamt" ${Disc.type==='gesamt'?'checked':''} onchange="app.calcDirectSetDiscount('${pid}','type','gesamt')">
+                                        Gesamt-Rabatt
+                                    </label>
+                                    ${Disc.type==='gesamt' ? discInp('gesamtPct', Disc.gesamtPct) : ''}
+                                    <label class="calc-check" style="margin-left:12px;">
+                                        <input type="radio" name="disctype_${pid}" value="pos" ${Disc.type==='pos'?'checked':''} onchange="app.calcDirectSetDiscount('${pid}','type','pos')">
+                                        Einzelne Rabatte
+                                    </label>
+                                </div>
                             </div>
+
+                            <!-- Zusammenfassung -->
+                            <div class="calc-direct-summary">
+                                <div class="calc-direct-sum-row"><span>Nettobetrag</span><span>${cur(totalNetto)}</span></div>
+                                ${totalMwSt > 0.005 ? `<div class="calc-direct-sum-row"><span>+ MwSt</span><span>${cur(totalMwSt)}</span></div>` : ''}
+                                <div class="calc-direct-sum-row total"><span>Gesamtpreis (brutto)</span><strong>${cur(total)}</strong></div>
+                            </div>
+
                             ${ig && ag ? `<button class="btn btn-primary btn-sm" onclick="app.calcDirectToOffer('${ig.id}','${ag.id}')">→ Als Projekt übernehmen</button>` : ''}
                         </div>`;
-                    }).join('') : `<div class="empty-state" style="padding:30px;">Kein passendes Gerät im Katalog gefunden.<br>
-                        <small style="color:var(--text-muted);">Importiere zuerst den Hersteller-Katalog oder lege Materialien an.</small></div>`;
+                    }).join('') : `<div class="empty-state" style="padding:30px;">Kein passendes Gerät im Katalog.<br><small style="color:var(--text-muted);">Bitte Hersteller-Katalog importieren oder Materialien anlegen.</small></div>`;
 
                     contentArea.innerHTML = `<div class="calc-wrap">
                         <div class="calc-mode-tabs">
@@ -381,7 +486,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v81</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v82</span></div>
                         </div>
                     </div>`;
             })();

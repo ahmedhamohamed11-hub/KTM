@@ -1223,6 +1223,28 @@
                 r[key] = ['area', 'windows', 'persons'].includes(key) ? (parseFloat(String(val).replace(',', '.')) || 0) : val;
                 renderCalc();
             },
+            calcDirectSetPrice(pid, field, val) {
+                const S = window.__calcState;
+                if (!S.directPrices) S.directPrices = {};
+                if (!S.directPrices[pid]) S.directPrices[pid] = {};
+                S.directPrices[pid][field] = parseFloat(String(val).replace(',','.')) || 0;
+                renderCalc();
+            },
+            calcDirectSetDiscount(pid, field, val) {
+                const S = window.__calcState;
+                if (!S.directDiscount) S.directDiscount = {};
+                if (!S.directDiscount[pid]) S.directDiscount[pid] = {type:'gesamt',gesamtPct:0,igPct:0,agPct:0,matPct:0,montPct:0};
+                if (field === 'type') S.directDiscount[pid].type = val;
+                else S.directDiscount[pid][field] = parseFloat(String(val).replace(',','.')) || 0;
+                renderCalc();
+            },
+            calcDirectSetVat(pid, field, val) {
+                const S = window.__calcState;
+                if (!S.directVat) S.directVat = {};
+                if (!S.directVat[pid]) S.directVat[pid] = {klima:true, rest:false};
+                S.directVat[pid][field] = !!val;
+                renderCalc();
+            },
             // Direkt-Konfiguration → Projekt + Angebot erstellen
             async calcDirectToOffer(igId, agId) {
                 const ig = await db.get('materials', igId);
