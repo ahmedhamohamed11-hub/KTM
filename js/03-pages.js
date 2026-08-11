@@ -9,10 +9,79 @@
         const CALC_STATE = window.__calcState || (window.__calcState = {
             rooms: [{ area: 30, windows: 4, dir: 'sued', shade: 'normal', persons: 2 }],
             building: 'normal', distance: 5, breakthrough: 1, ductLength: 4,
-            outdoor: 'wand', demolish: false, scaffold: false, brand: '', showVat: true
+            outdoor: 'wand', demolish: false, scaffold: false, brand: '', showVat: true,
+            // Direkt-Modus
+            calcMode: 'direct',   // 'direct' | 'kuehlast'
+            directKw: '2,5', directBrand: '', directLength: 5,
         });
 
-        // Kühllast je Raum (kW) – vereinfachtes, praxisnahes Verfahren
+        // Direkt-Modus: Konfiguration nach gewählter Leistung + Marke
+        async function calcDirectCompute() {
+            const S = CALC_STATE;
+            const mats = await db.getAll('materials');
+            const kwVal = parseFloat(String(S.directKw).replace(',','.')) || 2.5;
+            const brand = S.directBrand || '';
+            const len = Number(S.directLength) || 5;
+            const norm = s => String(s||'').trim().toLowerCase();
+            const kwOf = v => parseFloat(String(v||'').replace(',','.')) || 0;
+
+            // Alle Single-Split Innen- und Außengeräte der gewählten Leistung
+            const allSS = mats.filter(m => {
+                const b = m.bauart||'';
+                return (b === 'Innengerät Single-Split' || b === 'Außengerät Single-Split') &&
+                       Math.abs(kwOf(m.size) - kwVal) < 0.26 &&
+                       (!brand || norm(m.manufacturer) === norm(brand));
+            });
+            const igList = allSS.filter(m => m.bauart === 'Innengerät Single-Split');
+            const agList = allSS.filter(m => m.bauart === 'Außengerät Single-Split');
+
+            // Beste Paare (gleiche Marke + möglichst gleiche Serie)
+            const pairs = [];
+            igList.forEach(ig => {
+                const ag = agList.find(a =>
+                    norm(a.manufacturer) === norm(ig.manufacturer) &&
+                    (norm(a.series) === norm(ig.series) || true)   // selbe Marke reicht
+                );
+                if (ag) pairs.push({ ig, ag });
+                else pairs.push({ ig, ag: null });
+            });
+            // Außengeräte ohne IG-Match
+            agList.forEach(ag => {
+                if (!pairs.find(p => p.ag?.id === ag.id)) pairs.push({ ig: null, ag });
+            });
+
+            // Alle Marken die diese Leistung haben
+            const availBrands = [...new Set(mats
+                .filter(m => (m.bauart==='Innengerät Single-Split'||m.bauart==='Außengerät Single-Split') && Math.abs(kwOf(m.size)-kwVal)<0.26)
+                .map(m => m.manufacturer).filter(Boolean)
+            )].sort();
+
+            // Alle Leistungen die im Katalog verfügbar sind
+            const availKw = [...new Set(mats
+                .filter(m => m.bauart==='Innengerät Single-Split' || m.bauart==='Außengerät Single-Split')
+                .map(m => m.size).filter(Boolean)
+            )].sort((a,b) => kwOf(a) - kwOf(b));
+
+            // Montagepreise aus Settings
+            const montagePerDevice = Number(await getSetting('montagePerDevice', 350)) || 350;
+            const montagePerMeter  = Number(await getSetting('montagePerMeter',   25)) || 25;
+            const montageBase      = Number(await getSetting('montageBase',       200)) || 200;
+
+            // Zubehör-Preise (aus DB wenn vorhanden, sonst Richtwerte)
+            const findMat = (kw, cat) => mats.find(m =>
+                (norm(m.category) === norm(cat) || norm(m.name).includes(norm(cat))) &&
+                Number(m.sellingPrice) > 0
+            );
+            const kupferpreis = findMat(null,'Kupfer')?.sellingPrice || 4.50;   // €/m
+            const kommupreis  = findMat(null,'Kommunikation')?.sellingPrice || 1.20; // €/m
+            const kondpreis   = findMat(null,'Kondensat')?.sellingPrice || 1.80;  // €/m
+
+            const montage = montageBase + montagePerDevice + len * montagePerMeter;
+            const leitungen = len * (kupferpreis + kommupreis + kondpreis);
+
+            return { pairs, availBrands, availKw, kwVal, brand, len, montage, leitungen,
+                     kupferpreis, kommupreis, kondpreis, montageBase, montagePerDevice, montagePerMeter };
+        }
         function calcRoomLoad(r) {
             const bldFactor = { neu: 0.03, normal: 0.04, alt: 0.055 }[CALC_STATE.building] || 0.04;
             let base = (Number(r.area) || 0) * bldFactor;                 // Grundlast Gebäude (kW/m²)
@@ -137,11 +206,92 @@
 
         function renderCalc() {
             (async () => {
-                const brands = [...new Set((await db.getAll('materials'))
-                    .filter(m => (m.category === 'Innengeräte' || m.category === 'Klimaanlagen') && m.manufacturer).map(m => m.manufacturer))].sort();
-                const res = await calcCompute();
                 const S = CALC_STATE;
                 const cur = v => formatCurrency(v);
+                const allMats = await db.getAll('materials');
+
+                // ── DIREKT-MODUS ─────────────────────────────────────────
+                if (S.calcMode !== 'kuehlast') {
+                    const D = await calcDirectCompute();
+                    const kwOf = v => parseFloat(String(v||'').replace(',','.')) || 0;
+
+                    // Pair-Cards
+                    const pairCards = D.pairs.length ? D.pairs.map(({ig, ag}) => {
+                        const igVK = Number(ig?.sellingPrice) || 0;
+                        const agVK = Number(ag?.sellingPrice) || 0;
+                        const setTotal = igVK + agVK + D.montage + D.leitungen;
+                        return `<div class="calc-direct-pair">
+                            <div class="calc-direct-pair-head">
+                                <span class="calc-direct-mfr">${escapeHtml(ig?.manufacturer || ag?.manufacturer || '')}</span>
+                                <span class="calc-direct-kw">${escapeHtml(ig?.size || ag?.size || '')} kW</span>
+                            </div>
+                            <div class="calc-direct-devices">
+                                ${ig ? `<div class="calc-direct-device">
+                                    <div class="calc-direct-role">Innengerät</div>
+                                    <div class="calc-direct-name">${escapeHtml(ig.name)}</div>
+                                    <div class="calc-direct-an">${ig.articleNumber ? escapeHtml(ig.articleNumber) : ''}</div>
+                                    <div class="calc-direct-price">${cur(igVK)}</div>
+                                </div>` : '<div class="calc-direct-device missing">Kein Innengerät</div>'}
+                                ${ag ? `<div class="calc-direct-device">
+                                    <div class="calc-direct-role">Außengerät</div>
+                                    <div class="calc-direct-name">${escapeHtml(ag.name)}</div>
+                                    <div class="calc-direct-an">${ag.articleNumber ? escapeHtml(ag.articleNumber) : ''}</div>
+                                    <div class="calc-direct-price">${cur(agVK)}</div>
+                                </div>` : '<div class="calc-direct-device missing">Kein Außengerät</div>'}
+                            </div>
+                            <div class="calc-direct-zub">
+                                <div class="calc-direct-zub-row"><span>Kupferrohr + Isolierung (${D.len} m × ${cur(D.kupferpreis)}/m)</span><span>${cur(D.len * D.kupferpreis)}</span></div>
+                                <div class="calc-direct-zub-row"><span>Kommunikationskabel (${D.len} m × ${cur(D.kommupreis)}/m)</span><span>${cur(D.len * D.kommupreis)}</span></div>
+                                <div class="calc-direct-zub-row"><span>Kondensatschlauch (${D.len} m × ${cur(D.kondpreis)}/m)</span><span>${cur(D.len * D.kondpreis)}</span></div>
+                                <div class="calc-direct-zub-row"><span>Montage & Inbetriebnahme</span><span>${cur(D.montage)}</span></div>
+                            </div>
+                            <div class="calc-direct-total">
+                                <span>Gesamtpreis (netto)</span>
+                                <strong>${cur(setTotal)}</strong>
+                            </div>
+                            ${ig && ag ? `<button class="btn btn-primary btn-sm" onclick="app.calcDirectToOffer('${ig.id}','${ag.id}')">→ Als Projekt übernehmen</button>` : ''}
+                        </div>`;
+                    }).join('') : `<div class="empty-state" style="padding:30px;">Kein passendes Gerät im Katalog gefunden.<br>
+                        <small style="color:var(--text-muted);">Importiere zuerst den Hersteller-Katalog oder lege Materialien an.</small></div>`;
+
+                    contentArea.innerHTML = `<div class="calc-wrap">
+                        <div class="calc-mode-tabs">
+                            <button class="calc-mode-tab active" onclick="">⚡ Direkt-Konfiguration</button>
+                            <button class="calc-mode-tab" onclick="app.calcSetGlobal('calcMode','kuehlast');renderCalc()">🏠 Kühllast-Rechner</button>
+                        </div>
+                        <div class="calc-direct-form">
+                            <div class="form-row" style="gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                                <div class="form-group" style="min-width:130px;">
+                                    <label>Leistung (kW)</label>
+                                    <select onchange="app.calcSetGlobal('directKw',this.value);renderCalc()">
+                                        ${D.availKw.map(kw => `<option value="${escapeHtml(kw)}" ${kw===S.directKw?'selected':''}>${escapeHtml(kw)} kW</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="form-group" style="min-width:160px;">
+                                    <label>Marke</label>
+                                    <select onchange="app.calcSetGlobal('directBrand',this.value);renderCalc()">
+                                        <option value="">Alle Marken</option>
+                                        ${D.availBrands.map(b => `<option value="${escapeHtml(b)}" ${b===S.directBrand?'selected':''}>${escapeHtml(b)}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="form-group" style="min-width:120px;">
+                                    <label>Leitungslänge (m)</label>
+                                    <input type="number" min="1" max="50" value="${S.directLength}" onchange="app.calcSetGlobal('directLength',this.value);renderCalc()">
+                                </div>
+                            </div>
+                            ${D.availKw.length === 0 ? '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Noch keine Klimageräte im Katalog – importiere zuerst den Hersteller-Katalog.</div>' : ''}
+                        </div>
+                        <div class="calc-direct-results">${pairCards}</div>
+                        <div class="calc-note" style="margin-top:16px;">Richtwerte – finaler Preis nach Besichtigung. · <span style="opacity:.6;">Build v${(contentArea.innerHTML.match(/Build v(\d+)/)||['','?'])[1]}</span></div>
+                    </div>`;
+                    return;
+                }
+
+                // ── KÜHLLAST-MODUS (bestehend) ────────────────────────────
+                const brands = [...new Set(allMats
+                    .filter(m => (m.category === 'Klimageräte' || m.category === 'Klimaanlagen' || m.category === 'Innengeräte') && m.manufacturer).map(m => m.manufacturer))].sort();
+                const res = await calcCompute();
+                // S und cur bereits oben definiert
 
                 const roomCard = (r, i) => `
                     <div class="calc-room">
@@ -167,6 +317,10 @@
 
                 contentArea.innerHTML = `
                     <div class="calc-wrap">
+                        <div class="calc-mode-tabs">
+                            <button class="calc-mode-tab" onclick="app.calcSetGlobal('calcMode','direct');renderCalc()">⚡ Direkt-Konfiguration</button>
+                            <button class="calc-mode-tab active" onclick="">🏠 Kühllast-Rechner</button>
+                        </div>
                         <div class="calc-form">
                             <div class="form-card">
                                 <div class="form-card-title">🏠 Objekt</div>
@@ -227,7 +381,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v80</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v81</span></div>
                         </div>
                     </div>`;
             })();

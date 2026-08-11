@@ -1223,6 +1223,53 @@
                 r[key] = ['area', 'windows', 'persons'].includes(key) ? (parseFloat(String(val).replace(',', '.')) || 0) : val;
                 renderCalc();
             },
+            // Direkt-Konfiguration → Projekt + Angebot erstellen
+            async calcDirectToOffer(igId, agId) {
+                const ig = await db.get('materials', igId);
+                const ag = await db.get('materials', agId);
+                if (!ig || !ag) { showToast('Gerät nicht gefunden.', 'error'); return; }
+                const D = await calcDirectCompute();
+                const mats = await db.getAll('materials');
+                const norm = s => String(s||'').toLowerCase();
+                // Zubehör-Materialien aus DB suchen
+                const findM = (kws) => mats.find(m => kws.some(k => norm(m.name).includes(k) || norm(m.category).includes(k)) && Number(m.sellingPrice) > 0);
+                const kupfer = findM(['kupferrohr']);
+                const kommu  = findM(['kommunikationskabel','kommunikation']);
+                const kond   = findM(['kondensatschlauch','kondensat']);
+                const montM  = findM(['montage','arbeitsleistung']);
+
+                const cId = await db.add('customers', { firstName: 'Direktanfrage', lastName: '', createdAt: new Date().toISOString() });
+                const desc = `${ig.manufacturer||''} ${ig.size||''} kW Single-Split · ${D.len} m Leitung`;
+                const pId = await db.add('projects', { title: desc, customerId: cId, source: 'Schnellrechner', createdAt: new Date().toISOString() });
+
+                const mkPos = (m, qty, unit, name, price) => ({
+                    materialId: m?.id || null, name: name || m?.name || '',
+                    manufacturer: m?.manufacturer || '', articleNumber: m?.articleNumber || '',
+                    category: m?.category || '', unit: unit, quantity: qty,
+                    price: price || Number(m?.sellingPrice) || 0, discount: 0,
+                    bauart: m?.bauart || ''
+                });
+
+                const positions = [
+                    mkPos(ig, 1, 'Stk'),
+                    mkPos(ag, 1, 'Stk'),
+                    kupfer ? mkPos(kupfer, D.len, 'm', `Kupferrohr/Isolierung`, D.kupferpreis) : mkPos(null, D.len, 'm', 'Kupferrohr/Isolierung', D.kupferpreis),
+                    kommu  ? mkPos(kommu,  D.len, 'm', 'Kommunikationskabel',   D.kommupreis)  : mkPos(null, D.len, 'm', 'Kommunikationskabel', D.kommupreis),
+                    kond   ? mkPos(kond,   D.len, 'm', 'Kondensatschlauch',     D.kondpreis)   : mkPos(null, D.len, 'm', 'Kondensatschlauch', D.kondpreis),
+                    mkPos(montM, 1, 'Psch', 'Montage & Inbetriebnahme', D.montage),
+                ];
+
+                const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+                const total = positions.reduce((s, p) => s + p.price * p.quantity, 0);
+                await db.add('offers', {
+                    offerNumber: offerNum, projectId: pId, status: 'Angebot offen',
+                    positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
+                    discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
+                });
+                showToast(`✅ Projekt + Angebot ${offerNum} erstellt.`, 'success');
+                this.navigate('projects');
+            },
+
             calcSetGlobal(key, val) {
                 CALC_STATE[key] = (key === 'demolish' || key === 'scaffold' || key === 'showVat') ? !!val
                     : (['distance', 'breakthrough', 'ductLength'].includes(key) ? (parseFloat(String(val).replace(',', '.')) || 0) : val);
