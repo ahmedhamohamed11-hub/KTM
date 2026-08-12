@@ -1245,8 +1245,31 @@
                 S.directVat[pid][field] = !!val;
                 renderCalc();
             },
+            // Serie-weiter Rabatt (gilt für alle Zeilen der Serie)
+            calcDirectSetSerieDiscount(sid, count, val) {
+                const S = window.__calcState;
+                if (!S.directDiscount) S.directDiscount = {};
+                const pct = parseFloat(String(val).replace(',','.')) || 0;
+                for (let i = 0; i < count; i++) {
+                    const rowId = `${sid}_${i}`;
+                    if (!S.directDiscount[rowId]) S.directDiscount[rowId] = {};
+                    S.directDiscount[rowId].pct = pct;
+                }
+                renderCalc();
+            },
+            // Serie-weite MwSt
+            calcDirectSetSerieVat(sid, count, val) {
+                const S = window.__calcState;
+                if (!S.directVat) S.directVat = {};
+                for (let i = 0; i < count; i++) {
+                    const rowId = `${sid}_${i}`;
+                    if (!S.directVat[rowId]) S.directVat[rowId] = {};
+                    S.directVat[rowId].on = !!val;
+                }
+                renderCalc();
+            },
             // Direkt-Konfiguration → Projekt + Angebot erstellen
-            async calcDirectToOffer(igId, agId) {
+            async calcDirectToOffer(igId, agId, rowId) {
                 const ig = await db.get('materials', igId);
                 const ag = await db.get('materials', agId);
                 if (!ig || !ag) { showToast('Gerät nicht gefunden.', 'error'); return; }

@@ -1455,3 +1455,27 @@
         .calc-direct-sum-row { display:flex; justify-content:space-between; font-size:13.5px; padding:3px 0; }
         .calc-direct-sum-row.total { font-size:16px; font-weight:700; padding-top:6px; border-top:1px solid var(--border); margin-top:4px; }
         .calc-direct-sum-row.total strong { color:var(--accent); }
+
+        /* ===== Direkt-Modus: Katalog-Tabellen (cdc = calc-direct-catalog) ===== */
+        .cdc-serien { display: flex; flex-direction: column; gap: 18px; }
+        .cdc-serie { border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+        .cdc-serie-head { display: flex; justify-content: space-between; align-items: center;
+            background: var(--accent); color: #fff; padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+        .cdc-mfr { font-weight: 800; font-size: 15px; margin-right: 8px; }
+        .cdc-serie-name { font-size: 13px; opacity: .85; }
+        .cdc-serie-opts { display: flex; align-items: center; color: #fff; }
+        .cdc-serie-opts input[type=number] { background: rgba(255,255,255,.15); color:#fff;
+            border-color: rgba(255,255,255,.4); }
+        .cdc-serie-opts input[type=checkbox] { accent-color: #fff; }
+        .cdc-table-wrap { overflow-x: auto; }
+        .cdc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .cdc-table thead tr { background: var(--bg-secondary); }
+        .cdc-table th { padding: 7px 10px; font-weight: 700; text-align: left;
+            border-bottom: 2px solid var(--border); font-size: 12px; color: var(--text-secondary); }
+        .cdc-table th.num { text-align: right; }
+        .cdc-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .cdc-table td.num { text-align: right; }
+        .cdc-row-ig { background: var(--bg-secondary); }
+        .cdc-row-ag { background: var(--bg); }
+        .cdc-row-sep td { height: 6px; background: var(--bg-tertiary); border: none; padding: 0; }
+        .cdc-table tbody tr:last-child td { border-bottom: none; }
