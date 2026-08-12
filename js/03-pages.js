@@ -486,7 +486,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v82</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v83</span></div>
                         </div>
                     </div>`;
             })();
@@ -1708,8 +1708,8 @@
                                         ${profitCell}
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
-                                            <button class="btn btn-sm btn-primary" onclick="app.exportOfferPDF(${idJS(o.id)})">${icon('pdf')} PDF</button>
-                                            <button class="btn btn-sm btn-outline" onclick="app.exportOfferPDF(${idJS(o.id)}, true)" title="Per WhatsApp, E-Mail o. Ä. teilen">📤 Teilen</button>
+                                            <button class="btn btn-sm btn-primary" onclick="app.promptExportOfferPDF(${idJS(o.id)})">${icon('pdf')} PDF</button>
+                                            <button class="btn btn-sm btn-outline" onclick="app.promptExportOfferPDF(${idJS(o.id)})" title="Per WhatsApp, E-Mail o. Ä. teilen">📤 Teilen</button>
                                             <button class="btn btn-sm btn-outline" title="Variante mit anderer Klimamarke – alles andere bleibt gleich" onclick="app.createOfferVariant(${idJS(o.id)})">⇄ Variante</button>
                                             <button class="btn btn-sm btn-outline" title="Anzahlung & vereinbarter Preis" onclick="app.openOfferPayment(${idJS(o.id)})">💶 Zahlung</button>
                                             <button class="btn btn-sm btn-outline" title="Material aus diesem Angebot bestellen" onclick="app.createOrderFromOffer(${idJS(o.id)})">🛒 Bestellen</button>

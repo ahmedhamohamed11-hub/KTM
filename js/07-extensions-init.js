@@ -2615,12 +2615,40 @@
             // ============================================================
             // ============ PDF: ANGEBOT (Redesign) =======================
             // ============================================================
-            async exportOfferPDF(offerId, share = false) {
+            // PDF-Export mit Auswahl: mit oder ohne Kundendaten
+            promptExportOfferPDF(offerId) {
+                showModal('📄 Angebot als PDF', `
+                    <p style="margin-bottom:16px;font-size:14px;">Soll das PDF die Kundendaten enthalten?</p>
+                    <div style="display:flex;flex-direction:column;gap:10px;">
+                        <button class="btn btn-primary" id="pdfWithCustomer">
+                            👤 Mit Kundendaten<br>
+                            <span style="font-size:11px;font-weight:400;opacity:.8;">Name, Adresse, Kontakt oben im PDF</span>
+                        </button>
+                        <button class="btn btn-outline" id="pdfWithoutCustomer">
+                            🔒 Ohne Kundendaten<br>
+                            <span style="font-size:11px;font-weight:400;opacity:.8;">Nur Angebot, Positionen und Preise</span>
+                        </button>
+                    </div>
+                `, null, null, { okText: null });
+                // Buttons verdrahten (nach kurzem Timeout damit Modal im DOM ist)
+                setTimeout(() => {
+                    document.querySelector('#pdfWithCustomer')?.addEventListener('click', () => {
+                        document.querySelector('.modal-overlay')?.remove();
+                        this.exportOfferPDF(offerId, false, true);
+                    });
+                    document.querySelector('#pdfWithoutCustomer')?.addEventListener('click', () => {
+                        document.querySelector('.modal-overlay')?.remove();
+                        this.exportOfferPDF(offerId, false, false);
+                    });
+                }, 80);
+            },
+
+            async exportOfferPDF(offerId, share = false, withCustomer = true) {
                 if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
                 const offer = await db.get('offers', offerId);
                 if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
                 const project = offer.projectId ? await db.get('projects', offer.projectId) : null;
-                const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+                const customer = withCustomer && offer.customerId ? await db.get('customers', offer.customerId) : null;
                 const co = await pdfCompany();
 
                 const { jsPDF } = window.jspdf;
@@ -5726,7 +5754,7 @@
     renderSummary();
 },
 
-async exportOfferPDF(offerId) {
+async exportOfferPDF(offerId, share = false, withCustomer = true) {
     if (typeof window.jspdf === 'undefined') {
         showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error');
         return;
@@ -5734,7 +5762,7 @@ async exportOfferPDF(offerId) {
     const offer = await db.get('offers', offerId);
     if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
     const project = await db.get('projects', offer.projectId);
-    const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
+    const customer = withCustomer && offer.customerId ? await db.get('customers', offer.customerId) : null;
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
