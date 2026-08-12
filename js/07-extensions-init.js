@@ -2671,15 +2671,22 @@
                     if (customer.zip || customer.city) custLines.push(`${customer.zip || ''} ${customer.city || ''}`.trim());
                     if (customer.phone) custLines.push(customer.phone);
                 }
-                if (custLines.length === 0) custLines.push('–');
                 const projLines = [];
                 if (project?.title) projLines.push(project.title);
                 if (offer.siteAddress) projLines.push(`Baustelle: ${offer.siteAddress}`);
-                if (offer.contactPerson) projLines.push(`Ansprechpartner: ${offer.contactPerson}`);
-                if (offer.contactPhone) projLines.push(offer.contactPhone);
-                if (offer.contactEmail) projLines.push(offer.contactEmail);
-                if (projLines.length === 0) projLines.push('–');
-                y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Projekt / Baustelle', projLines);
+                // Ansprechpartner nur wenn Kundendaten gewünscht
+                if (withCustomer && offer.contactPerson) projLines.push(`Ansprechpartner: ${offer.contactPerson}`);
+                if (withCustomer && offer.contactPhone) projLines.push(offer.contactPhone);
+                if (withCustomer && offer.contactEmail) projLines.push(offer.contactEmail);
+                // Info-Boxen: Kunde nur anzeigen wenn withCustomer=true
+                if (withCustomer) {
+                    if (custLines.length === 0) custLines.push('–');
+                    if (projLines.length === 0) projLines.push('–');
+                    y = pdfInfoBoxes(doc, y, 'Kunde', custLines, 'Projekt / Baustelle', projLines);
+                } else if (projLines.length > 0) {
+                    // Ohne Kundendaten: nur Projekttitel anzeigen wenn vorhanden
+                    y = pdfInfoBoxes(doc, y, '', [], 'Projekt / Baustelle', projLines);
+                }
 
                 const rows = (offer.positions || []).map((p, i) => {
                     const disc = Number(p.discount) || 0;
@@ -5826,23 +5833,28 @@ async exportOfferPDF(offerId, share = false, withCustomer = true) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
     doc.setTextColor(30, 33, 35);
-    doc.text('Kunde', marginX, y);
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(60, 64, 72);
+    // Kundenheader wird unten im custLines-Block gesetzt
     const custLines = [];
-    if (customer) {
+    if (withCustomer && customer) {
         custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
         if (customer.company) custLines.push(customer.company);
     }
     if (project?.title) custLines.push(`Projekt: ${project.title}`);
     if (offer.siteAddress) custLines.push(`Baustelle: ${offer.siteAddress}`);
-    if (offer.contactPerson) custLines.push(`Ansprechpartner: ${offer.contactPerson}`);
-    if (offer.contactPhone) custLines.push(`Telefon: ${offer.contactPhone}`);
-    if (offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
-    custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
-    y += 6;
+    if (withCustomer && offer.contactPerson) custLines.push(`Ansprechpartner: ${offer.contactPerson}`);
+    if (withCustomer && offer.contactPhone) custLines.push(`Telefon: ${offer.contactPhone}`);
+    if (withCustomer && offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
+    if (withCustomer || custLines.length > 0) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10.5);
+        doc.setTextColor(30, 33, 35);
+        if (withCustomer) { doc.text('Kunde', marginX, y); y += 6; }
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(60, 64, 72);
+        custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
+        y += 6;
+    }
 
     const rows = (offer.positions || []).map((p, i) => {
         const disc = Number(p.discount) || 0;
