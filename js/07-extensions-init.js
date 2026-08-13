@@ -3332,6 +3332,57 @@
                         if (n > 0) console.log(`Kategorien-Migration v79: ${n} Materialien automatisch neu zugeordnet.`);
                     }
                 } catch (e) { console.warn('Kategorien-Migration fehlgeschlagen (nicht kritisch):', e); }
+
+                // Einmalige Bauart-Migration (v89):
+                // Aeltere Materialien wurden ohne 'bauart' importiert. Schnellrechner,
+                // Direkt-Konfiguration und die Single/Multi-Navigation filtern aber strikt
+                // auf dieses Feld - ohne bauart findet die App gar kein Geraet.
+                // Wir tragen es aus dem Herstellerkatalog nach (Marke + Artikelnummer,
+                // ersatzweise ueber die Artikelnummer im Namen).
+                try {
+                    const migB = await getSetting('bauartMigrationV89', '');
+                    if (!migB) {
+                        const kat = window.KTM_KATALOG || [];
+                        if (kat.length) {
+                            const norm = v => String(v || '').trim().toLowerCase();
+                            const byKey = new Map();   // marke|artikelnummer
+                            const byArt = new Map();   // nur artikelnummer
+                            for (const k of kat) {
+                                if (!k.bauart || !k.articleNumber) continue;
+                                byKey.set(`${norm(k.manufacturer)}|${norm(k.articleNumber)}`, k);
+                                if (!byArt.has(norm(k.articleNumber))) byArt.set(norm(k.articleNumber), k);
+                            }
+                            const mats = await db.getAll('materials');
+                            let n = 0;
+                            for (const m of mats) {
+                                if (m.bauart) continue;
+                                let hit = byKey.get(`${norm(m.manufacturer)}|${norm(m.articleNumber)}`)
+                                       || byArt.get(norm(m.articleNumber));
+                                if (!hit && m.name) {
+                                    // Name enthaelt oft die Modellnummer, z. B. "Daikin FTXP20N9"
+                                    const nm = norm(m.name);
+                                    for (const [art, k] of byArt) {
+                                        if (art.length >= 5 && nm.includes(art)) { hit = k; break; }
+                                    }
+                                }
+                                if (hit) {
+                                    await db.put('materials', {
+                                        ...m,
+                                        bauart: hit.bauart,
+                                        size: m.size || hit.size || '',
+                                        series: m.series || hit.series || ''
+                                    });
+                                    n++;
+                                }
+                            }
+                            await setSetting('bauartMigrationV89', '1');
+                            if (n > 0) {
+                                console.log(`Bauart-Migration v89: ${n} Materialien ergaenzt.`);
+                                showToast(`${n} Materialien ergänzt – Schnellrechner und Sets funktionieren jetzt.`, 'success');
+                            }
+                        }
+                    }
+                } catch (e) { console.warn('Bauart-Migration fehlgeschlagen (nicht kritisch):', e); }
                 // QR-Code einer Anlage gescannt? -> direkt öffnen
                 // Splash SOFORT ausblenden - egal was danach kommt, der Nutzer
                 // sieht die App und bleibt nicht im Ladebildschirm hängen.
