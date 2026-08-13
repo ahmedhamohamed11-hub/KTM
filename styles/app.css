@@ -12,6 +12,8 @@
             --accent: #12808f;
             --accent-hover: #0c6572;
             --accent-light: rgba(18,128,143,0.10);
+            --radius: 12px;
+            --bg: var(--bg-content);
             --success: #178a62;
             --success-light: rgba(23,138,98,0.12);
             --warning: #c07b2f;
@@ -51,6 +53,8 @@
             --accent: #29a7b8;
             --accent-hover: #3fc0d1;
             --accent-light: rgba(41,167,184,0.14);
+            --radius: 12px;
+            --bg: var(--bg-content);
             --success: #35b586;
             --success-light: rgba(53,181,134,0.14);
             --warning: #d99a52;
@@ -1515,10 +1519,13 @@
 /* Schnellberechnung – erster Knopf auf dem Dashboard */
 .dash-calc-btn { display:flex; align-items:center; gap:12px; width:100%; margin:0 0 14px;
     padding:14px 16px; border:0; border-radius:14px; cursor:pointer; text-align:left;
-    background:var(--primary); color:#fff; box-shadow:0 2px 10px rgba(0,0,0,.10); }
+    background:linear-gradient(135deg, var(--accent), var(--accent-hover));
+    color:#fff; box-shadow:0 2px 10px rgba(0,0,0,.12); }
+/* Farbe erzwingen: manche Buttons erben sonst die Textfarbe der Seite */
+.dash-calc-btn, .dash-calc-btn * { color:#fff; }
 .dash-calc-btn:active { transform:scale(.99); }
 .dash-calc-ico { font-size:24px; line-height:1; }
 .dash-calc-txt { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
 .dash-calc-txt strong { font-size:16px; font-weight:700; }
-.dash-calc-txt small { font-size:12px; opacity:.85; line-height:1.35; }
+.dash-calc-txt small { font-size:12px; opacity:.92; line-height:1.35; }
 .dash-calc-arrow { font-size:22px; opacity:.8; }
