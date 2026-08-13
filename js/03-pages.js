@@ -17,6 +17,41 @@
 
         // Direkt-Modus: Konfiguration nach gewählter Leistung + Marke
         // Gibt Serien-Gruppen zurück (wie Katalog: pro Serie eine Tabelle)
+        // Bauart eines Materials ermitteln - OHNE sich auf das gespeicherte Feld zu
+        // verlassen. Aeltere Materialien haben kein bauart; frueher fand der Rechner
+        // deshalb gar nichts. Reihenfolge: gespeichertes Feld, dann Herstellerkatalog
+        // ueber die Artikelnummer, dann Modellnummer-Muster.
+        let _bauartKat = null;
+        function matBauart(m) {
+            if (!m) return '';
+            if (m.bauart) return m.bauart;
+            if (!_bauartKat) {
+                _bauartKat = new Map();
+                for (const k of (window.KTM_KATALOG || [])) {
+                    if (!k.bauart || !k.articleNumber) continue;
+                    const key = String(k.articleNumber).toLowerCase();
+                    // Manche Artikelnummern kommen als Single- UND Multi-Variante vor
+                    // (z. B. Hisense HB35XU0AG). Im Zweifel Single-Split, das ist der
+                    // haeufigere Fall und der Direktrechner arbeitet damit.
+                    const alt = _bauartKat.get(key);
+                    if (alt && alt.includes('Single') && !k.bauart.includes('Single')) continue;
+                    _bauartKat.set(key, k.bauart);
+                }
+            }
+            const art = String(m.articleNumber || '').toLowerCase();
+            if (art && _bauartKat.has(art)) return _bauartKat.get(art);
+
+            const txt = `${m.articleNumber || ''} ${m.name || ''}`.toUpperCase();
+            if ((m.articleNumber || '').includes('+')) return 'Klimaset';
+            const multi = /MULTI/i.test(`${m.series || ''} ${m.notes || ''}`);
+            if (/FVXM|CVXM/.test(txt)) return 'Truhengerät';
+            if (/FTX|CTX|HB\d|N\/EU|\.CS[JK]|\.NS[AJ]/.test(txt))
+                return multi ? 'Innengerät Multi-Split' : 'Innengerät Single-Split';
+            if (/RX|AS\d|X\/EU|AJ\d|MU\d|FM\d|\.CA3|\.CL2|\.C24|AMW/.test(txt))
+                return multi ? 'Außengerät Multi-Split' : 'Außengerät Single-Split';
+            return '';
+        }
+
         async function calcDirectCompute() {
             const S = CALC_STATE;
             const mats = await db.getAll('materials');
@@ -27,28 +62,28 @@
 
             // Alle Single-Split Geräte (nach Marke gefiltert)
             const allSS = mats.filter(m => {
-                const b = m.bauart||'';
+                const b = matBauart(m);
                 const isSS = b === 'Innengerät Single-Split' || b === 'Außengerät Single-Split' || b === 'Truhengerät' || b === 'Klimaset';
                 return isSS && (!brand || norm(m.manufacturer) === norm(brand));
             });
 
             // Alle verfügbaren Marken (aus Single-Split Geräten)
             const availBrands = [...new Set(mats
-                .filter(m => ['Innengerät Single-Split','Außengerät Single-Split','Truhengerät','Klimaset'].includes(m.bauart||''))
+                .filter(m => ['Innengerät Single-Split','Außengerät Single-Split','Truhengerät','Klimaset'].includes(matBauart(m)))
                 .map(m => m.manufacturer).filter(Boolean)
             )].sort();
 
             // Alle verfügbaren Leistungen (aus gewählter Marke oder allen)
             const pool = brand ? allSS : mats.filter(m =>
-                ['Innengerät Single-Split','Außengerät Single-Split','Truhengerät','Klimaset'].includes(m.bauart||''));
+                ['Innengerät Single-Split','Außengerät Single-Split','Truhengerät','Klimaset'].includes(matBauart(m)));
             const availKw = [...new Set(pool.map(m => m.size).filter(Boolean))]
                 .sort((a,b) => kwOf(a) - kwOf(b));
 
             // Serien-Gruppen bauen (IG + AG zusammen, gruppiert nach series)
             // Für jede Leistungsstufe: alle IG finden, passendes AG suchen
-            const igList = allSS.filter(m => m.bauart === 'Innengerät Single-Split');
-            const agList = allSS.filter(m => m.bauart === 'Außengerät Single-Split');
-            const truhenList = allSS.filter(m => m.bauart === 'Truhengerät' || m.bauart === 'Klimaset');
+            const igList = allSS.filter(m => matBauart(m) === 'Innengerät Single-Split');
+            const agList = allSS.filter(m => matBauart(m) === 'Außengerät Single-Split');
+            const truhenList = allSS.filter(m => ['Truhengerät','Klimaset'].includes(matBauart(m)));
 
             // Serien aus IG ableiten
             const serienMap = {};
@@ -114,9 +149,9 @@
             const KLIMA_B = ['Innengerät Single-Split','Außengerät Single-Split','Innengerät Multi-Split','Außengerät Multi-Split','Truhengerät','Klimaset'];
             const diag = {
                 total: mats.length,
-                mitBauart: mats.filter(m => KLIMA_B.includes(m.bauart || '')).length,
-                ohneBauart: mats.filter(m => !m.bauart).length,
-                klimaOhneBauart: mats.filter(m => !m.bauart && /klima/i.test(m.category || '')).length
+                mitBauart: mats.filter(m => KLIMA_B.includes(matBauart(m))).length,
+                ohneBauart: mats.filter(m => !matBauart(m)).length,
+                klimaOhneBauart: mats.filter(m => !matBauart(m) && /klima/i.test(m.category || '')).length
             };
 
             return { serien, availBrands, availKw, brand, len, montage, leitungen, diag,
@@ -152,7 +187,7 @@
             // bauart-Feld ist die zuverlässigste Quelle und hat jetzt Vorrang; die alten
             // Namensmuster bleiben nur als Fallback für Material ohne gepflegte Bauart.
             const isIndoor = m => {
-                const bauart = (m.bauart || '').toLowerCase();
+                const bauart = matBauart(m).toLowerCase();
                 if (bauart) return bauart.includes('innengerät');
                 const nm = (m.name || '') + ' ' + (m.articleNumber || '');
                 const notes = (m.notes || '').toLowerCase();
@@ -504,7 +539,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v101</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v102</span></div>
                         </div>
                     </div>`;
             })();
@@ -1358,7 +1393,7 @@
                     if (F.serie && (m.series || 'Ohne Serie') !== F.serie) return false;
                     // splitType-Filter
                     if (F.splitType) {
-                        const b = m.bauart || '';
+                        const b = matBauart(m);
                         const isSingle = b.includes('Single-Split') || b === 'Klimaset' || b === 'Truhengerät';
                         const isMulti  = b.includes('Multi-Split') || b.includes('Multi Split');
                         if (F.splitType === 'Single Split' && !isSingle) return false;
@@ -1451,9 +1486,9 @@
                     }).join('')}</div>`;
                 } else if (level === 'splittype') {
                     // Neue Ebene: Single Split / Multi Split / Zubehör
-                    const isSingle = m => m.bauart?.includes('Single-Split') || m.bauart === 'Klimaset' || m.bauart === 'Truhengerät';
-                    const isMulti  = m => m.bauart?.includes('Multi-Split') || m.bauart?.includes('Multi Split');
-                    const isZub    = m => m.bauart === 'Zubehör' || (!isSingle(m) && !isMulti(m) && m.category === 'Klimaanlagen');
+                    const isSingle = m => { const b = matBauart(m); return b.includes('Single-Split') || b === 'Klimaset' || b === 'Truhengerät'; };
+                    const isMulti  = m => { const b = matBauart(m); return b.includes('Multi-Split') || b.includes('Multi Split'); };
+                    const isZub    = m => matBauart(m) === 'Zubehör' || (!isSingle(m) && !isMulti(m) && m.category === 'Klimaanlagen');
                     const singleList = inScope.filter(isSingle);
                     const multiList  = inScope.filter(isMulti);
                     const zubList    = inScope.filter(m => !isSingle(m) && !isMulti(m));
@@ -1482,8 +1517,8 @@
                     if (sizes.length === 0) { body = '<div class="empty-state">Keine Geräte gefunden.</div>'; }
                     else body = `<div class="mat-grid">${sizes.map(sz => {
                         const inThisSize = inScope.filter(m => (m.size || '') === sz);
-                        const hasIG = inThisSize.some(m => m.bauart?.includes('Innen'));
-                        const hasAG = inThisSize.some(m => m.bauart?.includes('Außen'));
+                        const hasIG = inThisSize.some(m => matBauart(m).includes('Innen'));
+                        const hasAG = inThisSize.some(m => matBauart(m).includes('Außen'));
                         const pairOk = isSingle && hasIG && hasAG;
                         const pairHint = isSingle ? (pairOk ? '✅ Paar komplett' : (hasIG && !hasAG ? '⚠️ AG fehlt' : !hasIG && hasAG ? '⚠️ IG fehlt' : '')) : '';
                         const avail = inThisSize.filter(m => Number(m.stock) > 0).length;
@@ -1553,11 +1588,11 @@
 
                     if (!list.length) {
                         body = `<div class="empty-note" style="padding:30px;">${searching ? 'Keine Treffer für „' + escapeHtml(q) + '".' : 'Keine Produkte in dieser Auswahl.'}</div>`;
-                    } else if (list.some(m => m.bauart)) {
+                    } else if (list.some(m => matBauart(m))) {
                         // Nach Bauart gruppieren (Innen/Außen, Single/Multi ...) – nur wenn gepflegt
                         const order = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Konsolengerät', 'Unterdeckengerät', 'Truhengerät', 'Klimaset', 'Zubehör'];
                         const groups = {};
-                        list.forEach(m => { const b = m.bauart || 'Sonstige'; (groups[b] = groups[b] || []).push(m); });
+                        list.forEach(m => { const b = matBauart(m) || 'Sonstige'; (groups[b] = groups[b] || []).push(m); });
                         const keys = Object.keys(groups).sort((a, b) => {
                             const ia = order.indexOf(a), ib = order.indexOf(b);
                             return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
