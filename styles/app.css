@@ -1502,3 +1502,16 @@
 
 /* Bund-/Rollenware: Meterpreis unter dem Listenpreis */
 .mat-perm { font-size:12px; font-weight:600; color:var(--success); margin-top:2px; }
+
+
+/* Montagesätze direkt in der Stücklisten-Vorschau */
+.sl-rates { grid-column:1 / -1; display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:7px; }
+.sl-rates label { font-size:11px; color:var(--text-muted); display:flex; flex-direction:column; gap:3px; }
+.sl-rates input { width:100%; padding:5px 6px; font-size:12.5px; text-align:right;
+    border:1px solid var(--border); border-radius:6px; }
+.sl-price input[readonly] { background:var(--bg-secondary); color:var(--text-muted); }
+
+
+/* Schnellrechner als erster, hervorgehobener Menuepunkt */
+.nav-item--primary { font-weight:700; }
+.nav-item--primary .nav-icon { color:var(--primary); }

@@ -4027,16 +4027,15 @@
                 const base   = Number(await getSetting('montageBase',      200)) || 200;
                 const perDev = Number(await getSetting('montagePerDevice', 350)) || 350;
                 const perM   = Number(await getSetting('montagePerMeter',   25)) || 25;
-                const fix    = Number(await getSetting(this._posKey('Montagepauschale'), ''));
-                const m      = Math.round((Number(meter) || 0) * 10) / 10;
-                const n      = Number(anzGeraete) || 1;
-                const preis  = fix > 0 ? fix : base + perDev * n + perM * m;
+                const m = Math.round((Number(meter) || 0) * 10) / 10;
+                const n = Number(anzGeraete) || 1;
                 return [{
                     materialId: null, name: 'Montagepauschale',
                     manufacturer: '', articleNumber: '', category: 'Arbeitsleistung', bauart: '',
-                    unit: 'Psch', quantity: 1, price: preis, discount: 0,
-                    notes: fix > 0 ? 'Fixe Pauschale' :
-                        `Anfahrt ${formatCurrency(base)} · ${n} Gerät${n > 1 ? 'e' : ''} à ${formatCurrency(perDev)} · ${m} lfm à ${formatCurrency(perM)}`
+                    unit: 'Psch', quantity: 1, price: base + perDev * n + perM * m, discount: 0,
+                    // Die Pauschale wird IMMER gerechnet. Angepasst werden die Saetze,
+                    // nicht der Endbetrag - so skaliert sie beim naechsten Angebot weiter.
+                    rates: { base, perDev, perM, n, m }
                 }];
             },
 
@@ -4095,16 +4094,21 @@
                             <div class="sl-title">${escapeHtml(p.name)}</div>
                             <div class="sl-meta">${p.notes ? escapeHtml(p.notes) + '<br>' : ''}${p.quantity} ${escapeHtml(p.unit || 'Stk')} · ${
                                 p.listenpreisGeschuetzt ? '<span title="Listenpreis bleibt im Katalog unverändert">🔒 Listenpreis</span>'
-                                : p.category === 'Arbeitsleistung' ? '<span style="color:var(--success);">Pauschale – wird als Fixpreis gemerkt</span>'
+                                : p.rates ? '<span style="color:var(--success);">rechnet immer mit – Sätze unten anpassbar</span>'
                                 : p.settingKey ? '<span style="color:var(--success);">Arbeitszeit – wird gemerkt</span>'
                                 : p.materialId ? '<span style="color:var(--success);">Katalog – wird gemerkt</span>'
                                 : '<span style="color:var(--warning);">Richtwert – wird gemerkt</span>'}</div>
                         </div>
                         <div class="sl-price">
-                            <input type="number" step="0.01" min="0" value="${Number(p.price).toFixed(2)}" data-price="${i}">
+                            <input type="number" step="0.01" min="0" value="${Number(p.price).toFixed(2)}" data-price="${i}" ${p.rates ? 'readonly' : ''}>
                             <span>€</span>
                         </div>
                         <div class="sl-sum" data-sum="${i}">${formatCurrency(p.price * p.quantity)}</div>
+                        ${p.rates ? `<div class="sl-rates">
+                            <label>Anfahrt<input type="number" step="1" min="0" value="${p.rates.base}" data-rate="base"></label>
+                            <label>je Gerät (${p.rates.n})<input type="number" step="1" min="0" value="${p.rates.perDev}" data-rate="perDev"></label>
+                            <label>je lfm (${p.rates.m})<input type="number" step="1" min="0" value="${p.rates.perM}" data-rate="perM"></label>
+                        </div>` : ''}
                     </div>`).join('');
 
                 const html = `
@@ -4142,6 +4146,18 @@
                             ...p,
                             price: parseFloat(ov.querySelector(`[data-price="${i}"]`)?.value) || 0
                         }));
+                        // Montagesaetze immer sichern - dann rechnet die Pauschale beim
+                        // naechsten Angebot mit den neuen Saetzen weiter.
+                        for (let i = 0; i < positions.length; i++) {
+                            if (!positions[i].rates) continue;
+                            const row = ov.querySelector(`.sl-row[data-i="${i}"]`);
+                            if (!row) continue;
+                            for (const [k, key] of [['base','montageBase'],['perDev','montagePerDevice'],['perM','montagePerMeter']]) {
+                                const v = parseFloat(row.querySelector(`[data-rate="${k}"]`)?.value);
+                                if (v >= 0 && v !== positions[i].rates[k]) await setSetting(key, String(v));
+                            }
+                            delete out[i].rates;
+                        }
                         if (ov.querySelector('#slRemember')?.checked) {
                             let n = 0, geschuetzt = 0;
                             for (let i = 0; i < out.length; i++) {
@@ -4151,6 +4167,7 @@
                                 // ueber den Haendlerrabatt gerechnet - den darf ein einzelnes
                                 // Angebot nicht dauerhaft verstellen.
                                 if (out[i].listenpreisGeschuetzt) { geschuetzt++; continue; }
+                                if (out[i].rates) continue;   // Saetze werden separat gespeichert
                                 if (out[i].settingKey) {
                                     await setSetting(out[i].settingKey, String(out[i].price)); n++;
                                 } else if (out[i].materialId) {
@@ -4176,6 +4193,16 @@
                     }, () => resolve(null), { wide: true });
 
                     const recalc = () => {
+                        // Montagepauschale immer aus den Saetzen rechnen
+                        positions.forEach((p, i) => {
+                            if (!p.rates) return;
+                            const row = overlay.querySelector(`.sl-row[data-i="${i}"]`);
+                            if (!row) return;
+                            const g = k => parseFloat(row.querySelector(`[data-rate="${k}"]`)?.value) || 0;
+                            const neu = g('base') + g('perDev') * p.rates.n + g('perM') * p.rates.m;
+                            const inp = row.querySelector(`[data-price="${i}"]`);
+                            if (inp) inp.value = neu.toFixed(2);
+                        });
                         let t = 0;
                         positions.forEach((p, i) => {
                             const v = parseFloat(overlay.querySelector(`[data-price="${i}"]`)?.value) || 0;
@@ -4186,7 +4213,7 @@
                         const tot = overlay.querySelector('#slTotal');
                         if (tot) tot.textContent = formatCurrency(t);
                     };
-                    overlay.querySelectorAll('[data-price]').forEach(inp => inp.addEventListener('input', recalc));
+                    overlay.querySelectorAll('[data-price], [data-rate]').forEach(inp => inp.addEventListener('input', recalc));
                     overlay.querySelector('.save-btn').textContent = 'Anlegen';
                     recalc();
                 });
