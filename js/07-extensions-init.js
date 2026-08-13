@@ -1305,7 +1305,19 @@
                 const positions = [
                     mkPos(ig, 1, 'Stk'),
                     mkPos(ag, 1, 'Stk'),
-                    kupfer ? mkPos(kupfer, D.len, 'm', 'Kältemittelleitung (Saug + Flüssig)', D.kupferpreis) : mkPos(null, D.len, 'm', 'Kältemittelleitung (Saug + Flüssig)', D.kupferpreis),
+                    ...(() => {
+                        // Zwei Leitungen je Geraet: Fluessig + Gas, Dimension nach Leistung
+                        const kw = parseFloat(String(ig.size || '').replace(',', '.')) || 0;
+                        const d = this._rohrDim(kw, ig.manufacturer, ig.series);
+                        const normS = v => String(v || '').replace(/[\u2033"']/g, '').trim();
+                        const rohr = dim => mats.find(m => m.category === 'Kupfer & Rohrsysteme'
+                            && normS(m.size) === dim && Number(m.sellingPrice) > 0);
+                        return [d.fluessig, d.gas].map(dim => {
+                            const m = rohr(dim);
+                            const preis = m ? matUnitPrice(m, 'm') : (dim === '1/4' ? 7.1 : dim === '3/8' ? 8.6 : 11.5);
+                            return mkPos(m, D.len, 'm', `Kupferrohr isoliert ${dim}"`, preis);
+                        });
+                    })(),
                     kommu  ? mkPos(kommu,  D.len, 'm', 'Kommunikationskabel', D.kommupreis) : mkPos(null, D.len, 'm', 'Kommunikationskabel', D.kommupreis),
                     strom  ? mkPos(strom,  D.len, 'm', 'Stromzuleitung')                    : mkPos(null, D.len, 'm', 'Stromzuleitung', 2.5),
                     kond   ? mkPos(kond,   D.len, 'm', 'Kondensatschlauch', D.kondpreis)    : mkPos(null, D.len, 'm', 'Kondensatschlauch', D.kondpreis),
@@ -3997,6 +4009,17 @@
             // Anfahrt, Montage je Geraet und Leitungsverlegung je Laufmeter.
             // settingKey sorgt dafuer, dass eine Preisaenderung direkt den Stundensatz
             // bzw. Meterpreis der App neu setzt - nicht nur diese eine Position.
+            // Rohrleitungsanschluss je Leistungsklasse - so wie er in den
+            // Herstellerkatalogen (Daikin, Samsung, LG, Hisense) angegeben ist.
+            _rohrDim(kw, hersteller, serie) {
+                if (kw <= 0 || kw <= 4.5) return { fluessig: '1/4', gas: '3/8' };   // 6,35 | 9,52
+                // Daikin Sensira/Comfora bleiben laut Katalog bis 7,1 kW bei 12,70
+                const daikinSingle = /daikin/i.test(hersteller || '') && /sensira|comfora/i.test(serie || '');
+                if (daikinSingle && kw <= 7.2) return { fluessig: '1/4', gas: '1/2' };
+                if (kw <= 6.2) return { fluessig: '1/4', gas: '1/2' };              // 6,35 | 12,70
+                return { fluessig: '1/4', gas: '5/8' };                             // 6,35 | 15,88
+            },
+
             async _montagePositionen(anzGeraete, meter) {
                 const base   = Number(await getSetting('montageBase',      200)) || 200;
                 const perDev = Number(await getSetting('montagePerDevice', 350)) || 350;
@@ -4209,7 +4232,7 @@
 
                     // Katalog-Suche: findet den günstigsten passenden Artikel per Stichwörtern
                     const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
-                    const findCat = (keywords, category) => {
+                    const findCat = (keywords, category, dim) => {
                         const kws = keywords.map(k => k.toLowerCase());
                         let pool = mats.filter(m => {
                             if (Number(m.sellingPrice) <= 0) return false;
@@ -4223,6 +4246,14 @@
                             const inCat = pool.filter(m => m.category === category);
                             if (inCat.length) pool = inCat;
                         }
+                        // Bei Rohren zaehlt die Dimension: 1/4 und 3/8 duerfen nicht
+                        // gegeneinander getauscht werden. Zoll-Zeichen normalisieren.
+                        if (dim) {
+                            const norm = v => String(v || '').replace(/[\u2033"']/g, '').trim();
+                            const exact = pool.filter(m => norm(m.size) === norm(dim));
+                            if (!exact.length) return null;
+                            pool = exact;
+                        }
                         if (!pool.length) return null;
                         // günstigsten nehmen (gepflegte Preise)
                         return pool.sort((a, b) => Number(a.sellingPrice) - Number(b.sellingPrice))[0];
@@ -4235,9 +4266,28 @@
                     const breaks = Number(CALC_STATE.breakthrough) || rooms; // Wanddurchbrüche
 
                     // Standard-Stückliste einer Split-Montage (Richtwerte, wenn Katalog-Preis fehlt)
+                    // Jedes Split-Geraet braucht ZWEI Leitungen: Fluessig und Gas, mit
+                    // unterschiedlichem Durchmesser. Die Zuordnung folgt den
+                    // Rohrleitungsanschluessen aus den Herstellerkatalogen.
+                    const dims = [];
+                    for (const x of res.rooms) {
+                        const kw = parseFloat(String(x.dev?.size || '').replace(',', '.')) || 0;
+                        const d = this._rohrDim(kw, x.dev?.manufacturer, x.dev?.series);
+                        for (const seite of ['fluessig', 'gas']) {
+                            const dim = d[seite];
+                            const vorh = dims.find(y => y.dim === dim);
+                            if (vorh) vorh.qty += dist;
+                            else dims.push({ dim, qty: dist });
+                        }
+                    }
+                    if (!dims.length) { dims.push({ dim: '1/4', qty: totalPipe }, { dim: '3/8', qty: totalPipe }); }
+
                     const spec = [
-                        { key: ['kältemittelleitung', 'kupferrohr', 'saugleitung', 'flüssigleitung', 'cu-rohr'], cat: 'Kupferrohr', label: 'Kältemittelleitung (Saug + Flüssig)', qty: totalPipe, unit: 'm', fallback: 14 },
-                        { key: ['isolierung', 'armaflex', 'dämmung'], cat: null, label: 'Leitungsisolierung', qty: totalPipe, unit: 'm', fallback: 3.5 },
+                        ...dims.map(d => ({
+                            key: ['kupferrohr ' + d.dim, 'kupferrohr'], cat: 'Kupfer & Rohrsysteme',
+                            dim: d.dim, label: `Kupferrohr isoliert ${d.dim}"`,
+                            qty: d.qty, unit: 'm', fallback: d.dim === '1/4' ? 7.1 : d.dim === '3/8' ? 8.6 : 11.5
+                        })),
                         { key: ['kommunikationskabel', 'steuerkabel', 'kommkabel', 'ölflex', '4x0,75', '4x1,5'], cat: null, label: 'Kommunikationskabel', qty: totalPipe, unit: 'm', fallback: 2.2 },
                         { key: ['kondensat', 'ablaufschlauch', 'kondensatschlauch'], cat: null, label: 'Kondensatschlauch', qty: totalPipe, unit: 'm', fallback: 1.8 },
                         { key: ['stromkabel', 'netzkabel', 'nym', '3x1,5', '3x2,5'], cat: null, label: 'Stromzuleitung', qty: dist, unit: 'm', fallback: 2.5 },
@@ -4249,7 +4299,7 @@
                     const positions = [];
                     for (const s of spec) {
                         if (s.qty <= 0) continue;
-                        const hit = findCat(s.key, s.cat);
+                        const hit = findCat(s.key, s.cat, s.dim);
                         // Gemerkter Richtwert schlaegt den fest verdrahteten Fallback.
                         const saved = hit ? null : Number(await getSetting(this._posKey(s.label), ''));
                         // WICHTIG: bei Rollen-/Bund-/Stangenware ist sellingPrice der Preis
