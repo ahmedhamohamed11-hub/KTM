@@ -2887,12 +2887,15 @@
                 if (_R.posDiscount > 0) {
                     summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R.posDiscount)}`]);
                 }
-                summaryRows.push(['Material inkl. USt.', formatCurrency(_R.grossMaterial)]);
-                if (_R.discountEnabled && _R.grossDiscount > 0) {
-                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(_R.grossDiscount)}`]);
-                }
+                // Zwischensumme = ALLE Positionen der Tabelle. Die Arbeitsleistung wird
+                // nur als "davon" ausgewiesen, damit klar ist, dass sie nicht noch einmal
+                // dazugerechnet wird - sie steht ja bereits als Position in der Liste.
+                summaryRows.push(['Zwischensumme inkl. USt.', formatCurrency(_R.grossMaterial + _R.grossLabor)]);
                 if (_R.grossLabor > 0) {
-                    summaryRows.push(['Arbeitsleistung', formatCurrency(_R.grossLabor)]);
+                    summaryRows.push(['davon Arbeitsleistung (ohne Rabatt)', formatCurrency(_R.grossLabor)]);
+                }
+                if (_R.discountEnabled && _R.grossDiscount > 0) {
+                    summaryRows.push([`Rabatt ${(_R.rate * 100).toFixed(1).replace('.', ',')} % auf Material`, `- ${formatCurrency(_R.grossDiscount)}`]);
                 }
                 summaryRows.forEach(([label, val]) => {
                     doc.text(label, boxX, fy);
