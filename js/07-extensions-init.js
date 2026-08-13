@@ -4344,7 +4344,7 @@
             // ===== Hersteller-Katalog importieren (Samsung, Daikin ...) =====
             async confirmImportKatalog() {
                 const count = (window.KTM_KATALOG || []).length;
-                const ok = await showConfirm(`Es werden ${count} Geräte (Samsung, Daikin, LG, Hisense, Bosch + Zubehör wie SUMO-Standfüße, Verteilerboxen, WLAN-Gateway) mit Modellnummern und Preisen in deinen Materialkatalog geladen. Bereits vorhandene werden übersprungen. Fortfahren?`, { title: 'Katalog importieren', okText: 'Importieren', danger: false });
+                const ok = await showConfirm(`Es werden ${count} Einträge (Samsung, Daikin, LG, Hisense, Bosch, SUMO – inkl. Komplett-Sets) abgeglichen.<br><br><strong>Neue</strong> Geräte werden angelegt, <strong>bereits vorhandene</strong> bekommen den aktuellen Listenpreis und die aktuellen Katalogdaten.<br><br>Deine eigenen Angaben bleiben erhalten: Bestand, Einkaufspreis, Bilder und Favoriten werden nicht überschrieben. Fortfahren?`, { title: 'Katalog importieren / aktualisieren', okText: 'Abgleichen', danger: false });
                 if (ok) this.importHerstellerKatalog();
             },
 
@@ -4353,12 +4353,37 @@
                 if (!katalog.length) { showToast('Kein Katalog gefunden.', 'error'); return; }
 
                 const existing = await db.getAll('materials');
-                const existingKeys = new Set(existing.map(m => `${(m.manufacturer || '').toLowerCase()}|${(m.articleNumber || m.name || '').toLowerCase()}`));
+                // Vorhandene nach Marke+Artikelnummer indizieren, damit ein zweiter Import
+                // die Katalogdaten AKTUALISIERT statt sie zu ueberspringen.
+                const byKey = new Map();
+                for (const m of existing) {
+                    byKey.set(`${(m.manufacturer || '').toLowerCase()}|${(m.articleNumber || m.name || '').toLowerCase()}`, m);
+                }
 
-                let added = 0, skipped = 0;
+                let added = 0, updated = 0, unchanged = 0;
                 for (const item of katalog) {
                     const key = `${(item.manufacturer || '').toLowerCase()}|${(item.articleNumber || item.name || '').toLowerCase()}`;
-                    if (existingKeys.has(key)) { skipped++; continue; }
+                    const cur = byKey.get(key);
+                    if (cur) {
+                        // Nur Katalogfelder anfassen. Alles, was Ahmed selbst gepflegt hat
+                        // (stock, purchasePrice, images, favorit, eigene Notizen-Ergaenzungen)
+                        // bleibt unangetastet.
+                        const next = {
+                            ...cur,
+                            name: item.name,
+                            series: item.series,
+                            category: item.category || cur.category || 'Klimaanlagen',
+                            bauart: item.bauart || cur.bauart || '',
+                            size: item.size || cur.size || '',
+                            sellingPrice: Number(item.sellingPrice) || 0,
+                            notes: item.notes || cur.notes || ''
+                        };
+                        const changed = ['name','series','category','bauart','size','sellingPrice','notes']
+                            .some(f => String(cur[f] ?? '') !== String(next[f] ?? ''));
+                        if (changed) { await db.put('materials', next); updated++; }
+                        else unchanged++;
+                        continue;
+                    }
                     await db.add('materials', {
                         name: item.name,
                         manufacturer: item.manufacturer,
@@ -4374,10 +4399,14 @@
                         stock: 0,
                         images: []
                     });
-                    existingKeys.add(key);
+                    byKey.set(key, { manufacturer: item.manufacturer, articleNumber: item.articleNumber });
                     added++;
                 }
-                showToast(`Katalog importiert: ${added} neue Geräte${skipped ? ', ' + skipped + ' schon vorhanden' : ''}.`, 'success');
+                const parts = [];
+                if (added) parts.push(`${added} neu`);
+                if (updated) parts.push(`${updated} aktualisiert`);
+                if (unchanged) parts.push(`${unchanged} unverändert`);
+                showToast(`Katalog abgeglichen: ${parts.join(', ') || 'nichts zu tun'}.`, 'success');
                 this.navigate('materials');
             },
 
