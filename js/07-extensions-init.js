@@ -1306,7 +1306,10 @@
                     materialId: m?.id || null, name: name || m?.name || '',
                     manufacturer: m?.manufacturer || '', articleNumber: m?.articleNumber || '',
                     category: m?.category || '', unit: unit, quantity: qty,
-                    price: price || Number(m?.sellingPrice) || 0, discount: 0,
+                    // Endpreis inkl. 20 %: matBrutto rechnet den Netto-Listenpreis hoch,
+                    // priceIncludesVat verhindert einen zweiten Aufschlag im Angebot.
+                    price: price || ((typeof matBrutto === 'function') ? matBrutto(m) : (Number(m?.sellingPrice) || 0) * 1.2),
+                    priceIncludesVat: true, discount: 0,
                     bauart: m?.bauart || ''
                 });
 
@@ -4062,6 +4065,9 @@
                     materialId: null, name: 'Montagepauschale',
                     manufacturer: '', articleNumber: '', category: 'Arbeitsleistung', bauart: '',
                     unit: 'Psch', quantity: 1, price: base + perDev * n + perM * m, discount: 0,
+                    // Arbeitsleistung wird als eigener Betrag gefuehrt: kein
+                    // Material-Aufschlag, und der eingegebene Betrag bleibt der Betrag.
+                    priceIncludesVat: true,
                     // Die Pauschale wird IMMER gerechnet. Angepasst werden die Saetze,
                     // nicht der Endbetrag - so skaliert sie beim naechsten Angebot weiter.
                     rates: { base, perDev, perM, n, m }
@@ -4153,7 +4159,7 @@
                 const html = `
                     <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;">
                         ${escapeHtml(meta.titel || '')}<br>
-                        Preise sind Einzelpreise netto und lassen sich hier ändern.
+                        Preise sind Endpreise inkl. 20 % USt. und lassen sich hier ändern.
                     </div>
                     <div class="sl-list" id="slList">${rows}</div>
                     <button type="button" class="sl-add-btn" id="slAddBtn">+ Position hinzufügen</button>
@@ -4166,10 +4172,10 @@
                         </div>
                         <button type="button" class="btn btn-primary" id="slAddOk">Übernehmen</button>
                     </div>
-                    <div class="sl-total"><span>Zwischensumme netto</span><strong id="slSub">–</strong></div>
+                    <div class="sl-total"><span>Zwischensumme inkl. USt.</span><strong id="slSub">–</strong></div>
                     <div class="sl-global"><label>Gesamtrabatt auf alle Positionen
                         <span><input type="number" id="slGlobalDisc" value="0" step="1" min="0" max="100"> %</span></label></div>
-                    <div class="sl-total sl-total--final"><span>Summe netto</span><strong id="slTotal">–</strong></div>
+                    <div class="sl-total sl-total--final"><span>Summe inkl. USt.</span><strong id="slTotal">–</strong></div>
                     <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:12px;">
                         <input type="checkbox" id="slRemember" checked style="margin-top:3px;">
                         <span>Geänderte Preise als Standard merken<br>
@@ -4329,7 +4335,10 @@
                         manufacturer: g.manufacturer || '', articleNumber: g.articleNumber || '',
                         category: g.category || '', bauart: g.bauart || '',
                         unit: g.unit || 'Stk', quantity: 1,
-                        price: Number(g.sellingPrice) || 0, discount: 0,
+                        // Endpreis inkl. 20 % - recomputeOffer schlaegt dank Flag
+                        // keine weitere USt auf (sonst doppelte Umsatzsteuer).
+                        price: (typeof matBrutto === 'function') ? matBrutto(g) : (Number(g.sellingPrice) || 0) * 1.2,
+                        priceIncludesVat: true, discount: 0,
                         // Klimageraete: Preis fuer dieses Angebot aenderbar, aber der
                         // Listenpreis im Katalog bleibt unangetastet (Herstellerpreisliste).
                         listenpreisGeschuetzt: true
@@ -4344,7 +4353,7 @@
                         manufacturer: p.manufacturer || '', articleNumber: p.articleNumber || '',
                         category: p.category || '', bauart: '',
                         unit: p.einheit || 'Stk', quantity: Number(p.menge) || 0,
-                        price: Number(p.preis) || 0, discount: 0,
+                        price: Number(p.preis) || 0, priceIncludesVat: true, discount: 0,
                         notes: p.ausKatalog ? '' : 'Richtwert – Preis prüfen'
                     });
                 }
@@ -4436,6 +4445,8 @@
                         // WICHTIG: bei Rollen-/Bund-/Stangenware ist sellingPrice der Preis
                         // des ganzen Bundes. matUnitPrice rechnet auf die Meter-Einheit
                         // herunter - sonst wird der Bundpreis je Meter berechnet.
+                        // matUnitPrice liefert bereits den Endpreis inkl. 20 %.
+                        // Richtwerte und gemerkte Preise sind ebenfalls Endpreise.
                         const unitPrice = hit ? matUnitPrice(hit, s.unit) : (saved > 0 ? saved : s.fallback);
                         positions.push({
                             name: hit ? hit.name : s.label,

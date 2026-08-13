@@ -539,7 +539,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v104</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v105</span></div>
                         </div>
                     </div>`;
             })();
@@ -1324,26 +1324,15 @@
             const m = `${mat.notes || ''} ${mat.name || ''}`.match(/(\d+(?:[.,]\d+)?)\s*m\s*Bund/i);
             return m ? parseFloat(m[1].replace(',', '.')) : 0;
         }
+        // Liefert den Verkaufspreis je verkaufter Einheit als ENDPREIS inkl. 20 %.
+        // Bei Rollen-/Bund-/Stangenware wird zusaetzlich auf den Meter umgerechnet.
         function matUnitPrice(mat, unit) {
-            const base = Number(mat?.sellingPrice) || 0;
-            // Rolle/Bund/Stange -> Verkaufspreis pro Meter/Einheit
-            if (unit === 'm' && mat && ['Rolle', 'Bund', 'Stange'].includes(mat.unit || '')) {
-                const bl = matBundleLength(mat);
-                if (bl > 0) {
-                    // Wenn ein Aufschlag (markup) hinterlegt ist: Verkaufspreis = EK/Meter × (1 + Aufschlag)
-                    const markup = Number(mat.markup);
-                    if (markup > 0) {
-                        const ekRoll = (typeof effectivePurchasePrice === 'function') ? effectivePurchasePrice(mat, window.__ktmDealerDiscounts) : (Number(mat.purchasePrice) || 0);
-                        if (ekRoll > 0) {
-                            const ekPerM = ekRoll / bl;
-                            return Math.round(ekPerM * (1 + markup / 100) * 100) / 100;
-                        }
-                    }
-                    // sonst: Listenpreis der Rolle / Länge (bisheriges Verhalten)
-                    return Math.round((base / bl) * 100) / 100;
-                }
-            }
-            return base;
+            if (!mat) return 0;
+            const brutto = (typeof matBrutto === 'function') ? matBrutto(mat) : (Number(mat.sellingPrice) || 0) * 1.2;
+            const bl = Number(mat.bundleLength) || 0;
+            const isPack = ['Rolle', 'Bund', 'Stange'].includes(mat.unit || '') && bl > 0;
+            if (unit === 'm' && isPack) return Math.round((brutto / bl) * 100) / 100;
+            return Math.round(brutto * 100) / 100;
         }
 
         function matStockStatus(m) {
@@ -1564,7 +1553,7 @@
                         // weil dem Kunden der Meter verrechnet wird, nicht das Bund.
                         const _bl = matBundleLength(m);
                         const perM = (['Rolle','Bund','Stange'].includes(m.unit || '') && _bl > 0 && Number(m.sellingPrice) > 0)
-                            ? `<div class="mat-perm">${formatCurrency(matUnitPrice(m, 'm'))} / m · Bund ${_bl} m</div>` : '';
+                            ? `<div class="mat-perm">${formatCurrency(matUnitPrice(m, 'm'))} / m inkl. · Bund ${_bl} m</div>` : '';
                         const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []);
                         const isSel = selected.has(String(m.id));
                         const clickAction = selectMode ? `app.matToggleSelect(${idJS(m.id)})` : `app.openMaterialDetail(${idJS(m.id)})`;
@@ -1578,7 +1567,7 @@
                                 <div class="mat-card-sub">${[m.manufacturer, m.series, m.size].filter(Boolean).map(escapeHtml).join(' · ') || '&nbsp;'}</div>
                                 ${m.articleNumber ? `<div class="mat-card-art">Art. ${escapeHtml(m.articleNumber)}</div>` : ''}
                                 <div class="mat-card-foot">
-                                    <div class="mat-price">${formatCurrency(m.sellingPrice || 0)}<small> Liste netto</small>${perM}</div>
+                                    <div class="mat-price">${formatCurrency(matBrutto(m))}<small> inkl. 20 %</small>${perM}</div>
                                     <span class="mat-stock ${st.cls}">${st.label}</span>
                                 </div>
                             </div>

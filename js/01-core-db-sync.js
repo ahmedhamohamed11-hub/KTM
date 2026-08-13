@@ -893,12 +893,24 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
             const vatBase = offer.vatEnabled !== false ? (Number(offer.vatRate) || 0.20) : 0;
 
+            // Umsatzsteuersatz, der fuer diese Position gilt
+            const vatOf = p => KLIMA.has((p.category || '').trim()) ? 0.20 : vatBase;
+            // KEINE doppelte USt: ist priceIncludesVat gesetzt, ist der Preis bereits
+            // ein Bruttopreis. Dann wird daraus der Nettowert herausgerechnet statt
+            // nochmals 20 % aufgeschlagen.
+            const netUnit = p => {
+                const pr = Number(p.price) || 0;
+                if (!p.priceIncludesVat) return pr;
+                const r = vatOf(p);
+                return r > 0 ? pr / (1 + r) : pr;
+            };
+
             // Netto pro Position nach Positions-Rabatt
             const netPerPos = positions.map(p =>
-                (Number(p.price) || 0) * (Number(p.quantity) || 0) * (1 - (Number(p.discount) || 0) / 100)
+                netUnit(p) * (Number(p.quantity) || 0) * (1 - (Number(p.discount) || 0) / 100)
             );
             const gross = positions.reduce((s, p) =>
-                s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
+                s + netUnit(p) * (Number(p.quantity) || 0), 0);
             const net = netPerPos.reduce((s, v) => s + v, 0);
             const posDiscount = gross - net;
 
@@ -913,9 +925,7 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             let vatAmount = 0;
             positions.forEach((p, i) => {
                 const netLine = netPerPos[i] * (1 - (discountEnabled ? rate : 0));
-                const cat = (p.category || '').trim();
-                const posVat = KLIMA.has(cat) ? 0.20 : vatBase;
-                vatAmount += netLine * posVat;
+                vatAmount += netLine * vatOf(p);
             });
 
             const total = netAfter + vatAmount;
@@ -984,6 +994,25 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             return { ekNetto, ekBrutto: ekNetto * EK_VAT, quelle: 'kalk',
                      rabatt: Math.round(rabatt * 10) / 10, anteil: Math.round(anteil * 10) / 10, listenpreis: list };
         }
+        // ===== Materialpreise als Endpreise inkl. 20 % =====
+        // sellingPrice bleibt INTERN der Netto-Listenpreis - der Haendlerrabatt ist
+        // darauf definiert und die Kalkulation braucht ihn. Fuer Anzeige und Angebot
+        // liefert matBrutto() den fertigen Preis inkl. USt.
+        // Ist priceIncludesVat am Material gesetzt, wurde der Preis bereits brutto
+        // erfasst und wird NICHT nochmals multipliziert.
+        const MAT_VAT = 0.20;
+        function matNetto(m) {
+            const p = Number(m?.sellingPrice) || 0;
+            return m?.priceIncludesVat ? p / (1 + MAT_VAT) : p;
+        }
+        function matBrutto(m) {
+            const p = Number(m?.sellingPrice) || 0;
+            return m?.priceIncludesVat ? p : p * (1 + MAT_VAT);
+        }
+        window.matNetto = matNetto;
+        window.matBrutto = matBrutto;
+        window.MAT_VAT = MAT_VAT;
+
         window.ekInfo = ekInfo;
         window.EK_VAT = EK_VAT;
 
