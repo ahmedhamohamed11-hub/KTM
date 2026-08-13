@@ -1555,3 +1555,15 @@
 .sl-global input { width:64px; padding:5px 7px; font-size:13px; text-align:right;
     border:1px solid var(--border); border-radius:7px; }
 .sl-total--final { background:var(--accent-light); font-weight:700; }
+
+
+/* Einkaufskalkulation auf der Materialdetailseite */
+.ek-breakdown { margin:12px 0; padding:12px 14px; border:1px solid var(--border);
+    border-radius:var(--radius); background:var(--bg-tertiary); }
+.ek-title { font-size:13px; font-weight:700; margin-bottom:8px; }
+.ek-line { display:flex; justify-content:space-between; gap:12px; font-size:13px; padding:4px 0; }
+.ek-line span { color:var(--text-secondary); }
+.ek-line b { font-weight:600; white-space:nowrap; }
+.ek-line--ist { border-top:1px solid var(--border); margin-top:4px; padding-top:7px; }
+.ek-line--ist b { color:var(--success); }
+.ek-hint { font-size:11.5px; color:var(--text-muted); margin-top:8px; line-height:1.45; }

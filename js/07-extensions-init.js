@@ -937,13 +937,16 @@
                     ? Number(offer.agreedPrice) : salesAfter;
 
                 const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
-                let materialCost = 0, laborSales = 0, missing = 0;
+                // Getrennt fuehren: was tatsaechlich eingekauft wurde und was nur
+                // aus dem Rabatt vorkalkuliert ist. Kalkuliertes Material darf nicht
+                // als tatsaechlicher Einkauf in den Gewinn einfliessen.
+                let ekIst = 0, ekKalk = 0, laborSales = 0, missing = 0, kalkPos = 0;
                 const rows = positions.map((it, idx) => {
                     const qty = Number(it.quantity) || 0;
                     const disc = Number(it.discount) || 0;
                     const lineSales = (Number(it.price) || 0) * qty * (1 - disc / 100);
                     const labor = isLabor(it);
-                    let cost = 0, known = true, ekUnit = 0, note = '', m = null;
+                    let cost = 0, known = true, ekUnit = 0, note = '', m = null, quelle = 'keiner';
                     if (labor) {
                         laborSales += lineSales;
                         note = 'Arbeit (kein Materialeinkauf)';
@@ -951,13 +954,16 @@
                         m = materials.find(mm => String(mm.id) === String(it.materialId));
                         if (!m) { known = false; note = '⚠️ Material nicht mehr in Datenbank'; }
                         else {
-                            const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek;
-                            if (known) { cost = ekUnit * qty; if (disc === 0 && !m.dealerDiscount && !(dealerDiscounts[(m.manufacturer||'').trim()])) note = 'kein Rabatt hinterlegt'; }
-                            else note = '⚠️ Einkaufspreis fehlt';
+                            const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek; quelle = r.quelle;
+                            if (known) {
+                                cost = ekUnit * qty;
+                                note = quelle === 'ist' ? 'tatsächlicher EK' : 'kalkuliert aus Rabatt';
+                            } else note = '⚠️ kein EK und kein Rabatt hinterlegt';
                         }
                         if (!known) missing++;
                     }
-                    materialCost += cost;
+                    if (quelle === 'ist') ekIst += cost;
+                    else if (quelle === 'kalk') { ekKalk += cost; kalkPos++; }
                     const lineProfit = lineSales - cost;
                     // EK direkt hier bearbeitbar (statt erst zum Material navigieren zu
                     // müssen) - besonders bei "fehlt" der schnellste Weg, den Gewinn
@@ -982,8 +988,14 @@
                     </tr>`;
                 }).join('');
 
-                const profit = salesEffective - materialCost;
+                // Gewinn = Verkaufserloes netto − TATSAECHLICHER EK netto − tatsaechliche
+                // sonstige Kosten. Kalkulierter EK bleibt aussen vor (Vorkalkulation).
+                const sonstige = Number(offer.otherCosts) || 0;
+                const materialCost = ekIst + ekKalk;                  // nur fuer die Vorkalkulation
+                const profit = salesEffective - ekIst - sonstige;     // tatsaechlich
                 const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
+                const profitKalk = salesEffective - materialCost - sonstige;
+                const marginKalk = salesEffective > 0 ? (profitKalk / salesEffective) * 100 : 0;
                 const complete = missing === 0;
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
@@ -994,10 +1006,13 @@
                         ${globalDisc > 0 ? `<div class="diag-row"><span>− Gesamt-Rabatt (${(discRate * 100).toFixed(1)} %)</span><strong>−${formatCurrency(globalDisc)}</strong></div>` : ''}
                         <div class="diag-row" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px;"><span>Verkaufspreis nach Rabatt</span><strong>${formatCurrency(salesAfter)}</strong></div>
                         ${offer.agreedPrice != null && offer.agreedPrice !== '' ? `<div class="diag-row"><span>Vereinbarter Preis</span><strong>${formatCurrency(salesEffective)}</strong></div>` : ''}
-                        <div class="diag-row"><span>− Materialeinkauf</span><strong>${formatCurrency(materialCost)}</strong></div>
+                        <div class="diag-row"><span>− Materialeinkauf <strong style="color:var(--success);">tatsächlich</strong></span><strong>${formatCurrency(ekIst)}</strong></div>
+                        ${ekKalk > 0 ? `<div class="diag-row" style="color:var(--text-muted);"><span>( nur kalkuliert, ${kalkPos} Position${kalkPos > 1 ? 'en' : ''} – nicht im Gewinn )</span><strong style="font-weight:400;">${formatCurrency(ekKalk)}</strong></div>` : ''}
                         <div class="diag-row"><span>− Arbeitskosten</span><strong>0,00 € <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(Arbeit ist Ertrag)</span></strong></div>
-                        <div class="diag-row"><span>− Sonstige Kosten</span><strong>${formatCurrency(0)}</strong></div>
+                        <div class="diag-row"><span>− Sonstige Kosten (tatsächlich)</span><strong>${formatCurrency(sonstige)}</strong></div>
                         <div class="diag-row diag-total"><span>= Gewinn</span><strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(profit)}</strong></div>
+                        <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Marge (tatsächlich)</span><strong style="font-weight:600;">${margin.toFixed(1)} %</strong></div>
+                        ${ekKalk > 0 ? `<div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Vorkalkulation inkl. kalkuliertem EK</span><strong style="font-weight:600;">${formatCurrency(profitKalk)} · ${marginKalk.toFixed(1)} %</strong></div>` : ''}
                         <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
                         <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>
                     </div>
@@ -1644,8 +1659,10 @@
                 // Effektiver EK (Händlerrabatt berücksichtigen) statt rohem purchasePrice -
                 // sonst zeigt die Detailseite "EK 0,00 €" / volle Marge, obwohl über den
                 // Markenrabatt längst ein Einkaufspreis errechnet wird.
-                const ekEffective = (typeof effectivePurchasePrice === 'function') ? (Number(effectivePurchasePrice(m)) || 0) : (Number(m.purchasePrice) || 0);
+                const EKI = (typeof ekInfo === 'function') ? ekInfo(m) : { ekNetto: 0, ekBrutto: 0, quelle: 'keiner', rabatt: null, anteil: null, listenpreis: Number(m.sellingPrice) || 0 };
+                const ekEffective = EKI.ekNetto;
                 const marge = (Number(m.sellingPrice) || 0) - ekEffective;
+                const istNetto = Number(m.purchasePrice) || 0;
 
                 // QR-Code (Artikelnummer bzw. Modellname) für Lager-Etiketten
                 let qrHtml = '';
@@ -1765,7 +1782,19 @@
                                     ${m.articleNumber ? `<div class="survey-chip"><span>Artikelnummer</span><strong>${escapeHtml(m.articleNumber)}</strong></div>` : ''}
                                     <div class="survey-chip"><span>Kategorie</span><strong>${escapeHtml(m.category || '-')}</strong></div>
                                     <div class="survey-chip"><span>Einheit</span><strong>${escapeHtml(m.unit || 'Stk')}</strong></div>
-                                    <div class="survey-chip"><span>EK-Preis</span><strong>${formatCurrency(ekEffective)}</strong>${(!(Number(m.purchasePrice) > 0) && ekEffective > 0) ? '<small style="display:block;color:var(--text-muted);font-weight:400;">via Händlerrabatt</small>' : ''}</div>
+                                    <div class="survey-chip"><span>EK netto</span><strong>${formatCurrency(ekEffective)}</strong><small style="display:block;color:var(--text-muted);font-weight:400;">${EKI.quelle === 'ist' ? 'tatsächlich eingetragen' : EKI.quelle === 'kalk' ? 'kalkuliert' : 'kein EK hinterlegt'}</small></div>
+                                </div>
+                                <div class="ek-breakdown">
+                                    <div class="ek-title">Einkaufskalkulation</div>
+                                    <div class="ek-line"><span>Listenpreis netto</span><b>${formatCurrency(EKI.listenpreis)}</b></div>
+                                    <div class="ek-line"><span>Rabatt</span><b>${EKI.rabatt != null ? EKI.rabatt + ' %' : '– kein Rabatt hinterlegt'}</b></div>
+                                    <div class="ek-line"><span>EK-Anteil (100 − Rabatt)</span><b>${EKI.anteil != null ? EKI.anteil + ' %' : '–'}</b></div>
+                                    <div class="ek-line"><span>EK netto kalkuliert</span><b>${EKI.quelle === 'kalk' ? formatCurrency(EKI.ekNetto) : (EKI.listenpreis > 0 && EKI.anteil != null ? formatCurrency(EKI.listenpreis * EKI.anteil / 100) : '–')}</b></div>
+                                    <div class="ek-line"><span>EK brutto kalkuliert</span><b>${EKI.quelle === 'kalk' ? formatCurrency(EKI.ekBrutto) : (EKI.listenpreis > 0 && EKI.anteil != null ? formatCurrency(EKI.listenpreis * EKI.anteil / 100 * 1.2) : '–')}</b></div>
+                                    <div class="ek-line ek-line--ist"><span>Tatsächlicher EK netto</span><b>${istNetto > 0 ? formatCurrency(istNetto) : '– nicht eingetragen'}</b></div>
+                                    <div class="ek-line ek-line--ist"><span>Tatsächlicher EK brutto</span><b>${istNetto > 0 ? formatCurrency(istNetto * 1.2) : '–'}</b></div>
+                                    <div class="ek-hint">${istNetto > 0 ? 'Der tatsächliche EK hat Vorrang und wird für die Gewinnrechnung verwendet.' : 'Ohne tatsächlichen EK dient der kalkulierte Wert nur der Vorkalkulation und zählt nicht als echter Einkauf.'}</div>
+                                <div style="display:none;">
                                     <div class="survey-chip" style="border-color:var(--accent);"><span>VK-Preis</span><strong style="color:var(--accent);">${formatCurrency(m.sellingPrice || 0)}</strong></div>
                                     ${marge > 0 ? `<div class="survey-chip"><span>Marge</span><strong style="color:var(--success);">${formatCurrency(marge)}</strong></div>` : ''}
                                     <div class="survey-chip"><span>Lagerbestand</span><strong class="${st.cls === 'st-low' ? 'text-danger' : ''}">${m.stock ?? 0} ${escapeHtml(m.unit || 'Stk')}${m.minStock > 0 ? ' (min. ' + m.minStock + ')' : ''}</strong></div>
@@ -5297,7 +5326,7 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group"><label>Listenpreis / Verkaufspreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"><div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Der Preis, den der Kunde zahlt. Der Einkaufspreis wird daraus per Rabatt berechnet.</div></div>
-                            <div class="form-group"><label>Händlerrabatt (%)</label><input type="number" id="matDiscount" step="1" min="0" max="100" value="${mat?.dealerDiscount != null ? mat.dealerDiscount : ''}" placeholder="auto"></div>
+                            <div class="form-group"><label>Händlerrabatt (%) – Rabatt auf den Listenpreis, nicht der EK-Anteil</label><input type="number" id="matDiscount" step="1" min="0" max="100" value="${mat?.dealerDiscount != null ? mat.dealerDiscount : ''}" placeholder="auto"></div>
                         </div>
                         <div class="form-group"><label>Einkaufspreis (€)</label><input type="number" id="matPurchasePrice" step="0.01" value="${mat?.purchasePrice || 0}">
                             <div id="matProfitBox" class="mat-profit"></div>

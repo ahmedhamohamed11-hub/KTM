@@ -941,30 +941,55 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             return /^\d+$/.test(value) ? Number(value) : value;
         }
 
-        // Zentrale, überall genutzte EK-Ermittlung (zukunftssicher):
-        // 1. Individueller Rabatt am Artikel (dealerDiscount) → Listenpreis × (1−Rabatt)
-        // 2. sonst Marken-/Lieferantenrabatt → Listenpreis × (1−Markenrabatt)
-        // 3. sonst fest hinterlegter Einkaufspreis (purchasePrice)
-        // Marken-Rabatt-Änderung wirkt so automatisch auf alle Artikel der Marke,
-        // außer auf die mit eigenem individuellem Rabatt.
-        function effectivePurchasePrice(m, dealerDiscounts) {
-            if (!m) return 0;
+        // ===== Zentrale EK-Ermittlung =====
+        // Der hinterlegte Prozentwert ist IMMER der RABATT auf den Netto-Listenpreis,
+        // nie der Einkaufsanteil.  EK-Anteil = 100 - Rabatt.
+        //     ekNetto  = listenpreisNetto * (100 - rabatt) / 100
+        //     ekBrutto = ekNetto * 1,20
+        //
+        // Reihenfolge (bewusst: tatsaechlicher EK schlaegt jede Rechnung):
+        //   1. manuell eingetragener tatsaechlicher EK (purchasePrice)  -> quelle 'ist'
+        //   2. individueller Artikelrabatt (dealerDiscount)             -> quelle 'kalk'
+        //   3. Markenrabatt aus den Einstellungen (je Hersteller!)      -> quelle 'kalk'
+        //   4. sonst NICHTS - es wird kein EK erfunden                  -> quelle 'keiner'
+        // Markenrabatte gelten ausschliesslich fuer die jeweilige Marke, nie global.
+        const EK_VAT = 1.20;
+        function ekInfo(m, dealerDiscounts) {
+            const leer = { ekNetto: 0, ekBrutto: 0, quelle: 'keiner', rabatt: null, anteil: null, listenpreis: 0 };
+            if (!m) return leer;
             const list = Number(m.sellingPrice) || 0;
-            const norm = d => { d = Number(d) || 0; return d > 1 ? d / 100 : d; };
-            // 1. individueller Rabatt am Artikel
-            if (m.dealerDiscount != null && m.dealerDiscount !== '') {
-                const r = norm(m.dealerDiscount);
-                if (r > 0 && list > 0) return list * (1 - r);
+            const norm = d => { d = Number(d) || 0; return d > 1 ? d : d * 100; };   // immer in Prozent
+
+            // 1. tatsaechlicher EK hat Vorrang
+            const ist = Number(m.purchasePrice) || 0;
+            if (ist > 0) {
+                return { ekNetto: ist, ekBrutto: ist * EK_VAT, quelle: 'ist',
+                         rabatt: list > 0 ? Math.round((1 - ist / list) * 1000) / 10 : null,
+                         anteil: list > 0 ? Math.round((ist / list) * 1000) / 10 : null, listenpreis: list };
             }
-            // 2. Marken-/Lieferantenrabatt
-            const brand = (m.manufacturer || '').trim();
-            const dd = dealerDiscounts || window.__ktmDealerDiscounts || {};
-            if (brand && dd[brand] != null && list > 0) {
-                const r = norm(dd[brand]);
-                if (r > 0) return list * (1 - r);
+            if (!(list > 0)) return leer;
+
+            // 2./3. Rabatt: erst Artikel, dann Marke
+            let rabatt = null;
+            if (m.dealerDiscount != null && m.dealerDiscount !== '') rabatt = norm(m.dealerDiscount);
+            if (rabatt == null) {
+                const brand = (m.manufacturer || '').trim();
+                const dd = dealerDiscounts || window.__ktmDealerDiscounts || {};
+                if (brand && dd[brand] != null && dd[brand] !== '') rabatt = norm(dd[brand]);
             }
-            // 3. fest hinterlegter EK
-            return Number(m.purchasePrice) || 0;
+            if (rabatt == null || !(rabatt > 0)) return { ...leer, listenpreis: list };
+
+            const anteil = 100 - rabatt;
+            const ekNetto = list * anteil / 100;
+            return { ekNetto, ekBrutto: ekNetto * EK_VAT, quelle: 'kalk',
+                     rabatt: Math.round(rabatt * 10) / 10, anteil: Math.round(anteil * 10) / 10, listenpreis: list };
+        }
+        window.ekInfo = ekInfo;
+        window.EK_VAT = EK_VAT;
+
+        // Rueckwaertskompatible Huelle - liefert weiterhin nur den EK-Nettobetrag.
+        function effectivePurchasePrice(m, dealerDiscounts) {
+            return ekInfo(m, dealerDiscounts).ekNetto;
         }
         window.effectivePurchasePrice = effectivePurchasePrice;
 
@@ -977,14 +1002,14 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         // Kopien - sonst wird ein hier behobener Bug an anderer Stelle erneut eingebaut.
         // Gibt EK PRO VERKAUFTER EINHEIT zurück (z.B. € je Meter statt € je Rolle).
         function ekPerSalesUnit(m, dealerDiscounts) {
-            if (!m) return { ek: 0, known: false };
-            let ekPack = Number(effectivePurchasePrice(m, dealerDiscounts)) || 0;   // EK der Einkaufseinheit (Rolle/Bund/Stange oder Stück)
-            if (!(ekPack > 0)) ekPack = Number(m.purchasePrice) || 0;
-            if (!(ekPack > 0)) return { ek: 0, known: false };
+            if (!m) return { ek: 0, known: false, quelle: 'keiner' };
+            const info = ekInfo(m, dealerDiscounts);
+            const ekPack = info.ekNetto;
+            if (!(ekPack > 0)) return { ek: 0, known: false, quelle: 'keiner' };
             const bl = Number(m.bundleLength) || 0;
             const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
-            if (isPack) return { ek: ekPack / bl, known: true };   // EK pro Meter
-            return { ek: ekPack, known: true };                    // EK pro Stück
+            // quelle: 'ist' = tatsaechlich eingekauft, 'kalk' = aus Rabatt gerechnet
+            return { ek: isPack ? ekPack / bl : ekPack, known: true, quelle: info.quelle };
         }
         window.ekPerSalesUnit = ekPerSalesUnit;
 
