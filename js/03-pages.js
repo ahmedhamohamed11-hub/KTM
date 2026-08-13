@@ -109,7 +109,17 @@
             const montage = montageBase + montagePerDevice + len * montagePerMeter;
             const leitungen = len * (kupferpreis + kommupreis + kondpreis);
 
-            return { serien, availBrands, availKw, brand, len, montage, leitungen,
+            // Diagnose: warum ist die Liste leer? Zahlen aus den echten Daten,
+            // damit im leeren Zustand nicht nur "nichts gefunden" dasteht.
+            const KLIMA_B = ['Innengerät Single-Split','Außengerät Single-Split','Innengerät Multi-Split','Außengerät Multi-Split','Truhengerät','Klimaset'];
+            const diag = {
+                total: mats.length,
+                mitBauart: mats.filter(m => KLIMA_B.includes(m.bauart || '')).length,
+                ohneBauart: mats.filter(m => !m.bauart).length,
+                klimaOhneBauart: mats.filter(m => !m.bauart && /klima/i.test(m.category || '')).length
+            };
+
+            return { serien, availBrands, availKw, brand, len, montage, leitungen, diag,
                      kupferpreis, kommupreis, kondpreis, montageBase, montagePerDevice, montagePerMeter };
         }
 
@@ -336,10 +346,37 @@
                                 </table>
                             </div>
                         </div>`;
-                    }).join('') : `<div class="empty-state" style="padding:30px;">
-                        Kein passendes Gerät im Katalog.<br>
-                        <small style="color:var(--text-muted);">Katalog importieren oder Materialien anlegen.</small>
-                    </div>`;
+                    }).join('') : (() => {
+                        const d = D.diag || {};
+                        if (!d.total) {
+                            return `<div class="empty-state" style="padding:30px;">
+                                Noch keine Materialien angelegt.<br>
+                                <small style="color:var(--text-muted);">Menü → Katalog importieren.</small>
+                            </div>`;
+                        }
+                        if (d.ohneBauart) {
+                            return `<div class="empty-state" style="padding:24px;text-align:left;">
+                                <div style="font-weight:600;margin-bottom:8px;">Kein passendes Gerät gefunden.</div>
+                                <div style="font-size:13px;color:var(--text-secondary);line-height:1.6;">
+                                    Du hast <strong>${d.total}</strong> Materialien.<br>
+                                    Davon haben <strong>${d.mitBauart}</strong> eine Bauart (Innengerät / Außengerät / Set).<br>
+                                    <strong>${d.ohneBauart}</strong> haben keine – die kann der Rechner nicht zuordnen.
+                                </div>
+                                <button type="button" class="btn btn-primary" style="margin-top:14px;width:100%;"
+                                    onclick="app.repairBauart()">Bauart aus Katalog nachtragen</button>
+                                <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">
+                                    Ändert nur die Bauart. Preise, Bestand und Bilder bleiben unangetastet.
+                                </div>
+                            </div>`;
+                        }
+                        return `<div class="empty-state" style="padding:24px;text-align:left;">
+                            <div style="font-weight:600;margin-bottom:8px;">Kein passendes Gerät gefunden.</div>
+                            <div style="font-size:13px;color:var(--text-secondary);line-height:1.6;">
+                                ${d.total} Materialien, davon ${d.mitBauart} mit Bauart – aber keine Single-Split-Serie
+                                ${D.brand ? 'für ' + escapeHtml(D.brand) : ''} bildbar.
+                            </div>
+                        </div>`;
+                    })();
 
                     contentArea.innerHTML = `<div class="calc-wrap">
                         <div class="calc-mode-tabs">
@@ -467,7 +504,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v89</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v90</span></div>
                         </div>
                     </div>`;
             })();

@@ -4392,6 +4392,51 @@
                 else { doc.save(fname); showToast('Katalog als PDF erstellt.', 'success'); }
             },
 
+            // ===== Bauart bei vorhandenen Materialien nachtragen =====
+            // Manuell ausloesbar aus dem Schnellrechner. Gleiche Logik wie die
+            // Startmigration, aber ohne Flag - laesst sich beliebig oft ausfuehren.
+            async repairBauart() {
+                const kat = window.KTM_KATALOG || [];
+                if (!kat.length) { showToast('Katalogdatei nicht geladen. App neu starten.', 'error'); return; }
+                const norm = v => String(v || '').trim().toLowerCase();
+                const byKey = new Map(), byArt = new Map();
+                for (const k of kat) {
+                    if (!k.bauart || !k.articleNumber) continue;
+                    byKey.set(`${norm(k.manufacturer)}|${norm(k.articleNumber)}`, k);
+                    if (!byArt.has(norm(k.articleNumber))) byArt.set(norm(k.articleNumber), k);
+                }
+                const mats = await db.getAll('materials');
+                const offen = mats.filter(m => !m.bauart);
+                if (!offen.length) { showToast('Alle Materialien haben bereits eine Bauart.', 'success'); return; }
+
+                let n = 0, miss = [];
+                for (const m of offen) {
+                    let hit = byKey.get(`${norm(m.manufacturer)}|${norm(m.articleNumber)}`)
+                           || byArt.get(norm(m.articleNumber));
+                    if (!hit && m.name) {
+                        const nm = norm(m.name);
+                        for (const [art, k] of byArt) {
+                            if (art.length >= 5 && nm.includes(art)) { hit = k; break; }
+                        }
+                    }
+                    if (hit) {
+                        await db.put('materials', { ...m, bauart: hit.bauart,
+                            size: m.size || hit.size || '', series: m.series || hit.series || '' });
+                        n++;
+                    } else if (miss.length < 5) {
+                        miss.push(`${m.manufacturer || '?'} · ${m.name || '?'} · Art.-Nr. "${m.articleNumber || '(leer)'}"`);
+                    }
+                }
+                const rest = offen.length - n;
+                await showConfirm(
+                    `<strong>${n}</strong> von ${offen.length} Materialien ergänzt.` +
+                    (rest ? `<br><br><strong>${rest}</strong> ohne Katalogtreffer – das sind meist selbst angelegte Artikel.` +
+                        (miss.length ? `<br><br><span style="font-size:12px;color:var(--text-muted);">Beispiele:<br>${miss.map(escapeHtml).join('<br>')}</span>` : '')
+                        : ''),
+                    { title: 'Bauart nachgetragen', okText: 'OK', cancelText: '' });
+                this.navigate('calc');
+            },
+
             // ===== Hersteller-Katalog importieren (Samsung, Daikin ...) =====
             async confirmImportKatalog() {
                 const count = (window.KTM_KATALOG || []).length;
