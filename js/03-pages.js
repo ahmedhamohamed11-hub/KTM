@@ -504,7 +504,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v95</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v96</span></div>
                         </div>
                     </div>`;
             })();
@@ -1494,7 +1494,8 @@
                         const s = m.series || 'Ohne Serie';
                         (groups[s] = groups[s] || []).push(m);
                     }
-                    const ss = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+                    // Katalog-Reihenfolge: Serien alphabetisch, nicht nach Anzahl
+                    const ss = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'de'));
                     if (ss.length <= 1) { F.serie = ss[0] || ''; F.level = 'produkte'; renderMaterials(); return; }
                     body = `<div class="mat-grid">${ss.map(s => {
                         const list = groups[s];
@@ -1516,6 +1517,11 @@
                     const selected = F.selected || (F.selected = new Set());
                     const productCard = (m) => {
                         const st = matStockStatus(m);
+                        // Bund-/Rollenware: zusaetzlich den Preis je Meter zeigen,
+                        // weil dem Kunden der Meter verrechnet wird, nicht das Bund.
+                        const _bl = matBundleLength(m);
+                        const perM = (['Rolle','Bund','Stange'].includes(m.unit || '') && _bl > 0 && Number(m.sellingPrice) > 0)
+                            ? `<div class="mat-perm">${formatCurrency(matUnitPrice(m, 'm'))} / m · Bund ${_bl} m</div>` : '';
                         const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []);
                         const isSel = selected.has(String(m.id));
                         const clickAction = selectMode ? `app.matToggleSelect(${idJS(m.id)})` : `app.openMaterialDetail(${idJS(m.id)})`;
@@ -1529,7 +1535,7 @@
                                 <div class="mat-card-sub">${[m.manufacturer, m.series, m.size].filter(Boolean).map(escapeHtml).join(' · ') || '&nbsp;'}</div>
                                 ${m.articleNumber ? `<div class="mat-card-art">Art. ${escapeHtml(m.articleNumber)}</div>` : ''}
                                 <div class="mat-card-foot">
-                                    <div class="mat-price">${formatCurrency(m.sellingPrice || 0)}<small> VK</small></div>
+                                    <div class="mat-price">${formatCurrency(m.sellingPrice || 0)}<small> Liste netto</small>${perM}</div>
                                     <span class="mat-stock ${st.cls}">${st.label}</span>
                                 </div>
                             </div>

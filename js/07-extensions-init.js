@@ -4252,7 +4252,10 @@
                         const hit = findCat(s.key, s.cat);
                         // Gemerkter Richtwert schlaegt den fest verdrahteten Fallback.
                         const saved = hit ? null : Number(await getSetting(this._posKey(s.label), ''));
-                        const unitPrice = hit ? Number(hit.sellingPrice) : (saved > 0 ? saved : s.fallback);
+                        // WICHTIG: bei Rollen-/Bund-/Stangenware ist sellingPrice der Preis
+                        // des ganzen Bundes. matUnitPrice rechnet auf die Meter-Einheit
+                        // herunter - sonst wird der Bundpreis je Meter berechnet.
+                        const unitPrice = hit ? matUnitPrice(hit, s.unit) : (saved > 0 ? saved : s.fallback);
                         positions.push({
                             name: hit ? hit.name : s.label,
                             menge: Math.round(s.qty * 10) / 10,
