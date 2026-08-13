@@ -4034,17 +4034,21 @@
             // Legt je nach Wahl Projektmaterial + Angebot an, oder nur das Projektmaterial.
             async _positionenAnlegen(projId, r, roomId = null) {
                 const total = r.positions.reduce((a, p) => a + p.price * p.quantity, 0);
-                const n = await this._positionenAlsProjektmaterial(projId, r.positions, roomId);
-                if (r.mode === 'project') {
-                    return `Projekt mit ${n} Materialpositionen angelegt.`;
+                const teile = [];
+                if (r.toProject) {
+                    const n = await this._positionenAlsProjektmaterial(projId, r.positions, roomId);
+                    teile.push(`${n} Materialpositionen im Projekt`);
                 }
-                const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-                await db.add('offers', {
-                    offerNumber: offerNum, projectId: projId, status: 'Angebot offen',
-                    positions: r.positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
-                    discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
-                });
-                return `Angebot ${offerNum} + ${n} Materialpositionen im Projekt angelegt.`;
+                if (r.toOffer) {
+                    const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+                    await db.add('offers', {
+                        offerNumber: offerNum, projectId: projId, status: 'Angebot offen',
+                        positions: r.positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
+                        discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
+                    });
+                    teile.push(`Angebot ${offerNum}`);
+                }
+                return `Angelegt: ${teile.join(' · ')}.`;
             },
 
             // Schluessel, unter dem ein geaenderter Richtwert-Preis gemerkt wird.
@@ -4089,12 +4093,18 @@
                     </label>
                     <div class="form-group" style="margin-top:12px;">
                         <label>Was soll angelegt werden?</label>
-                        <select id="slMode">
-                            <option value="both">Projekt + Angebot schreiben</option>
-                            <option value="project">Nur ins Projekt übernehmen (Angebot später)</option>
-                        </select>
-                        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
-                            In beiden Fällen landen die Positionen als Material im Projekt und lassen sich dort einzeln ändern, ergänzen oder löschen.
+                        <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:4px;">
+                            <input type="checkbox" id="slToProject" checked style="margin-top:3px;">
+                            <span>Als Material ins Projekt übernehmen<br>
+                            <span style="color:var(--text-muted);font-size:12px;">Dort einzeln änderbar, ergänzbar und löschbar.</span></span>
+                        </label>
+                        <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:8px;">
+                            <input type="checkbox" id="slToOffer" style="margin-top:3px;">
+                            <span>Angebot erstellen<br>
+                            <span style="color:var(--text-muted);font-size:12px;">Mit denselben Positionen und Preisen.</span></span>
+                        </label>
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">
+                            Beides ankreuzen ist möglich – dann wird das Angebot zusätzlich zum Projektmaterial geschrieben.
                         </div>
                     </div>`;
 
@@ -4127,9 +4137,14 @@
                             if (geschuetzt) teile.push(`${geschuetzt} Gerätepreis${geschuetzt > 1 ? 'e' : ''} nur für dieses Angebot geändert`);
                             if (teile.length) showToast(teile.join(' · '), 'success');
                         }
-                        const mode = ov.querySelector('#slMode')?.value || 'both';
+                        const toProject = !!ov.querySelector('#slToProject')?.checked;
+                        const toOffer   = !!ov.querySelector('#slToOffer')?.checked;
+                        if (!toProject && !toOffer) {
+                            showToast('Bitte mindestens eins auswählen: Projekt oder Angebot.', 'error');
+                            return;   // Modal bleibt offen
+                        }
                         ov.remove();
-                        resolve({ positions: out, mode });
+                        resolve({ positions: out, toProject, toOffer });
                     }, () => resolve(null), { wide: true });
 
                     const recalc = () => {
