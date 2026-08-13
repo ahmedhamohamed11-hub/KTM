@@ -2839,7 +2839,10 @@
                 // Kunde sieht je Position den Endpreis inkl. USt. Positionen mit
                 // priceIncludesVat sind bereits brutto; aeltere Netto-Positionen werden
                 // NUR fuer die Anzeige hochgerechnet.
-                const rows = (offer.positions || []).map((p, i) => {
+                // Arbeitsleistung steht NICHT in der Positionstabelle, sondern als
+                // eigene Zeile nach dem Rabatt im Summenblock.
+                const _istArbeit = p => (typeof isLaborPos === 'function') ? isLaborPos(p) : false;
+                const rows = (offer.positions || []).filter(p => !_istArbeit(p)).map((p, i) => {
                     const disc = Number(p.discount) || 0;
                     const unit = (typeof posDisplayPrice === 'function') ? posDisplayPrice(p, offer) : (Number(p.price) || 0);
                     const lineTotal = unit * (Number(p.quantity) || 0) * (1 - disc / 100);
@@ -2881,20 +2884,17 @@
                 doc.setTextColor(...PDF_INK);
                 const _R = recomputeOffer(offer);
                 const summaryRows = [];
-                // Angebotsdarstellung: Positionen sind Endpreise inkl. USt.
-                // Deshalb unten KEINE Steuerzeile. Die Arbeitsleistung darf auch nicht
-                // als eigene Zeile ADDIERT werden - sie steckt schon in den Positionen.
-                // Sie erscheint nur als Hinweis, warum der Rabatt kleiner ausfaellt.
-                //   Zwischensumme (alle Positionen) - Rabatt auf Material = Gesamt
+                // Positionen sind Endpreise inkl. USt. -> keine Steuerzeile.
+                //   Zwischensumme Material - Rabatt + Arbeitsleistung = Gesamt
                 if (_R.posDiscount > 0) {
                     summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R.posDiscount)}`]);
                 }
-                summaryRows.push(['Zwischensumme inkl. USt.', formatCurrency(_R.grossMaterial + _R.grossLabor)]);
+                summaryRows.push(['Zwischensumme inkl. USt.', formatCurrency(_R.grossMaterial)]);
                 if (_R.discountEnabled && _R.grossDiscount > 0) {
-                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %) auf Material`, `- ${formatCurrency(_R.grossDiscount)}`]);
-                    if (_R.grossLabor > 0) {
-                        summaryRows.push(['davon Arbeitsleistung – ohne Rabatt', formatCurrency(_R.grossLabor)]);
-                    }
+                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(_R.grossDiscount)}`]);
+                }
+                if (_R.grossLabor > 0) {
+                    summaryRows.push(['Arbeitsleistung Montage', formatCurrency(_R.grossLabor)]);
                 }
                 summaryRows.forEach(([label, val]) => {
                     doc.text(label, boxX, fy);
