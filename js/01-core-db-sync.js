@@ -893,8 +893,10 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
             const vatBase = offer.vatEnabled !== false ? (Number(offer.vatRate) || 0.20) : 0;
 
-            // Umsatzsteuersatz, der fuer diese Position gilt
-            const vatOf = p => KLIMA.has((p.category || '').trim()) ? 0.20 : vatBase;
+            // Umsatzsteuersatz je Position - EINE Regel fuer Anzeige und Summe:
+            // Material und Geraete immer 20 %, Arbeitsleistung nach Schalter.
+            const vatOf = p => (typeof posVatRate === 'function') ? posVatRate(p, offer)
+                : (KLIMA.has((p.category || '').trim()) ? 0.20 : vatBase);
             // KEINE doppelte USt: ist priceIncludesVat gesetzt, ist der Preis bereits
             // ein Bruttopreis. Dann wird daraus der Nettowert herausgerechnet statt
             // nochmals 20 % aufgeschlagen.
@@ -1013,13 +1015,26 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         // Positionen mit priceIncludesVat sind bereits brutto und bleiben unveraendert;
         // aeltere Positionen (vor der Umstellung) sind netto gespeichert und werden
         // nur fuer die Anzeige hochgerechnet - der gespeicherte Wert bleibt netto.
+        // Steuersatz einer Position. MATERIAL UND GERAETE immer 20 % - deren Preise
+        // sind Endpreise inkl. USt., unabhaengig vom MwSt-Schalter des Angebots.
+        // Nur Arbeitsleistung folgt dem Schalter (z.B. steuerfreie Abrechnung).
+        function isLaborPos(p) {
+            const c = (p?.category || '').toLowerCase();
+            const n = (p?.name || '').toLowerCase();
+            return c.includes('arbeit') || c.includes('montage') || c.includes('anfahrt') || c.includes('lohn')
+                || n.includes('arbeitsleistung') || n.includes('montagepauschale') || n.includes('anfahrt') || n.includes('arbeitsstunde');
+        }
+        function posVatRate(p, offer) {
+            if (isLaborPos(p)) return (offer && offer.vatEnabled === false) ? 0 : (Number(offer?.vatRate) || 0.20);
+            return 0.20;
+        }
+        window.isLaborPos = isLaborPos;
+        window.posVatRate = posVatRate;
+
         function posDisplayPrice(p, offer) {
             const pr = Number(p?.price) || 0;
             if (p?.priceIncludesVat) return pr;
-            const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
-            const base = (offer && offer.vatEnabled === false) ? 0 : (Number(offer?.vatRate) || 0.20);
-            const r = KLIMA.has((p?.category || '').trim()) ? 0.20 : base;
-            return pr * (1 + r);
+            return pr * (1 + posVatRate(p, offer));
         }
         window.posDisplayPrice = posDisplayPrice;
 
