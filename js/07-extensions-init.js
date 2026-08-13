@@ -1326,7 +1326,18 @@
                     await db.delete('customers', cId).catch(() => {});
                     return;
                 }
-                const msg = await this._positionenAnlegen(pId, r);
+                // Raum mit den Leitungslaengen anlegen: die Live-Zusammenfassung im Projekt
+                // liest Rohr-/Kabel-/Kondensatlaenge aus room.tech, nicht aus den Positionen.
+                const rId = await db.add('rooms', {
+                    projectId: pId, name: 'Raum 1', length: 5, width: 5, height: 2.5,
+                    tech: {
+                        pipeLength: D.len, powerCableLength: D.len, commCableLength: D.len,
+                        condensateLine: D.len, cableDuct: D.len, coreDrills: 1,
+                        devManufacturer: ig.manufacturer || '', devModel: ig.name || '',
+                        devCapacity: parseFloat(String(ig.size || '').replace(',', '.')) || null
+                    }
+                });
+                const msg = await this._positionenAnlegen(pId, r, rId);
                 showToast(msg, 'success');
                 this.navigate('projects', pId);
             },
@@ -1411,6 +1422,12 @@
                             projectId: projId, name: `Raum ${i + 1}`, length: side, width: side, height: 2.5,
                             tech: {
                                 distance: CALC_STATE.distance, cableDuct: CALC_STATE.ductLength,
+                                // Laengen zusaetzlich unter den Feldnamen, die die
+                                // Live-Zusammenfassung auswertet - sonst zeigt sie 0 m.
+                                pipeLength: Number(CALC_STATE.distance) || 0,
+                                powerCableLength: Number(CALC_STATE.distance) || 0,
+                                commCableLength: Number(CALC_STATE.distance) || 0,
+                                condensateLine: Number(CALC_STATE.distance) || 0,
                                 coreDrills: CALC_STATE.breakthrough, outdoorMounting: CALC_STATE.outdoor,
                                 devManufacturer: x.dev?.manufacturer || '', devModel: x.dev?.name || '',
                                 devCapacity: parseFloat(String(x.dev?.size || '').replace(',', '.')) || null,
@@ -3996,14 +4013,30 @@
                 return out;
             },
 
-            // Legt je nach Wahl ein Angebot an oder haengt die Liste als Notiz ans Projekt.
-            async _positionenAnlegen(projId, r) {
+            // Schreibt die Positionen als echte Projektmaterialien. Nur so tauchen sie
+            // in der Projektansicht auf und lassen sich dort einzeln aendern oder
+            // loeschen - das Angebot allein reicht dafuer nicht.
+            async _positionenAlsProjektmaterial(projId, positions, roomId = null) {
+                let n = 0;
+                for (const p of positions) {
+                    if (!(Number(p.quantity) > 0)) continue;
+                    await db.add('projectMaterials', {
+                        projectId: projId, materialId: p.materialId || null, roomId,
+                        quantity: Number(p.quantity), unit: p.unit || 'Stk',
+                        size: p.size || '', price: Number(p.price) || 0,
+                        note: p.materialId ? 'Aus Schnellrechner' : p.name
+                    });
+                    n++;
+                }
+                return n;
+            },
+
+            // Legt je nach Wahl Projektmaterial + Angebot an, oder nur das Projektmaterial.
+            async _positionenAnlegen(projId, r, roomId = null) {
                 const total = r.positions.reduce((a, p) => a + p.price * p.quantity, 0);
+                const n = await this._positionenAlsProjektmaterial(projId, r.positions, roomId);
                 if (r.mode === 'project') {
-                    const pr = await db.get('projects', projId);
-                    const txt = r.positions.map(p => `${p.quantity} ${p.unit} ${p.name} à ${formatCurrency(p.price)}`).join('\n');
-                    await db.put('projects', { ...pr, notes: `${pr?.notes || ''}\n\nVorgeschlagene Positionen:\n${txt}\nSumme netto: ${formatCurrency(total)}`.trim() });
-                    return `Projekt angelegt – ${r.positions.length} Positionen als Notiz hinterlegt.`;
+                    return `Projekt mit ${n} Materialpositionen angelegt.`;
                 }
                 const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
                 await db.add('offers', {
@@ -4011,7 +4044,7 @@
                     positions: r.positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
                     discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
                 });
-                return `Angebot ${offerNum} mit ${r.positions.length} Positionen angelegt.`;
+                return `Angebot ${offerNum} + ${n} Materialpositionen im Projekt angelegt.`;
             },
 
             // Schluessel, unter dem ein geaenderter Richtwert-Preis gemerkt wird.
@@ -4057,9 +4090,12 @@
                     <div class="form-group" style="margin-top:12px;">
                         <label>Was soll angelegt werden?</label>
                         <select id="slMode">
-                            <option value="both">Projekt + Angebot mit diesen Positionen</option>
-                            <option value="project">Nur Projekt (Positionen als Notiz)</option>
+                            <option value="both">Projekt + Angebot schreiben</option>
+                            <option value="project">Nur ins Projekt übernehmen (Angebot später)</option>
                         </select>
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+                            In beiden Fällen landen die Positionen als Material im Projekt und lassen sich dort einzeln ändern, ergänzen oder löschen.
+                        </div>
                     </div>`;
 
                 return new Promise((resolve) => {
