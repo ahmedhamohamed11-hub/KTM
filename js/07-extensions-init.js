@@ -1315,15 +1315,20 @@
                     mkPos(montM, 1, 'Psch', 'Montage & Inbetriebnahme', D.montage),
                 ].filter(p => Number(p.quantity) > 0);
 
-                const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-                const total = positions.reduce((s, p) => s + p.price * p.quantity, 0);
-                await db.add('offers', {
-                    offerNumber: offerNum, projectId: pId, status: 'Angebot offen',
-                    positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
-                    discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
+                const r = await this.openStuecklisteVorschau(positions, {
+                    modalTitel: 'Positionen prüfen',
+                    titel: `${ig.manufacturer || ''} ${ig.size || ''} kW Single-Split · ${D.len} m Leitung`
                 });
-                showToast(`✅ Projekt + Angebot ${offerNum} erstellt.`, 'success');
-                this.navigate('projects');
+                if (!r) {
+                    // Abgebrochen: angelegten Kunden/Projekt-Rumpf wieder entfernen,
+                    // damit keine Leichen in der Projektliste stehen.
+                    await db.delete('projects', pId).catch(() => {});
+                    await db.delete('customers', cId).catch(() => {});
+                    return;
+                }
+                const msg = await this._positionenAnlegen(pId, r);
+                showToast(msg, 'success');
+                this.navigate('projects', pId);
             },
 
             calcSetGlobal(key, val) {
@@ -1372,6 +1377,7 @@
                 `, async (overlay) => {
                     const last = overlay.querySelector('#calcLast').value.trim();
                     if (!last) { showToast('Bitte mindestens den Nachnamen angeben.', 'error'); return; }
+                    const withList = !!overlay.querySelector('#calcWithList')?.checked;
                     // Kunde anlegen
                     const custId = await db.add('customers', {
                         firstName: overlay.querySelector('#calcFirst').value.trim(),
@@ -1415,37 +1421,25 @@
                     }
                     // Angebot mit Stueckliste nur auf Wunsch. Ohne Haken bleibt es beim
                     // reinen Besichtigungsprojekt wie bisher.
+                    overlay.remove();
                     let msg = 'Kunde & Projekt angelegt – jetzt besichtigen, dann Angebot erstellen.';
-                    if (overlay.querySelector('#calcWithList')?.checked) {
+                    if (withList) {
                         await this.calcAiMaterials().catch(() => {});
                         const L = this._lastMaterialList;
                         if (L && (L.positions?.length || L.geraete?.length)) {
                             const positions = this._stuecklisteZuPositionen(L.geraete, L.positions);
-                            const montageBase      = Number(await getSetting('montageBase',      200)) || 200;
-                            const montagePerDevice = Number(await getSetting('montagePerDevice', 350)) || 350;
-                            const montagePerMeter  = Number(await getSetting('montagePerMeter',   25)) || 25;
                             const anzGeraete = res.rooms.length || 1;
                             const meter = (Number(CALC_STATE.distance) || 5) * anzGeraete;
-                            positions.push({
-                                materialId: null, name: 'Montage & Inbetriebnahme',
-                                manufacturer: '', articleNumber: '', category: 'Arbeitsleistung', bauart: '',
-                                unit: 'Psch', quantity: 1,
-                                price: montageBase + montagePerDevice * anzGeraete + meter * montagePerMeter,
-                                discount: 0
+                            positions.push(await this._montagePosition(anzGeraete, meter));
+                            const r = await this.openStuecklisteVorschau(positions, {
+                                modalTitel: 'Positionen prüfen',
+                                titel: `${anzGeraete} Gerät${anzGeraete > 1 ? 'e' : ''} · ${meter} m Leitung gesamt`
                             });
-                            const total = positions.reduce((a, p) => a + p.price * p.quantity, 0);
-                            const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-                            await db.add('offers', {
-                                offerNumber: offerNum, projectId: projId, status: 'Angebot offen',
-                                positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
-                                discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
-                            });
-                            msg = `Projekt + Angebot ${offerNum} mit ${positions.length} Positionen angelegt.`;
+                            if (r) msg = await this._positionenAnlegen(projId, r);
                         } else {
                             msg = 'Projekt angelegt – Stückliste konnte nicht erzeugt werden (keine passenden Materialien).';
                         }
                     }
-                    overlay.remove();
                     showToast(msg, 'success');
                     app.navigate('projects', projId);
                 }, 'Als Projekt anlegen');
@@ -3982,6 +3976,122 @@
                 }, 'Speichern');
             },
 
+            async _montagePosition(anzGeraete, meter) {
+                const base   = Number(await getSetting('montageBase',      200)) || 200;
+                const perDev = Number(await getSetting('montagePerDevice', 350)) || 350;
+                const perM   = Number(await getSetting('montagePerMeter',   25)) || 25;
+                const gespeichert = Number(await getSetting(this._posKey('Montage & Inbetriebnahme'), ''));
+                return {
+                    materialId: null, name: 'Montage & Inbetriebnahme',
+                    manufacturer: '', articleNumber: '', category: 'Arbeitsleistung', bauart: '',
+                    unit: 'Psch', quantity: 1, discount: 0,
+                    price: gespeichert > 0 ? gespeichert : base + perDev * anzGeraete + meter * perM
+                };
+            },
+
+            // Legt je nach Wahl ein Angebot an oder haengt die Liste als Notiz ans Projekt.
+            async _positionenAnlegen(projId, r) {
+                const total = r.positions.reduce((a, p) => a + p.price * p.quantity, 0);
+                if (r.mode === 'project') {
+                    const pr = await db.get('projects', projId);
+                    const txt = r.positions.map(p => `${p.quantity} ${p.unit} ${p.name} à ${formatCurrency(p.price)}`).join('\n');
+                    await db.put('projects', { ...pr, notes: `${pr?.notes || ''}\n\nVorgeschlagene Positionen:\n${txt}\nSumme netto: ${formatCurrency(total)}`.trim() });
+                    return `Projekt angelegt – ${r.positions.length} Positionen als Notiz hinterlegt.`;
+                }
+                const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+                await db.add('offers', {
+                    offerNumber: offerNum, projectId: projId, status: 'Angebot offen',
+                    positions: r.positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
+                    discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
+                });
+                return `Angebot ${offerNum} mit ${r.positions.length} Positionen angelegt.`;
+            },
+
+            // Schluessel, unter dem ein geaenderter Richtwert-Preis gemerkt wird.
+            _posKey(name) {
+                return 'posPreis_' + String(name || '').toLowerCase()
+                    .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                    .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+            },
+
+            // Vorschau der Stueckliste: jede Position einzeln, Preis aenderbar.
+            // Geaenderte Preise werden als neuer Standard gemerkt - bei Katalog-
+            // artikeln direkt am Material, sonst als gespeicherter Richtwert.
+            async openStuecklisteVorschau(positions, meta) {
+                const rows = positions.map((p, i) => `
+                    <div class="sl-row" data-i="${i}">
+                        <div class="sl-name">
+                            <div class="sl-title">${escapeHtml(p.name)}</div>
+                            <div class="sl-meta">${p.quantity} ${escapeHtml(p.unit || 'Stk')}${p.materialId ? ' · Katalog' : ' · <span style="color:var(--warning);">Richtwert</span>'}</div>
+                        </div>
+                        <div class="sl-price">
+                            <input type="number" step="0.01" min="0" value="${Number(p.price).toFixed(2)}" data-price="${i}">
+                            <span>€</span>
+                        </div>
+                        <div class="sl-sum" data-sum="${i}">${formatCurrency(p.price * p.quantity)}</div>
+                    </div>`).join('');
+
+                const html = `
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;">
+                        ${escapeHtml(meta.titel || '')}<br>
+                        Preise sind Einzelpreise netto und lassen sich hier ändern.
+                    </div>
+                    <div class="sl-list">${rows}</div>
+                    <div class="sl-total"><span>Summe netto</span><strong id="slTotal">–</strong></div>
+                    <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:12px;">
+                        <input type="checkbox" id="slRemember" checked style="margin-top:3px;">
+                        <span>Geänderte Preise als Standard merken<br>
+                        <span style="color:var(--text-muted);font-size:12px;">Katalogartikel bekommen den neuen Preis, Richtwerte werden für künftige Angebote gespeichert.</span></span>
+                    </label>
+                    <div class="form-group" style="margin-top:12px;">
+                        <label>Was soll angelegt werden?</label>
+                        <select id="slMode">
+                            <option value="both">Projekt + Angebot mit diesen Positionen</option>
+                            <option value="project">Nur Projekt (Positionen als Notiz)</option>
+                        </select>
+                    </div>`;
+
+                return new Promise((resolve) => {
+                    const overlay = showModal(meta.modalTitel || 'Positionen prüfen', html, async (ov) => {
+                        const out = positions.map((p, i) => ({
+                            ...p,
+                            price: parseFloat(ov.querySelector(`[data-price="${i}"]`)?.value) || 0
+                        }));
+                        if (ov.querySelector('#slRemember')?.checked) {
+                            let n = 0;
+                            for (let i = 0; i < out.length; i++) {
+                                if (Math.abs(out[i].price - positions[i].price) < 0.005) continue;
+                                if (out[i].materialId) {
+                                    const m = await db.get('materials', out[i].materialId);
+                                    if (m) { await db.put('materials', { ...m, sellingPrice: out[i].price }); n++; }
+                                } else {
+                                    await setSetting(this._posKey(out[i].name), String(out[i].price)); n++;
+                                }
+                            }
+                            if (n) showToast(`${n} Preis${n > 1 ? 'e' : ''} als Standard gespeichert.`, 'success');
+                        }
+                        const mode = ov.querySelector('#slMode')?.value || 'both';
+                        ov.remove();
+                        resolve({ positions: out, mode });
+                    }, () => resolve(null), { wide: true });
+
+                    const recalc = () => {
+                        let t = 0;
+                        positions.forEach((p, i) => {
+                            const v = parseFloat(overlay.querySelector(`[data-price="${i}"]`)?.value) || 0;
+                            const sum = v * p.quantity; t += sum;
+                            const el = overlay.querySelector(`[data-sum="${i}"]`);
+                            if (el) el.textContent = formatCurrency(sum);
+                        });
+                        const tot = overlay.querySelector('#slTotal');
+                        if (tot) tot.textContent = formatCurrency(t);
+                    };
+                    overlay.querySelectorAll('[data-price]').forEach(inp => inp.addEventListener('input', recalc));
+                    overlay.querySelector('.save-btn').textContent = 'Anlegen';
+                    recalc();
+                });
+            },
+
             // Wandelt die Schnellrechner-Materialliste in Angebotspositionen um.
             // Wird von der Kuehllast- und von der Direkt-Konfiguration genutzt,
             // damit beide Wege dieselbe Stueckliste erzeugen.
@@ -4062,7 +4172,9 @@
                     for (const s of spec) {
                         if (s.qty <= 0) continue;
                         const hit = findCat(s.key, s.cat);
-                        const unitPrice = hit ? Number(hit.sellingPrice) : s.fallback;
+                        // Gemerkter Richtwert schlaegt den fest verdrahteten Fallback.
+                        const saved = hit ? null : Number(await getSetting(this._posKey(s.label), ''));
+                        const unitPrice = hit ? Number(hit.sellingPrice) : (saved > 0 ? saved : s.fallback);
                         positions.push({
                             name: hit ? hit.name : s.label,
                             menge: Math.round(s.qty * 10) / 10,
