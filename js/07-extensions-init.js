@@ -4020,20 +4020,24 @@
                 return { fluessig: '1/4', gas: '5/8' };                             // 6,35 | 15,88
             },
 
+            // EINE Montagezeile im Angebot. Die Rechnung dahinter bleibt realistisch
+            // (Anfahrt + je Geraet + Laufmeter), sie wird nur zusammengefasst -
+            // der Kunde sieht eine Pauschale, nicht drei Arbeitspositionen.
             async _montagePositionen(anzGeraete, meter) {
                 const base   = Number(await getSetting('montageBase',      200)) || 200;
                 const perDev = Number(await getSetting('montagePerDevice', 350)) || 350;
                 const perM   = Number(await getSetting('montagePerMeter',   25)) || 25;
-                const mk = (name, qty, unit, price, settingKey) => ({
-                    materialId: null, name, manufacturer: '', articleNumber: '',
-                    category: 'Arbeitsleistung', bauart: '', unit, quantity: qty,
-                    price, discount: 0, settingKey
-                });
-                const out = [];
-                if (base > 0) out.push(mk('Anfahrt & Baustelleneinrichtung', 1, 'Psch', base, 'montageBase'));
-                if (anzGeraete > 0) out.push(mk('Montage & Inbetriebnahme je Gerät', anzGeraete, 'Stk', perDev, 'montagePerDevice'));
-                if (meter > 0) out.push(mk('Leitungsverlegung (Kernbohrung, Kanal, Anschluss)', Math.round(meter * 10) / 10, 'lfm', perM, 'montagePerMeter'));
-                return out;
+                const fix    = Number(await getSetting(this._posKey('Montagepauschale'), ''));
+                const m      = Math.round((Number(meter) || 0) * 10) / 10;
+                const n      = Number(anzGeraete) || 1;
+                const preis  = fix > 0 ? fix : base + perDev * n + perM * m;
+                return [{
+                    materialId: null, name: 'Montagepauschale',
+                    manufacturer: '', articleNumber: '', category: 'Arbeitsleistung', bauart: '',
+                    unit: 'Psch', quantity: 1, price: preis, discount: 0,
+                    notes: fix > 0 ? 'Fixe Pauschale' :
+                        `Anfahrt ${formatCurrency(base)} · ${n} Gerät${n > 1 ? 'e' : ''} à ${formatCurrency(perDev)} · ${m} lfm à ${formatCurrency(perM)}`
+                }];
             },
 
             // Schreibt die Positionen als echte Projektmaterialien. Nur so tauchen sie
@@ -4089,8 +4093,9 @@
                     <div class="sl-row" data-i="${i}">
                         <div class="sl-name">
                             <div class="sl-title">${escapeHtml(p.name)}</div>
-                            <div class="sl-meta">${p.quantity} ${escapeHtml(p.unit || 'Stk')} · ${
+                            <div class="sl-meta">${p.notes ? escapeHtml(p.notes) + '<br>' : ''}${p.quantity} ${escapeHtml(p.unit || 'Stk')} · ${
                                 p.listenpreisGeschuetzt ? '<span title="Listenpreis bleibt im Katalog unverändert">🔒 Listenpreis</span>'
+                                : p.category === 'Arbeitsleistung' ? '<span style="color:var(--success);">Pauschale – wird als Fixpreis gemerkt</span>'
                                 : p.settingKey ? '<span style="color:var(--success);">Arbeitszeit – wird gemerkt</span>'
                                 : p.materialId ? '<span style="color:var(--success);">Katalog – wird gemerkt</span>'
                                 : '<span style="color:var(--warning);">Richtwert – wird gemerkt</span>'}</div>
