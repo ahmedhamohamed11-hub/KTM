@@ -504,7 +504,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v99</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v100</span></div>
                         </div>
                     </div>`;
             })();
@@ -602,6 +602,14 @@
                 if (openDeposits.length) todos.push({ cls: 'info', icon: '💶', title: `${openDeposits.length} offene${openDeposits.length !== 1 ? '' : 'r'} Restbetrag${openDeposits.length !== 1 ? '¨e' : ''}`.replace('¨e', 'e'), sub: `noch ${formatCurrency(openDepositsSum)} ausständig · tippen`, link: 'offers' });
 
                 contentArea.innerHTML = `
+                    <button type="button" class="dash-calc-btn" onclick="app.navigate('calc')">
+                        <span class="dash-calc-ico">🔢</span>
+                        <span class="dash-calc-txt">
+                            <strong>Schnellberechnung</strong>
+                            <small>Gerät wählen, Leitungslänge eingeben – Angebot mit allen Positionen</small>
+                        </span>
+                        <span class="dash-calc-arrow">›</span>
+                    </button>
                     ${todos.length ? `<div class="todo-center">
                         <div class="todo-head">Das steht an</div>
                         ${todos.map(t => `<div class="todo-item ${t.cls}" onclick="app.navigate('${t.link}')">
