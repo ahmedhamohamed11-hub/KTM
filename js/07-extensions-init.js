@@ -2882,20 +2882,19 @@
                 const _R = recomputeOffer(offer);
                 const summaryRows = [];
                 // Angebotsdarstellung: Positionen sind Endpreise inkl. USt.
-                // Deshalb unten KEINE Steuerzeile, sondern:
-                //   Material inkl. USt.  -  Rabatt  +  Arbeitsleistung  =  Gesamt
+                // Deshalb unten KEINE Steuerzeile. Die Arbeitsleistung darf auch nicht
+                // als eigene Zeile ADDIERT werden - sie steckt schon in den Positionen.
+                // Sie erscheint nur als Hinweis, warum der Rabatt kleiner ausfaellt.
+                //   Zwischensumme (alle Positionen) - Rabatt auf Material = Gesamt
                 if (_R.posDiscount > 0) {
                     summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R.posDiscount)}`]);
                 }
-                // Zwischensumme = ALLE Positionen der Tabelle. Die Arbeitsleistung wird
-                // nur als "davon" ausgewiesen, damit klar ist, dass sie nicht noch einmal
-                // dazugerechnet wird - sie steht ja bereits als Position in der Liste.
                 summaryRows.push(['Zwischensumme inkl. USt.', formatCurrency(_R.grossMaterial + _R.grossLabor)]);
-                if (_R.grossLabor > 0) {
-                    summaryRows.push(['davon Arbeitsleistung (ohne Rabatt)', formatCurrency(_R.grossLabor)]);
-                }
                 if (_R.discountEnabled && _R.grossDiscount > 0) {
-                    summaryRows.push([`Rabatt ${(_R.rate * 100).toFixed(1).replace('.', ',')} % auf Material`, `- ${formatCurrency(_R.grossDiscount)}`]);
+                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %) auf Material`, `- ${formatCurrency(_R.grossDiscount)}`]);
+                    if (_R.grossLabor > 0) {
+                        summaryRows.push(['davon Arbeitsleistung – ohne Rabatt', formatCurrency(_R.grossLabor)]);
+                    }
                 }
                 summaryRows.forEach(([label, val]) => {
                     doc.text(label, boxX, fy);
