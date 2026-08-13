@@ -1295,14 +1295,25 @@
                     bauart: m?.bauart || ''
                 });
 
+                // Stromkabel, Kabelkanal, Konsole und Kleinmaterial fehlten hier bisher –
+                // dieselbe Systematik wie in der Materialliste des Kuehllast-Rechners.
+                const strom  = findM(['stromkabel','netzkabel','nym','zuleitung']);
+                const kanal  = findM(['kabelkanal','brüstungskanal']);
+                const konsol = findM(['konsole','wandhalter','standfuß','halterung']);
+                const klein  = findM(['kleinmaterial','dübel','schellen','montagematerial']);
+
                 const positions = [
                     mkPos(ig, 1, 'Stk'),
                     mkPos(ag, 1, 'Stk'),
-                    kupfer ? mkPos(kupfer, D.len, 'm', `Kupferrohr/Isolierung`, D.kupferpreis) : mkPos(null, D.len, 'm', 'Kupferrohr/Isolierung', D.kupferpreis),
-                    kommu  ? mkPos(kommu,  D.len, 'm', 'Kommunikationskabel',   D.kommupreis)  : mkPos(null, D.len, 'm', 'Kommunikationskabel', D.kommupreis),
-                    kond   ? mkPos(kond,   D.len, 'm', 'Kondensatschlauch',     D.kondpreis)   : mkPos(null, D.len, 'm', 'Kondensatschlauch', D.kondpreis),
+                    kupfer ? mkPos(kupfer, D.len, 'm', 'Kältemittelleitung (Saug + Flüssig)', D.kupferpreis) : mkPos(null, D.len, 'm', 'Kältemittelleitung (Saug + Flüssig)', D.kupferpreis),
+                    kommu  ? mkPos(kommu,  D.len, 'm', 'Kommunikationskabel', D.kommupreis) : mkPos(null, D.len, 'm', 'Kommunikationskabel', D.kommupreis),
+                    strom  ? mkPos(strom,  D.len, 'm', 'Stromzuleitung')                    : mkPos(null, D.len, 'm', 'Stromzuleitung', 2.5),
+                    kond   ? mkPos(kond,   D.len, 'm', 'Kondensatschlauch', D.kondpreis)    : mkPos(null, D.len, 'm', 'Kondensatschlauch', D.kondpreis),
+                    kanal  ? mkPos(kanal,  D.len, 'm', 'Kabelkanal')                        : mkPos(null, D.len, 'm', 'Kabelkanal', 9),
+                    konsol ? mkPos(konsol, 1, 'Set', 'Wandkonsole / Standfuß Außengerät')   : mkPos(null, 1, 'Set', 'Wandkonsole / Standfuß Außengerät', 38),
+                    klein  ? mkPos(klein,  1, 'Psch', 'Kleinmaterial (Dübel, Schellen, Dichtband)') : mkPos(null, 1, 'Psch', 'Kleinmaterial (Dübel, Schellen, Dichtband)', 45),
                     mkPos(montM, 1, 'Psch', 'Montage & Inbetriebnahme', D.montage),
-                ];
+                ].filter(p => Number(p.quantity) > 0);
 
                 const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
                 const total = positions.reduce((s, p) => s + p.price * p.quantity, 0);
@@ -1352,6 +1363,12 @@
                     </div>
                     <div class="form-group"><label>Telefon</label><input type="text" id="calcPhone"></div>
                     <div class="form-group"><label>Adresse / Baustelle</label><input type="text" id="calcAddr"></div>
+                    <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:6px;">
+                        <input type="checkbox" id="calcWithList" checked style="margin-top:3px;">
+                        <span>Angebot mit kompletter Stückliste anlegen<br>
+                            <span style="color:var(--text-muted);font-size:12px;">Geräte, Kältemittelleitung, Kommunikations- und Stromkabel, Kondensat, Kabelkanal, Konsole, Kleinmaterial und Montage – als einzelne Positionen. Mengen aus Leitungslänge und Raumanzahl.</span>
+                        </span>
+                    </label>
                 `, async (overlay) => {
                     const last = overlay.querySelector('#calcLast').value.trim();
                     if (!last) { showToast('Bitte mindestens den Nachnamen angeben.', 'error'); return; }
@@ -1396,11 +1413,40 @@
                             }
                         });
                     }
-                    // KEIN Angebot mehr automatisch erstellen: Erst Besichtigung
-                    // (Maße, Größen, Fotos), dann Angebot aus dem Projekt heraus.
-                    // Die Rechner-Positionen bleiben als Vorschlag im calcData erhalten.
+                    // Angebot mit Stueckliste nur auf Wunsch. Ohne Haken bleibt es beim
+                    // reinen Besichtigungsprojekt wie bisher.
+                    let msg = 'Kunde & Projekt angelegt – jetzt besichtigen, dann Angebot erstellen.';
+                    if (overlay.querySelector('#calcWithList')?.checked) {
+                        await this.calcAiMaterials().catch(() => {});
+                        const L = this._lastMaterialList;
+                        if (L && (L.positions?.length || L.geraete?.length)) {
+                            const positions = this._stuecklisteZuPositionen(L.geraete, L.positions);
+                            const montageBase      = Number(await getSetting('montageBase',      200)) || 200;
+                            const montagePerDevice = Number(await getSetting('montagePerDevice', 350)) || 350;
+                            const montagePerMeter  = Number(await getSetting('montagePerMeter',   25)) || 25;
+                            const anzGeraete = res.rooms.length || 1;
+                            const meter = (Number(CALC_STATE.distance) || 5) * anzGeraete;
+                            positions.push({
+                                materialId: null, name: 'Montage & Inbetriebnahme',
+                                manufacturer: '', articleNumber: '', category: 'Arbeitsleistung', bauart: '',
+                                unit: 'Psch', quantity: 1,
+                                price: montageBase + montagePerDevice * anzGeraete + meter * montagePerMeter,
+                                discount: 0
+                            });
+                            const total = positions.reduce((a, p) => a + p.price * p.quantity, 0);
+                            const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+                            await db.add('offers', {
+                                offerNumber: offerNum, projectId: projId, status: 'Angebot offen',
+                                positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
+                                discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
+                            });
+                            msg = `Projekt + Angebot ${offerNum} mit ${positions.length} Positionen angelegt.`;
+                        } else {
+                            msg = 'Projekt angelegt – Stückliste konnte nicht erzeugt werden (keine passenden Materialien).';
+                        }
+                    }
                     overlay.remove();
-                    showToast(`Kunde & Projekt angelegt – jetzt besichtigen, dann Angebot erstellen.`, 'success');
+                    showToast(msg, 'success');
                     app.navigate('projects', projId);
                 }, 'Als Projekt anlegen');
             },
@@ -3936,6 +3982,33 @@
                 }, 'Speichern');
             },
 
+            // Wandelt die Schnellrechner-Materialliste in Angebotspositionen um.
+            // Wird von der Kuehllast- und von der Direkt-Konfiguration genutzt,
+            // damit beide Wege dieselbe Stueckliste erzeugen.
+            _stuecklisteZuPositionen(geraete, positions) {
+                const out = [];
+                for (const g of (geraete || [])) {
+                    out.push({
+                        materialId: g.id || null, name: g.name || '',
+                        manufacturer: g.manufacturer || '', articleNumber: g.articleNumber || '',
+                        category: g.category || '', bauart: g.bauart || '',
+                        unit: g.unit || 'Stk', quantity: 1,
+                        price: Number(g.sellingPrice) || 0, discount: 0
+                    });
+                }
+                for (const p of (positions || [])) {
+                    out.push({
+                        materialId: p.materialId || null, name: p.name || '',
+                        manufacturer: p.manufacturer || '', articleNumber: p.articleNumber || '',
+                        category: p.category || '', bauart: '',
+                        unit: p.einheit || 'Stk', quantity: Number(p.menge) || 0,
+                        price: Number(p.preis) || 0, discount: 0,
+                        notes: p.ausKatalog ? '' : 'Richtwert – Preis prüfen'
+                    });
+                }
+                return out;
+            },
+
             // ===== Regelbasierte Materialliste im Schnellrechner (ohne KI, offline) =====
             async calcAiMaterials() {
                 const box = document.getElementById('calcAiBox');
@@ -3995,13 +4068,25 @@
                             menge: Math.round(s.qty * 10) / 10,
                             einheit: hit ? (hit.unit || s.unit) : s.unit,
                             preis: unitPrice,
-                            ausKatalog: !!hit
+                            ausKatalog: !!hit,
+                            // Verknuepfung zum Katalogartikel mitfuehren, damit die Liste
+                            // 1:1 als Angebotspositionen uebernommen werden kann.
+                            materialId: hit ? hit.id : null,
+                            manufacturer: hit ? (hit.manufacturer || '') : '',
+                            articleNumber: hit ? (hit.articleNumber || '') : '',
+                            category: hit ? (hit.category || '') : ''
                         });
                     }
 
                     const sum = positions.reduce((a, p) => a + p.preis * p.menge, 0);
                     // Positionen für den Kopieren-Knopf merken
-                    this._lastMaterialList = { positions, sum };
+                    this._lastMaterialList = {
+                        positions, sum,
+                        geraete: [
+                            ...res.rooms.filter(x => x.dev).map(x => x.dev),
+                            ...(res.outdoor ? [res.outdoor] : [])
+                        ]
+                    };
                     box.innerHTML = `
                         <div class="calc-ai-head">🧰 Materialliste (circa)</div>
                         <div class="calc-lines">
