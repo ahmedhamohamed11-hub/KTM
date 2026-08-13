@@ -1019,10 +1019,16 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         // sind Endpreise inkl. USt., unabhaengig vom MwSt-Schalter des Angebots.
         // Nur Arbeitsleistung folgt dem Schalter (z.B. steuerfreie Abrechnung).
         function isLaborPos(p) {
-            const c = (p?.category || '').toLowerCase();
+            const c = (p?.category || '').trim().toLowerCase();
             const n = (p?.name || '').toLowerCase();
-            return c.includes('arbeit') || c.includes('montage') || c.includes('anfahrt') || c.includes('lohn')
-                || n.includes('arbeitsleistung') || n.includes('montagepauschale') || n.includes('anfahrt') || n.includes('arbeitsstunde');
+            // ACHTUNG: NICHT auf "montage" im Kategorienamen pruefen - die
+            // Materialkategorie heisst "Befestigung & Montage" und enthaelt
+            // Konsolen, Wandhalter und Standfuesse. Das ist Material, keine Arbeit.
+            if (c === 'befestigung & montage') return false;
+            if (c === 'arbeitsleistung' || c.includes('lohn')) return true;
+            return n.includes('arbeitsleistung') || n.includes('montagepauschale')
+                || n.includes('arbeitsstunde') || n.includes('anfahrt')
+                || n.includes('inbetriebnahme') || n.includes('leitungsverlegung');
         }
         function posVatRate(p, offer) {
             if (isLaborPos(p)) return (offer && offer.vatEnabled === false) ? 0 : (Number(offer?.vatRate) || 0.20);
