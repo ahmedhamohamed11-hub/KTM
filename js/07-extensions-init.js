@@ -1312,8 +1312,8 @@
                     kanal  ? mkPos(kanal,  D.len, 'm', 'Kabelkanal')                        : mkPos(null, D.len, 'm', 'Kabelkanal', 9),
                     konsol ? mkPos(konsol, 1, 'Set', 'Wandkonsole / Standfuß Außengerät')   : mkPos(null, 1, 'Set', 'Wandkonsole / Standfuß Außengerät', 38),
                     klein  ? mkPos(klein,  1, 'Psch', 'Kleinmaterial (Dübel, Schellen, Dichtband)') : mkPos(null, 1, 'Psch', 'Kleinmaterial (Dübel, Schellen, Dichtband)', 45),
-                    mkPos(montM, 1, 'Psch', 'Montage & Inbetriebnahme', D.montage),
                 ].filter(p => Number(p.quantity) > 0);
+                positions.push(...await this._montagePositionen(1, D.len));
 
                 const r = await this.openStuecklisteVorschau(positions, {
                     modalTitel: 'Positionen prüfen',
@@ -1430,7 +1430,7 @@
                             const positions = this._stuecklisteZuPositionen(L.geraete, L.positions);
                             const anzGeraete = res.rooms.length || 1;
                             const meter = (Number(CALC_STATE.distance) || 5) * anzGeraete;
-                            positions.push(await this._montagePosition(anzGeraete, meter));
+                            positions.push(...await this._montagePositionen(anzGeraete, meter));
                             const r = await this.openStuecklisteVorschau(positions, {
                                 modalTitel: 'Positionen prüfen',
                                 titel: `${anzGeraete} Gerät${anzGeraete > 1 ? 'e' : ''} · ${meter} m Leitung gesamt`
@@ -3976,17 +3976,24 @@
                 }, 'Speichern');
             },
 
-            async _montagePosition(anzGeraete, meter) {
+            // Arbeitsleistung als drei nachvollziehbare Zeilen statt einer Pauschale:
+            // Anfahrt, Montage je Geraet und Leitungsverlegung je Laufmeter.
+            // settingKey sorgt dafuer, dass eine Preisaenderung direkt den Stundensatz
+            // bzw. Meterpreis der App neu setzt - nicht nur diese eine Position.
+            async _montagePositionen(anzGeraete, meter) {
                 const base   = Number(await getSetting('montageBase',      200)) || 200;
                 const perDev = Number(await getSetting('montagePerDevice', 350)) || 350;
                 const perM   = Number(await getSetting('montagePerMeter',   25)) || 25;
-                const gespeichert = Number(await getSetting(this._posKey('Montage & Inbetriebnahme'), ''));
-                return {
-                    materialId: null, name: 'Montage & Inbetriebnahme',
-                    manufacturer: '', articleNumber: '', category: 'Arbeitsleistung', bauart: '',
-                    unit: 'Psch', quantity: 1, discount: 0,
-                    price: gespeichert > 0 ? gespeichert : base + perDev * anzGeraete + meter * perM
-                };
+                const mk = (name, qty, unit, price, settingKey) => ({
+                    materialId: null, name, manufacturer: '', articleNumber: '',
+                    category: 'Arbeitsleistung', bauart: '', unit, quantity: qty,
+                    price, discount: 0, settingKey
+                });
+                const out = [];
+                if (base > 0) out.push(mk('Anfahrt & Baustelleneinrichtung', 1, 'Psch', base, 'montageBase'));
+                if (anzGeraete > 0) out.push(mk('Montage & Inbetriebnahme je Gerät', anzGeraete, 'Stk', perDev, 'montagePerDevice'));
+                if (meter > 0) out.push(mk('Leitungsverlegung (Kernbohrung, Kanal, Anschluss)', Math.round(meter * 10) / 10, 'lfm', perM, 'montagePerMeter'));
+                return out;
             },
 
             // Legt je nach Wahl ein Angebot an oder haengt die Liste als Notiz ans Projekt.
@@ -4022,7 +4029,11 @@
                     <div class="sl-row" data-i="${i}">
                         <div class="sl-name">
                             <div class="sl-title">${escapeHtml(p.name)}</div>
-                            <div class="sl-meta">${p.quantity} ${escapeHtml(p.unit || 'Stk')}${p.materialId ? ' · Katalog' : ' · <span style="color:var(--warning);">Richtwert</span>'}</div>
+                            <div class="sl-meta">${p.quantity} ${escapeHtml(p.unit || 'Stk')} · ${
+                                p.listenpreisGeschuetzt ? '<span title="Listenpreis bleibt im Katalog unverändert">🔒 Listenpreis</span>'
+                                : p.settingKey ? '<span style="color:var(--success);">Arbeitszeit – wird gemerkt</span>'
+                                : p.materialId ? '<span style="color:var(--success);">Katalog – wird gemerkt</span>'
+                                : '<span style="color:var(--warning);">Richtwert – wird gemerkt</span>'}</div>
                         </div>
                         <div class="sl-price">
                             <input type="number" step="0.01" min="0" value="${Number(p.price).toFixed(2)}" data-price="${i}">
@@ -4041,7 +4052,7 @@
                     <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:12px;">
                         <input type="checkbox" id="slRemember" checked style="margin-top:3px;">
                         <span>Geänderte Preise als Standard merken<br>
-                        <span style="color:var(--text-muted);font-size:12px;">Katalogartikel bekommen den neuen Preis, Richtwerte werden für künftige Angebote gespeichert.</span></span>
+                        <span style="color:var(--text-muted);font-size:12px;">Gilt für Material, Richtwerte und Arbeitszeit – Meter- und Gerätepreise der Montage werden dabei direkt neu gesetzt. <strong>Klimageräte sind ausgenommen:</strong> deren Listenpreis bleibt unverändert, deine Änderung gilt nur für dieses Angebot.</span></span>
                     </label>
                     <div class="form-group" style="margin-top:12px;">
                         <label>Was soll angelegt werden?</label>
@@ -4058,17 +4069,27 @@
                             price: parseFloat(ov.querySelector(`[data-price="${i}"]`)?.value) || 0
                         }));
                         if (ov.querySelector('#slRemember')?.checked) {
-                            let n = 0;
+                            let n = 0, geschuetzt = 0;
                             for (let i = 0; i < out.length; i++) {
                                 if (Math.abs(out[i].price - positions[i].price) < 0.005) continue;
-                                if (out[i].materialId) {
+                                // Klimageraete: geaenderter Preis gilt nur fuer dieses Angebot.
+                                // Der Listenpreis kommt aus der Herstellerpreisliste und wird
+                                // ueber den Haendlerrabatt gerechnet - den darf ein einzelnes
+                                // Angebot nicht dauerhaft verstellen.
+                                if (out[i].listenpreisGeschuetzt) { geschuetzt++; continue; }
+                                if (out[i].settingKey) {
+                                    await setSetting(out[i].settingKey, String(out[i].price)); n++;
+                                } else if (out[i].materialId) {
                                     const m = await db.get('materials', out[i].materialId);
                                     if (m) { await db.put('materials', { ...m, sellingPrice: out[i].price }); n++; }
                                 } else {
                                     await setSetting(this._posKey(out[i].name), String(out[i].price)); n++;
                                 }
                             }
-                            if (n) showToast(`${n} Preis${n > 1 ? 'e' : ''} als Standard gespeichert.`, 'success');
+                            const teile = [];
+                            if (n) teile.push(`${n} Preis${n > 1 ? 'e' : ''} als Standard gespeichert`);
+                            if (geschuetzt) teile.push(`${geschuetzt} Gerätepreis${geschuetzt > 1 ? 'e' : ''} nur für dieses Angebot geändert`);
+                            if (teile.length) showToast(teile.join(' · '), 'success');
                         }
                         const mode = ov.querySelector('#slMode')?.value || 'both';
                         ov.remove();
@@ -4103,11 +4124,17 @@
                         manufacturer: g.manufacturer || '', articleNumber: g.articleNumber || '',
                         category: g.category || '', bauart: g.bauart || '',
                         unit: g.unit || 'Stk', quantity: 1,
-                        price: Number(g.sellingPrice) || 0, discount: 0
+                        price: Number(g.sellingPrice) || 0, discount: 0,
+                        // Klimageraete: Preis fuer dieses Angebot aenderbar, aber der
+                        // Listenpreis im Katalog bleibt unangetastet (Herstellerpreisliste).
+                        listenpreisGeschuetzt: true
                     });
                 }
+                const istGeraet = p => p.category === 'Klimageräte' ||
+                    ['Innengerät Single-Split','Außengerät Single-Split','Innengerät Multi-Split','Außengerät Multi-Split','Truhengerät','Klimaset'].includes(p.bauart || '');
                 for (const p of (positions || [])) {
                     out.push({
+                        listenpreisGeschuetzt: istGeraet(p),
                         materialId: p.materialId || null, name: p.name || '',
                         manufacturer: p.manufacturer || '', articleNumber: p.articleNumber || '',
                         category: p.category || '', bauart: '',
