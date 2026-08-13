@@ -2836,16 +2836,20 @@
                     }
                 }
 
+                // Kunde sieht je Position den Endpreis inkl. USt. Positionen mit
+                // priceIncludesVat sind bereits brutto; aeltere Netto-Positionen werden
+                // NUR fuer die Anzeige hochgerechnet.
                 const rows = (offer.positions || []).map((p, i) => {
                     const disc = Number(p.discount) || 0;
-                    const lineTotal = p.price * p.quantity * (1 - disc / 100);
+                    const unit = (typeof posDisplayPrice === 'function') ? posDisplayPrice(p, offer) : (Number(p.price) || 0);
+                    const lineTotal = unit * (Number(p.quantity) || 0) * (1 - disc / 100);
                     return [
                         String(i + 1),
                         p.name || '',
                         (p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : '')) + (disc > 0 ? ` (−${disc}% Rabatt)` : ''),
                         String(p.quantity),
                         p.unit || 'Stk',
-                        formatCurrency(p.price),
+                        formatCurrency(unit),
                         formatCurrency(lineTotal)
                     ];
                 });
@@ -2853,7 +2857,7 @@
                 doc.autoTable({
                     startY: y,
                     margin: { left: mx, right: mx, bottom: 26 },
-                    head: [['Nr.', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
+                    head: [['Nr.', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis\ninkl. USt.', 'Gesamt']],
                     body: rows,
                     ...PDF_TABLE_STYLES,
                     columnStyles: {
@@ -6517,16 +6521,18 @@ async exportOfferPDF(offerId, share = false, withCustomer = true) {
         }
     }
 
+    // Auch hier: Einzelpreis als Endpreis inkl. USt. (siehe posDisplayPrice)
     const rows = (offer.positions || []).map((p, i) => {
         const disc = Number(p.discount) || 0;
-        const lineTotal = p.price * p.quantity * (1 - disc / 100);
+        const unit = (typeof posDisplayPrice === 'function') ? posDisplayPrice(p, offer) : (Number(p.price) || 0);
+        const lineTotal = unit * (Number(p.quantity) || 0) * (1 - disc / 100);
         return [
             String(i + 1),
             p.name || '',
             (p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : '')) + (disc > 0 ? ` (−${disc}% Rabatt)` : ''),
             String(p.quantity),
             p.unit || 'Stk',
-            formatCurrency(p.price),
+            formatCurrency(unit),
             formatCurrency(lineTotal)
         ];
     });
@@ -6534,7 +6540,7 @@ async exportOfferPDF(offerId, share = false, withCustomer = true) {
     doc.autoTable({
         startY: y,
         margin: { left: marginX, right: marginX },
-        head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis', 'Gesamt']],
+        head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis\ninkl. USt.', 'Gesamt']],
         body: rows,
         styles: { font: 'helvetica', fontSize: 8.8, cellPadding: 3, textColor: [40,44,50], lineColor: lightGray, lineWidth: 0.2 },
         headStyles: { fillColor: [26,29,35], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },

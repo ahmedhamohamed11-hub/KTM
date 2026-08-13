@@ -1009,6 +1009,20 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const p = Number(m?.sellingPrice) || 0;
             return m?.priceIncludesVat ? p : p * (1 + MAT_VAT);
         }
+        // Anzeigepreis einer Angebotsposition = IMMER Endpreis inkl. USt.
+        // Positionen mit priceIncludesVat sind bereits brutto und bleiben unveraendert;
+        // aeltere Positionen (vor der Umstellung) sind netto gespeichert und werden
+        // nur fuer die Anzeige hochgerechnet - der gespeicherte Wert bleibt netto.
+        function posDisplayPrice(p, offer) {
+            const pr = Number(p?.price) || 0;
+            if (p?.priceIncludesVat) return pr;
+            const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
+            const base = (offer && offer.vatEnabled === false) ? 0 : (Number(offer?.vatRate) || 0.20);
+            const r = KLIMA.has((p?.category || '').trim()) ? 0.20 : base;
+            return pr * (1 + r);
+        }
+        window.posDisplayPrice = posDisplayPrice;
+
         window.matNetto = matNetto;
         window.matBrutto = matBrutto;
         window.MAT_VAT = MAT_VAT;
