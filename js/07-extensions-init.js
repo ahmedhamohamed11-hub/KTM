@@ -2881,18 +2881,18 @@
                 doc.setTextColor(...PDF_INK);
                 const _R = recomputeOffer(offer);
                 const summaryRows = [];
-                if (_R.posDiscount > 0.005) {
-                    summaryRows.push(['Zwischensumme', formatCurrency(_R.gross)]);
+                // Angebotsdarstellung: Positionen sind Endpreise inkl. USt.
+                // Deshalb unten KEINE Steuerzeile, sondern:
+                //   Material inkl. USt.  -  Rabatt  +  Arbeitsleistung  =  Gesamt
+                if (_R.posDiscount > 0) {
                     summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R.posDiscount)}`]);
                 }
-                summaryRows.push(['Nettobetrag', formatCurrency(_R.net)]);
-                if (_R.discountEnabled && _R.globalDiscount > 0) {
-                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(_R.globalDiscount)}`]);
+                summaryRows.push(['Material inkl. USt.', formatCurrency(_R.grossMaterial)]);
+                if (_R.discountEnabled && _R.grossDiscount > 0) {
+                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(_R.grossDiscount)}`]);
                 }
-                // Steuer immer ausweisen, wenn welche anfaellt - auch bei ausgeschaltetem
-                // Schalter faellt auf Material und Geraete USt an (Rechnungspflicht).
-                if (_R.vatAmount > 0) {
-                    summaryRows.push([`MwSt. (20%)`, formatCurrency(_R.vatAmount)]);
+                if (_R.grossLabor > 0) {
+                    summaryRows.push(['Arbeitsleistung', formatCurrency(_R.grossLabor)]);
                 }
                 summaryRows.forEach(([label, val]) => {
                     doc.text(label, boxX, fy);

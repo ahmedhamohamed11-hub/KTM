@@ -916,23 +916,36 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const net = netPerPos.reduce((s, v) => s + v, 0);
             const posDiscount = gross - net;
 
-            // Gesamt-Rabatt auf Netto
+            // Gesamt-Rabatt laeuft auf das MATERIAL. Die Arbeitsleistung steht im
+            // Angebot als eigener Betrag nach dem Rabatt und wird nicht rabattiert.
             let rate = Number(offer.discountRate) || 0;
             if (rate > 1) rate = rate / 100;
             const discountEnabled = !!offer.discountEnabled && rate > 0;
-            const globalDiscount = discountEnabled ? net * rate : 0;
-            const netAfter = net - globalDiscount;
+            const isLabor = p => (typeof isLaborPos === 'function') ? isLaborPos(p) : false;
 
-            // MwSt pro Position (nach anteiligem Rabatt)
-            let vatAmount = 0;
+            let netMaterial = 0, netLabor = 0, vatMaterialFull = 0, vatLabor = 0;
             positions.forEach((p, i) => {
-                const netLine = netPerPos[i] * (1 - (discountEnabled ? rate : 0));
-                vatAmount += netLine * vatOf(p);
+                const r = vatOf(p);
+                if (isLabor(p)) { netLabor += netPerPos[i]; vatLabor += netPerPos[i] * r; }
+                else            { netMaterial += netPerPos[i]; vatMaterialFull += netPerPos[i] * r; }
             });
 
-            const total = netAfter + vatAmount;
-            const vatRate = vatBase;
-            return { gross, net, posDiscount, rate, discountEnabled, globalDiscount, netAfter, vatRate, vatAmount, total };
+            // Bruttowerte - so steht es im Angebot: Material inkl. USt., davon Rabatt,
+            // Arbeitsleistung separat, Summe daraus.
+            const grossMaterial = netMaterial + vatMaterialFull;
+            const grossLabor    = netLabor + vatLabor;
+            const grossDiscount = discountEnabled ? grossMaterial * rate : 0;
+            const total         = grossMaterial - grossDiscount + grossLabor;
+
+            // Nettowerte fuer die interne Kalkulation
+            const globalDiscount = discountEnabled ? netMaterial * rate : 0;
+            const netAfter  = netMaterial - globalDiscount + netLabor;
+            const vatAmount = vatMaterialFull * (1 - (discountEnabled ? rate : 0)) + vatLabor;
+            const vatRate   = vatBase;
+
+            return { gross, net, posDiscount, rate, discountEnabled, globalDiscount, netAfter,
+                     vatRate, vatAmount, total,
+                     netMaterial, netLabor, vatLabor, grossMaterial, grossLabor, grossDiscount };
         }
 
         // Baut den Anzeigenamen eines Kunden inkl. Anrede + Titel zusammen.
