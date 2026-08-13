@@ -491,9 +491,16 @@
                             && (x.unit || 'Stk') === (pm.unit || 'Stk'));
                     for (const s of siblings) { s.price = pm.price; await db.put('projectMaterials', s); }
                     const mat = await db.get('materials', pm.materialId);
-                    if (mat && (mat.unit || 'Stk') === (pm.unit || 'Stk') && Number(mat.sellingPrice) !== pm.price) {
-                        mat.sellingPrice = pm.price;
-                        await db.put('materials', mat);
+                    if (mat && (mat.unit || 'Stk') === (pm.unit || 'Stk')) {
+                        // Positionspreise sind Endpreise inkl. 20 %, sellingPrice ist der
+                        // Netto-Listenpreis. Ohne Ruecknahme der USt wuerde der Artikel bei
+                        // jeder Preiskorrektur um 20 % teurer werden.
+                        const netto = (typeof matNetto === 'function')
+                            ? matNetto({ sellingPrice: pm.price }) : (Number(pm.price) || 0) / 1.2;
+                        if (Math.abs(Number(mat.sellingPrice) - netto) > 0.005) {
+                            mat.sellingPrice = Math.round(netto * 100) / 100;
+                            await db.put('materials', mat);
+                        }
                     }
                     if (siblings.length) showToast(`Preis für ${siblings.length + 1} Position(en) übernommen.`, 'success');
                 }
@@ -685,7 +692,7 @@
                 let added = 0;
                 for (const w of wanted) {
                     const mat = await this._ensureCatalogMaterial(w.name, w.size, w.category, w.unit);
-                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId: null, quantity: w.qty, unit: w.unit, size: w.size || '', price: matUnitPrice(mat, w.unit), note: w.note || 'Automatisch berechnet' });
+                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId: null, quantity: w.qty, unit: w.unit, size: w.size || '', price: matUnitPrice(mat, w.unit), priceIncludesVat: true, note: w.note || 'Automatisch berechnet' });
                     added++;
                 }
 
@@ -1082,7 +1089,10 @@
                 app.openMaterialModal(null, {
                     prefill: {
                         name: it.name || '', manufacturer: it.manufacturer || '', articleNumber: it.articleNumber || '',
-                        category: it.category || '', unit: it.unit || 'Stk', sellingPrice: Number(it.price) || 0,
+                        category: it.category || '', unit: it.unit || 'Stk',
+                        sellingPrice: Math.round(((typeof matNetto === 'function')
+                            ? matNetto({ sellingPrice: Number(it.price) || 0 })
+                            : (Number(it.price) || 0) / 1.2) * 100) / 100,
                         description: it.description || ''
                     },
                     focusField: 'matPurchasePrice',
@@ -1870,7 +1880,7 @@
                         await db.add('projectMaterials', {
                             projectId, materialId: m.id, roomId: roomId ? parseId(roomId) : null,
                             quantity: qty, unit: overlay.querySelector('#amp_unit').value,
-                            size: m.size || '', price: matUnitPrice(m, overlay.querySelector('#amp_unit').value), note: 'Aus Katalog'
+                            size: m.size || '', price: matUnitPrice(m, overlay.querySelector('#amp_unit').value), priceIncludesVat: true, note: 'Aus Katalog'
                         });
                         overlay.remove();
                         showToast(`${qty} ${overlay.querySelector('#amp_unit')?.value || ''} ${m.name} zum Projekt hinzugefügt.`.trim(), 'success');
@@ -1928,7 +1938,7 @@
                 await db.add('projectMaterials', {
                     projectId, materialId: partner.id, roomId: roomId || null,
                     quantity: qty, unit: partner.unit || 'Stk',
-                    size: partner.size || '', price: matUnitPrice(partner, partner.unit || 'Stk'), note: 'Set-Ergänzung'
+                    size: partner.size || '', price: matUnitPrice(partner, partner.unit || 'Stk'), priceIncludesVat: true, note: 'Set-Ergänzung'
                 });
                 showToast(`${partner.name} als Set ergänzt.`, 'success');
                 if (this.currentPage === 'projects' && this.currentProjectId === projectId) this.navigate('projects', projectId);
@@ -2170,7 +2180,7 @@
                         await db.add('projectMaterials', {
                             projectId, materialId: m.id, roomId: roomId ? parseId(roomId) : null,
                             quantity: qty, unit: m.unit || 'Stk', size: m.size || '',
-                            price: matUnitPrice(m, m.unit || 'Stk'), note: 'Aus Geräte-Konfigurator'
+                            price: matUnitPrice(m, m.unit || 'Stk'), priceIncludesVat: true, note: 'Aus Geräte-Konfigurator'
                         });
                     }
                     overlay.remove();
@@ -2526,7 +2536,7 @@
                         }
                         continue;
                     }
-                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || mat.size || '', price: matUnitPrice(mat, w.unit), note: `${roomName} – automatisch` });
+                    await db.add('projectMaterials', { projectId, materialId: mat.id, roomId, quantity: w.qty, unit: w.unit, size: w.size || mat.size || '', price: matUnitPrice(mat, w.unit), priceIncludesVat: true, note: `${roomName} – automatisch` });
                     added++;
                 }
                 return added + updated;
@@ -4233,7 +4243,14 @@
                                     await setSetting(out[i].settingKey, String(out[i].price)); n++;
                                 } else if (out[i].materialId) {
                                     const m = await db.get('materials', out[i].materialId);
-                                    if (m) { await db.put('materials', { ...m, sellingPrice: out[i].price }); n++; }
+                                    // out[i].price ist ein Endpreis inkl. 20 % -> zurueck auf netto
+                                    if (m) {
+                                        let neu = Number(out[i].price) || 0;
+                                        neu = (typeof matNetto === 'function') ? matNetto({ sellingPrice: neu }) : neu / 1.2;
+                                        const bl = Number(m.bundleLength) || 0;
+                                        if (['Rolle','Bund','Stange'].includes(m.unit || '') && bl > 0) neu = neu * bl;
+                                        await db.put('materials', { ...m, sellingPrice: Math.round(neu * 100) / 100 }); n++;
+                                    }
                                 } else {
                                     await setSetting(this._posKey(out[i].name), String(out[i].price)); n++;
                                 }
@@ -6281,9 +6298,10 @@
             // pro Meter gerechnet wird -> Gewinn/Marge in der Live-Kalkulation viel zu hoch.
             const isRollGoods = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && Number(m.bundleLength) > 0;
             const unit = isRollGoods ? 'm' : (m.unit || 'Stk');
-            const price = isRollGoods ? (matUnitPrice(m, 'm') || 0) : (Number(m.sellingPrice) || 0);
+            // Endpreis inkl. 20 % - matUnitPrice liefert ihn bereits, sonst matBrutto.
+            const price = isRollGoods ? (matUnitPrice(m, 'm') || 0) : (matUnitPrice(m, unit) || 0);
             selected.push({
-                materialId: m.id, name: m.name, unit, price,
+                materialId: m.id, name: m.name, unit, price, priceIncludesVat: true,
                 quantity: 1, manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
                 category: m.category || '', description: m.description || '', image: m.image || ''
             });
