@@ -4152,6 +4152,7 @@
                             <div class="sl-title">${escapeHtml(p.name)}</div>
                             <div class="sl-meta">${p.notes ? escapeHtml(p.notes) + '<br>' : ''}${
                                 p.listenpreisGeschuetzt ? '🔒 Listenpreis'
+                                : (typeof isLaborPos === 'function' && isLaborPos(p)) ? '<span style="color:var(--warning);">⏱️ Arbeitsleistung – ohne USt-Aufschlag und ohne Rabatt</span>'
                                 : p.rates ? '<span style="color:var(--success);">rechnet immer mit</span>'
                                 : p.materialId ? '<span style="color:var(--success);">Katalog</span>'
                                 : '<span style="color:var(--warning);">Richtwert</span>'}</div>

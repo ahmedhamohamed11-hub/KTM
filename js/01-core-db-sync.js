@@ -1031,14 +1031,15 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         // Steuersatz einer Position. MATERIAL UND GERAETE immer 20 % - deren Preise
         // sind Endpreise inkl. USt., unabhaengig vom MwSt-Schalter des Angebots.
         // Nur Arbeitsleistung folgt dem Schalter (z.B. steuerfreie Abrechnung).
+        // Massgeblich ist die KATEGORIE (MAT_CAT_META.vat), nicht der Artikelname.
+        // Nur wenn gar keine Kategorie gesetzt ist, wird der Name herangezogen.
         function isLaborPos(p) {
-            const c = (p?.category || '').trim().toLowerCase();
+            const cat = (p?.category || '').trim();
+            if (cat && typeof MAT_CAT_META !== 'undefined' && MAT_CAT_META[cat]) {
+                return MAT_CAT_META[cat].vat === false;
+            }
+            if (cat) return cat.toLowerCase() === 'arbeitsleistung';
             const n = (p?.name || '').toLowerCase();
-            // ACHTUNG: NICHT auf "montage" im Kategorienamen pruefen - die
-            // Materialkategorie heisst "Befestigung & Montage" und enthaelt
-            // Konsolen, Wandhalter und Standfuesse. Das ist Material, keine Arbeit.
-            if (c === 'befestigung & montage') return false;
-            if (c === 'arbeitsleistung' || c.includes('lohn')) return true;
             return n.includes('arbeitsleistung') || n.includes('montagepauschale')
                 || n.includes('arbeitsstunde') || n.includes('anfahrt')
                 || n.includes('inbetriebnahme') || n.includes('leitungsverlegung');
@@ -1169,17 +1170,20 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             'Steuerung & Regelung',
             'Zubehör',
         ];
+        // vat: true  = Materialkategorie -> Einzelpreis immer inkl. 20 % USt.
+        // vat: false = Arbeitsleistung   -> eigener Betrag, folgt dem MwSt-Schalter,
+        //                                   kein Material-Aufschlag, kein Rabatt
         const MAT_CAT_META = {
             'Arbeitsleistung':      { icon: '⏱️', vat: false },
-            'Befestigung & Montage':{ icon: '🔩', vat: false },
-            'Elektroinstallation':  { icon: '⚡', vat: false },
-            'Kabelkanäle':          { icon: '📦', vat: false },
-            'Kältemittel':          { icon: '❄️', vat: false },
+            'Befestigung & Montage':{ icon: '🔩', vat: true  },
+            'Elektroinstallation':  { icon: '⚡', vat: true  },
+            'Kabelkanäle':          { icon: '📦', vat: true  },
+            'Kältemittel':          { icon: '❄️', vat: true  },
             'Klimageräte':          { icon: '🌡️', vat: true  },
-            'Kondensat':            { icon: '💧', vat: false },
-            'Kupfer & Rohrsysteme': { icon: '🔧', vat: false },
-            'Steuerung & Regelung': { icon: '🎛️', vat: false },
-            'Zubehör':              { icon: '🗂️', vat: false },
+            'Kondensat':            { icon: '💧', vat: true  },
+            'Kupfer & Rohrsysteme': { icon: '🔧', vat: true  },
+            'Steuerung & Regelung': { icon: '🎛️', vat: true  },
+            'Zubehör':              { icon: '🗂️', vat: true  },
         };
         window.MAT_CAT_META = MAT_CAT_META;
 
