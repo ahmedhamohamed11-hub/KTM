@@ -4067,12 +4067,16 @@
                 }
                 if (r.toOffer) {
                     const offerNum = `A-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-                    await db.add('offers', {
+                    const gd = Number(r.globalDisc) || 0;
+                    const offer = {
                         offerNumber: offerNum, projectId: projId, status: 'Angebot offen',
                         positions: r.positions, totalPrice: total, vatEnabled: true, vatRate: 0.20,
-                        discountEnabled: false, discountRate: 0, createdAt: new Date().toISOString()
-                    });
-                    teile.push(`Angebot ${offerNum}`);
+                        discountEnabled: gd > 0, discountRate: gd / 100, createdAt: new Date().toISOString()
+                    };
+                    // Summen zentral rechnen lassen (Positionsrabatt, Gesamtrabatt, MwSt je Kategorie)
+                    if (typeof recomputeOffer === 'function') Object.assign(offer, recomputeOffer(offer));
+                    await db.add('offers', offer);
+                    teile.push(`Angebot ${offerNum}${gd > 0 ? ` (−${gd} %)` : ''}`);
                 }
                 return `Angelegt: ${teile.join(' · ')}.`;
             },
@@ -4088,36 +4092,55 @@
             // Geaenderte Preise werden als neuer Standard gemerkt - bei Katalog-
             // artikeln direkt am Material, sonst als gespeicherter Richtwert.
             async openStuecklisteVorschau(positions, meta) {
-                const rows = positions.map((p, i) => `
+                const rowHtml = (p, i) => `
                     <div class="sl-row" data-i="${i}">
+                        <input type="checkbox" class="sl-take" data-take="${i}" checked title="Position übernehmen">
                         <div class="sl-name">
                             <div class="sl-title">${escapeHtml(p.name)}</div>
-                            <div class="sl-meta">${p.notes ? escapeHtml(p.notes) + '<br>' : ''}${p.quantity} ${escapeHtml(p.unit || 'Stk')} · ${
-                                p.listenpreisGeschuetzt ? '<span title="Listenpreis bleibt im Katalog unverändert">🔒 Listenpreis</span>'
-                                : p.rates ? '<span style="color:var(--success);">rechnet immer mit – Sätze unten anpassbar</span>'
-                                : p.settingKey ? '<span style="color:var(--success);">Arbeitszeit – wird gemerkt</span>'
-                                : p.materialId ? '<span style="color:var(--success);">Katalog – wird gemerkt</span>'
-                                : '<span style="color:var(--warning);">Richtwert – wird gemerkt</span>'}</div>
+                            <div class="sl-meta">${p.notes ? escapeHtml(p.notes) + '<br>' : ''}${
+                                p.listenpreisGeschuetzt ? '🔒 Listenpreis'
+                                : p.rates ? '<span style="color:var(--success);">rechnet immer mit</span>'
+                                : p.materialId ? '<span style="color:var(--success);">Katalog</span>'
+                                : '<span style="color:var(--warning);">Richtwert</span>'}</div>
                         </div>
                         <div class="sl-price">
                             <input type="number" step="0.01" min="0" value="${Number(p.price).toFixed(2)}" data-price="${i}" ${p.rates ? 'readonly' : ''}>
                             <span>€</span>
                         </div>
                         <div class="sl-sum" data-sum="${i}">${formatCurrency(p.price * p.quantity)}</div>
+                        <div class="sl-line2">
+                            <label>Menge <input type="number" step="0.1" min="0" value="${p.quantity}" data-qty="${i}"></label>
+                            <label>Rabatt <input type="number" step="1" min="0" max="100" value="${p.discount || 0}" data-disc="${i}"> %</label>
+                            <span class="sl-unit">${escapeHtml(p.unit || 'Stk')}</span>
+                        </div>
                         ${p.rates ? `<div class="sl-rates">
                             <label>Anfahrt<input type="number" step="1" min="0" value="${p.rates.base}" data-rate="base"></label>
                             <label>je Gerät (${p.rates.n})<input type="number" step="1" min="0" value="${p.rates.perDev}" data-rate="perDev"></label>
                             <label>je lfm (${p.rates.m})<input type="number" step="1" min="0" value="${p.rates.perM}" data-rate="perM"></label>
                         </div>` : ''}
-                    </div>`).join('');
+                    </div>`;
+                const rows = positions.map(rowHtml).join('');
 
                 const html = `
                     <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;">
                         ${escapeHtml(meta.titel || '')}<br>
                         Preise sind Einzelpreise netto und lassen sich hier ändern.
                     </div>
-                    <div class="sl-list">${rows}</div>
-                    <div class="sl-total"><span>Summe netto</span><strong id="slTotal">–</strong></div>
+                    <div class="sl-list" id="slList">${rows}</div>
+                    <button type="button" class="sl-add-btn" id="slAddBtn">+ Position hinzufügen</button>
+                    <div class="sl-addform" id="slAddForm" hidden>
+                        <input type="text" id="slAddName" placeholder="Bezeichnung, z. B. Kernbohrung 80 mm">
+                        <div class="sl-addrow">
+                            <input type="number" id="slAddQty" value="1" step="0.1" min="0">
+                            <input type="text" id="slAddUnit" value="Stk">
+                            <input type="number" id="slAddPrice" value="0" step="0.01" min="0">
+                        </div>
+                        <button type="button" class="btn btn-primary" id="slAddOk">Übernehmen</button>
+                    </div>
+                    <div class="sl-total"><span>Zwischensumme netto</span><strong id="slSub">–</strong></div>
+                    <div class="sl-global"><label>Gesamtrabatt auf alle Positionen
+                        <span><input type="number" id="slGlobalDisc" value="0" step="1" min="0" max="100"> %</span></label></div>
+                    <div class="sl-total sl-total--final"><span>Summe netto</span><strong id="slTotal">–</strong></div>
                     <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:12px;">
                         <input type="checkbox" id="slRemember" checked style="margin-top:3px;">
                         <span>Geänderte Preise als Standard merken<br>
@@ -4144,7 +4167,10 @@
                     const overlay = showModal(meta.modalTitel || 'Positionen prüfen', html, async (ov) => {
                         const out = positions.map((p, i) => ({
                             ...p,
-                            price: parseFloat(ov.querySelector(`[data-price="${i}"]`)?.value) || 0
+                            price: parseFloat(ov.querySelector(`[data-price="${i}"]`)?.value) || 0,
+                            quantity: parseFloat(ov.querySelector(`[data-qty="${i}"]`)?.value) || 0,
+                            discount: parseFloat(ov.querySelector(`[data-disc="${i}"]`)?.value) || 0,
+                            _take: ov.querySelector(`[data-take="${i}"]`)?.checked !== false
                         }));
                         // Montagesaetze immer sichern - dann rechnet die Pauschale beim
                         // naechsten Angebot mit den neuen Saetzen weiter.
@@ -4188,8 +4214,12 @@
                             showToast('Bitte mindestens eins auswählen: Projekt oder Angebot.', 'error');
                             return;   // Modal bleibt offen
                         }
+                        // Abgewaehlte Positionen fliegen raus
+                        const final = out.filter(p => p._take && p.quantity > 0).map(p => { const q = { ...p }; delete q._take; return q; });
+                        if (!final.length) { showToast('Es ist keine Position übernommen.', 'error'); return; }
+                        const globalDisc = parseFloat(ov.querySelector('#slGlobalDisc')?.value) || 0;
                         ov.remove();
-                        resolve({ positions: out, toProject, toOffer });
+                        resolve({ positions: final, toProject, toOffer, globalDisc });
                     }, () => resolve(null), { wide: true });
 
                     const recalc = () => {
@@ -4205,15 +4235,55 @@
                         });
                         let t = 0;
                         positions.forEach((p, i) => {
-                            const v = parseFloat(overlay.querySelector(`[data-price="${i}"]`)?.value) || 0;
-                            const sum = v * p.quantity; t += sum;
-                            const el = overlay.querySelector(`[data-sum="${i}"]`);
-                            if (el) el.textContent = formatCurrency(sum);
+                            const row = overlay.querySelector(`.sl-row[data-i="${i}"]`);
+                            if (!row) return;
+                            const an = row.querySelector(`[data-take="${i}"]`)?.checked !== false;
+                            row.classList.toggle('sl-row--off', !an);
+                            const v = parseFloat(row.querySelector(`[data-price="${i}"]`)?.value) || 0;
+                            const q = parseFloat(row.querySelector(`[data-qty="${i}"]`)?.value) || 0;
+                            const d = parseFloat(row.querySelector(`[data-disc="${i}"]`)?.value) || 0;
+                            const sum = an ? v * q * (1 - d / 100) : 0;
+                            t += sum;
+                            const el = row.querySelector(`[data-sum="${i}"]`);
+                            if (el) el.textContent = an ? formatCurrency(sum) : '—';
                         });
+                        const g = parseFloat(overlay.querySelector('#slGlobalDisc')?.value) || 0;
+                        const sub = overlay.querySelector('#slSub');
+                        if (sub) sub.textContent = formatCurrency(t);
                         const tot = overlay.querySelector('#slTotal');
-                        if (tot) tot.textContent = formatCurrency(t);
+                        if (tot) tot.textContent = formatCurrency(t * (1 - g / 100));
                     };
-                    overlay.querySelectorAll('[data-price], [data-rate]').forEach(inp => inp.addEventListener('input', recalc));
+                    const bind = () => overlay.querySelectorAll('[data-price], [data-rate], [data-qty], [data-disc], [data-take], #slGlobalDisc')
+                        .forEach(inp => { inp.removeEventListener('input', recalc); inp.addEventListener('input', recalc);
+                                          inp.removeEventListener('change', recalc); inp.addEventListener('change', recalc); });
+                    bind();
+                    // Position hinzufuegen
+                    overlay.querySelector('#slAddBtn')?.addEventListener('click', () => {
+                        const f = overlay.querySelector('#slAddForm');
+                        if (f) f.hidden = !f.hidden;
+                    });
+                    overlay.querySelector('#slAddOk')?.addEventListener('click', () => {
+                        const name = overlay.querySelector('#slAddName')?.value.trim();
+                        if (!name) { showToast('Bitte eine Bezeichnung eingeben.', 'error'); return; }
+                        positions.push({
+                            materialId: null, name, manufacturer: '', articleNumber: '',
+                            category: '', bauart: '', unit: overlay.querySelector('#slAddUnit')?.value.trim() || 'Stk',
+                            quantity: parseFloat(overlay.querySelector('#slAddQty')?.value) || 1,
+                            price: parseFloat(overlay.querySelector('#slAddPrice')?.value) || 0, discount: 0
+                        });
+                        overlay.querySelector('#slList').insertAdjacentHTML('beforeend', rowHtml(positions[positions.length - 1], positions.length - 1));
+                        overlay.querySelector('#slAddName').value = '';
+                        overlay.querySelector('#slAddPrice').value = '0';
+                        overlay.querySelector('#slAddForm').hidden = true;
+                        bind(); recalc();
+                    });
+                    // Position entfernen = einfach abwaehlen (bleibt sichtbar, zaehlt nicht mit)
+                    overlay.addEventListener('click', (e) => {
+                        const b = e.target.closest('[data-del]');
+                        if (!b) return;
+                        const cb = overlay.querySelector(`[data-take="${b.dataset.del}"]`);
+                        if (cb) { cb.checked = false; recalc(); }
+                    });
                     overlay.querySelector('.save-btn').textContent = 'Anlegen';
                     recalc();
                 });
