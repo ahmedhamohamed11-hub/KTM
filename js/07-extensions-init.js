@@ -945,11 +945,11 @@
                 // steht Brutto-Erloes gegen Netto-Einkauf und der Gewinn ist um die
                 // Umsatzsteuer zu hoch. Das Verhaeltnis netto/brutto kommt aus der
                 // Angebotsberechnung, damit die Mischung Material/Arbeit stimmt.
-                const nettoAnteil = (R && R.total > 0) ? (R.netAfter / R.total) : (1 / 1.2);
-                const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '')
-                    ? Number(offer.agreedPrice) * nettoAnteil : salesAfter;
-                const kundeZahlt = (offer.agreedPrice != null && offer.agreedPrice !== '')
-                    ? Number(offer.agreedPrice) : (R ? R.total : 0);
+                // Dieselbe Funktion wie die Angebotsliste - beide koennen nicht mehr
+                // auseinanderlaufen.
+                const C = (typeof offerProfitCore === 'function') ? offerProfitCore(offer, materials) : null;
+                const salesEffective = C ? C.salesEffective : salesAfter;
+                const kundeZahlt     = C ? C.kundeZahlt     : (R ? R.total : 0);
 
                 const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
                 // Getrennt fuehren: was tatsaechlich eingekauft wurde und was nur
@@ -1035,18 +1035,20 @@
 
                 // Gewinn = Verkaufserloes netto − TATSAECHLICHER EK netto − tatsaechliche
                 // sonstige Kosten. Kalkulierter EK bleibt aussen vor (Vorkalkulation).
-                const sonstige = Number(offer.otherCosts) || 0;
+                const sonstige = C ? C.sonstige : (Number(offer.otherCosts) || 0);
                 // Der Gewinn muss den GESAMTEN Materialeinsatz gegenrechnen: den
                 // tatsaechlichen EK, wo eine Lieferantenrechnung hinterlegt ist, und
                 // sonst den aus dem Haendlerrabatt kalkulierten. Wuerde man nur den
                 // tatsaechlichen abziehen, waere jedes Material ohne EK gratis - das
                 // ergab Margen von 90 % und mehr.
-                const materialCost = ekIst + ekKalk;
-                const profit = salesEffective - materialCost - sonstige;
-                const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
-                // Zusatzblick: was bliebe, wenn nur die belegten Einkaeufe zaehlen
-                const profitNurIst = salesEffective - ekIst - sonstige;
-                const marginNurIst = salesEffective > 0 ? (profitNurIst / salesEffective) * 100 : 0;
+                // Zahlen kommen aus offerProfitCore; die Zeilenschleife oben dient nur
+                // noch der Darstellung.
+                if (C) { ekIst = C.ekIst; ekKalk = C.ekKalk; kalkPos = C.kalkPos; missing = C.missing; }
+                const materialCost = C ? C.materialCost : (ekIst + ekKalk);
+                const profit       = C ? C.profit       : (salesEffective - materialCost - sonstige);
+                const margin       = C ? C.margin       : (salesEffective > 0 ? (profit / salesEffective) * 100 : 0);
+                const profitNurIst = C ? C.profitNurIst : (salesEffective - ekIst - sonstige);
+                const marginNurIst = C ? C.marginNurIst : (salesEffective > 0 ? (profitNurIst / salesEffective) * 100 : 0);
                 const complete = missing === 0;
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `

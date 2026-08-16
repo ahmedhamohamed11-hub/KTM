@@ -1058,6 +1058,55 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         }
         window.posDisplayPrice = posDisplayPrice;
 
+        // ===== EINE Gewinnberechnung fuer Angebotsliste UND Gewinn-Diagnose =====
+        // Vorher gab es zwei getrennte Implementierungen, die sich um ~90 EUR
+        // unterschieden. Diese Funktion ist ab jetzt die einzige Quelle.
+        function offerProfitCore(offer, materials) {
+            const R = recomputeOffer(offer);
+            const nettoAnteil = R.total > 0 ? (R.netAfter / R.total) : (1 / 1.2);
+            // Vereinbarter Preis = was der Kunde zahlt (brutto) -> auf netto bringen
+            const hatVereinbart = offer.agreedPrice != null && offer.agreedPrice !== '';
+            const kundeZahlt = hatVereinbart ? Number(offer.agreedPrice) : R.total;
+            const salesEffective = hatVereinbart ? Number(offer.agreedPrice) * nettoAnteil : R.netAfter;
+
+            const positions = (offer.positions || []).filter(p => p && (Number(p.quantity) || 0) > 0);
+            let ekIst = 0, ekKalk = 0, laborSales = 0, missing = 0, kalkPos = 0;
+            const lines = [];
+            for (const it of positions) {
+                const qty = Number(it.quantity) || 0;
+                const disc = Number(it.discount) || 0;
+                const unitNet = it.priceIncludesVat ? (Number(it.price) || 0) / (1 + posVatRate(it, offer)) : (Number(it.price) || 0);
+                const lineSales = unitNet * qty * (1 - disc / 100);
+                const labor = isLaborPos(it);
+                let cost = 0, known = true, ekUnit = 0, quelle = 'keiner';
+                if (labor) {
+                    laborSales += lineSales;
+                } else {
+                    const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                    if (!m) { known = false; }
+                    else {
+                        const r = ekPerSalesUnit(m);
+                        known = r.known; ekUnit = r.ek; quelle = r.quelle;
+                        if (known) cost = ekUnit * qty;
+                    }
+                    if (!known) missing++;
+                    if (quelle === 'ist') ekIst += cost;
+                    else if (quelle === 'kalk') { ekKalk += cost; kalkPos++; }
+                }
+                lines.push({ it, qty, disc, lineSales, labor, cost, known, ekUnit, quelle });
+            }
+            const sonstige = Number(offer.otherCosts) || 0;
+            const materialCost = ekIst + ekKalk;
+            const profit = salesEffective - materialCost - sonstige;
+            const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
+            const profitNurIst = salesEffective - ekIst - sonstige;
+            const marginNurIst = salesEffective > 0 ? (profitNurIst / salesEffective) * 100 : 0;
+            return { R, kundeZahlt, salesEffective, ekIst, ekKalk, kalkPos, materialCost, sonstige,
+                     laborSales, missing, complete: missing === 0, profit, margin,
+                     profitNurIst, marginNurIst, lines, positions, nettoAnteil };
+        }
+        window.offerProfitCore = offerProfitCore;
+
         window.matNetto = matNetto;
         window.matBrutto = matBrutto;
         window.MAT_VAT = MAT_VAT;

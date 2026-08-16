@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v127</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v128</span></div>
                         </div>
                     </div>`;
             })();
@@ -1875,50 +1875,28 @@
                     // Endverkaufspreis nach Positions- UND Gesamt-Rabatt, inkl. vereinbarten Preis
                     const salesGross     = R ? R.gross   : 0;   // Summe VK vor Positionsrabatt
                     const salesNet       = R ? R.net     : 0;   // nach Positionsrabatt
-                    const globalDiscount = R ? R.globalDiscount : 0;  // Gesamt-Rabatt €
-                    const salesAfter     = R ? R.netAfter : salesNet; // nach allem Rabatt (ohne MwSt)
-                    // Vereinbarter Preis = was der Kunde zahlt (brutto) -> auf netto
-                    // herunterrechnen, sonst steht Brutto gegen Netto-Einkauf.
-                    const nettoAnteil = (R && R.total > 0) ? (R.netAfter / R.total) : (1 / 1.2);
-                    const salesEffective = (o.agreedPrice != null && o.agreedPrice !== '')
-                        ? Number(o.agreedPrice) * nettoAnteil
-                        : salesAfter;
-
-                    const isLabor = (it) => (typeof isLaborPos === 'function') ? isLaborPos(it) : false;
-                    const positions = (o.positions || []).filter(it => it && (Number(it.quantity)||0) > 0 && (Number(it.price)||0) >= 0);
-                    let materialCost = 0, laborSales = 0, missingCount = 0;
-                    const lines = [];
-                    positions.forEach(it => {
-                        const qty  = Number(it.quantity) || 0;
-                        const disc = Number(it.discount)  || 0;
-                        const lineSales = (Number(it.price)||0) * qty * (1 - disc/100);
-                        const labor = isLabor(it);
-                        let lineCost = 0, ekKnown = true, ekUnit = 0;
-                        if (labor) {
-                            laborSales += lineSales;
-                        } else {
-                            const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                            const r = ekPerSalesUnit(m);
-                            ekKnown = r.known;
-                            ekUnit = r.ek;
-                            if (ekKnown) lineCost = ekUnit * qty;
-                            else missingCount++;
-                        }
-                        materialCost += lineCost;
-                        lines.push({ name: it.name||'(ohne Namen)', qty, unit: it.unit||'Stk', sales: lineSales, cost: lineCost, ekUnit, labor, ekKnown, discount: disc });
-                    });
-                    const otherCost = 0;   // Platzhalter für spätere sonstige Kosten
-                    const profit = salesEffective - materialCost - otherCost;
-                    const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
+                    // EINE gemeinsame Rechnung mit der Gewinn-Diagnose
+                    const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
+                    if (!C) return { profit: 0, margin: 0, hasData: false, lines: [], missingCount: 0, complete: true };
                     return {
-                        profit, margin,
-                        salesGross, salesNet, globalDiscount, salesAfter, salesEffective,
-                        materialCost, laborSales, otherCost,
-                        totalCost: materialCost + otherCost,
-                        missingCount, complete: missingCount === 0,
-                        hasData: positions.length > 0, lines,
-                        discountRate: R ? R.rate : 0,
-                        discountEnabled: R ? R.discountEnabled : false
+                        profit: C.profit, margin: C.margin,
+                        salesGross, salesNet,
+                        globalDiscount: C.R.globalDiscount,
+                        salesAfter: C.R.netAfter,
+                        salesEffective: C.salesEffective,
+                        materialCost: C.materialCost,
+                        laborSales: C.laborSales,
+                        otherCost: C.sonstige,
+                        totalCost: C.materialCost + C.sonstige,
+                        missingCount: C.missing, complete: C.complete,
+                        hasData: C.positions.length > 0,
+                        lines: C.lines.map(l => ({
+                            name: l.it.name || '(ohne Namen)', qty: l.qty, unit: l.it.unit || 'Stk',
+                            sales: l.lineSales, cost: l.cost, ekUnit: l.ekUnit,
+                            labor: l.labor, ekKnown: l.known, discount: l.disc
+                        })),
+                        discountRate: C.R.rate,
+                        discountEnabled: C.R.discountEnabled
                     };
                 };
                 const marginColor = (m) => m < marginThresholds.low ? 'mg-red' : (m < marginThresholds.high ? 'mg-yellow' : 'mg-green');
