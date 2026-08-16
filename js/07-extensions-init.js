@@ -951,7 +951,13 @@
                 const rows = positions.map((it, idx) => {
                     const qty = Number(it.quantity) || 0;
                     const disc = Number(it.discount) || 0;
-                    const lineSales = (Number(it.price) || 0) * qty * (1 - disc / 100);
+                    // WICHTIG: it.price ist ein Endpreis inkl. USt. Fuer den Gewinn muss
+                    // der NETTO-Verkaufserloes gegen den Netto-EK gestellt werden -
+                    // sonst wird die Umsatzsteuer als Gewinn ausgewiesen.
+                    const unitNet = (typeof posVatRate === 'function' && it.priceIncludesVat)
+                        ? (Number(it.price) || 0) / (1 + posVatRate(it, offer))
+                        : (Number(it.price) || 0);
+                    const lineSales = unitNet * qty * (1 - disc / 100);
                     const labor = isLabor(it);
                     let cost = 0, known = true, ekUnit = 0, note = '', m = null, quelle = 'keiner';
                     if (labor) {
@@ -1025,7 +1031,7 @@
                     </div>
                     <div class="diag-detail-title">Positionen im Detail <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">– EK direkt eintragen &amp; mit ✓ speichern, oder auf eine „fehlt"-Zeile klicken für die volle Materialbearbeitung</span></div>
                     <div class="table-container"><table class="diag-table">
-                        <thead><tr><th>Position</th><th style="text-align:right;">VK (netto)</th><th style="text-align:right;">EK / Einheit</th><th style="text-align:right;">Gewinn</th></tr></thead>
+                        <thead><tr><th>Position</th><th style="text-align:right;">VK netto<div style="font-weight:400;font-size:10px;color:var(--text-muted);">ohne USt.</div></th><th style="text-align:right;">EK netto<div style="font-weight:400;font-size:10px;color:var(--text-muted);">je Einheit</div></th><th style="text-align:right;">Gewinn</th></tr></thead>
                         <tbody>${rows||'<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
                     </table></div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Nur für dich sichtbar – erscheint nie im Kundenangebot oder PDF.</div>
