@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v126</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v127</span></div>
                         </div>
                     </div>`;
             })();
@@ -1965,7 +1965,14 @@
                                         <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong></td>
                                         <td>${escapeHtml(cust ? customerDisplayName(cust) : '-')}${proj ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(proj.title || '')}</div>` : ''}</td>
                                         <td>${formatDate(o.createdAt)}</td>
-                                        <td><strong>${formatCurrency((o.agreedPrice != null && o.agreedPrice !== '') ? o.agreedPrice : (o.totalPrice || 0))}</strong>${(o.agreedPrice != null && o.agreedPrice !== '' && Number(o.agreedPrice) !== Number(o.totalPrice)) ? `<div style="font-size:11px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(o.totalPrice || 0)}</div>` : ''}${(Number(o.depositAmount) > 0) ? `<div style="font-size:11px;color:var(--success);">Anz. ${formatCurrency(o.depositAmount)} · Rest ${formatCurrency(Math.max(0, ((o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : Number(o.totalPrice || 0)) - Number(o.depositAmount)))}</div>` : ''}</td>
+                                        ${(() => {
+                                            // Immer neu rechnen: der gespeicherte totalPrice stammt aus dem
+                                            // Moment der Anlage und ist nach Preis-/USt-Aenderungen veraltet.
+                                            const _R = (typeof recomputeOffer === 'function') ? recomputeOffer(o) : null;
+                                            const _aktuell = _R ? _R.total : Number(o.totalPrice || 0);
+                                            const _hatVereinbart = o.agreedPrice != null && o.agreedPrice !== '';
+                                            return `<td><strong>${formatCurrency(_hatVereinbart ? Number(o.agreedPrice) : _aktuell)}</strong>${(_hatVereinbart && Number(o.agreedPrice) !== _aktuell) ? `<div style="font-size:11px;color:var(--text-muted);text-decoration:line-through;">${formatCurrency(_aktuell)}</div>` : ''}`;
+                                        })()}${(Number(o.depositAmount) > 0) ? `<div style="font-size:11px;color:var(--success);">Anz. ${formatCurrency(o.depositAmount)} · Rest ${formatCurrency(Math.max(0, ((o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : ((typeof recomputeOffer === 'function' ? recomputeOffer(o).total : Number(o.totalPrice || 0)))) - Number(o.depositAmount)))}</div>` : ''}</td>
                                         ${profitCell}
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
