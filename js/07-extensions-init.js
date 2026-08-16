@@ -4894,6 +4894,103 @@
                 else { doc.save(fname); showToast('Katalog als PDF erstellt.', 'success'); }
             },
 
+            // Anlagentyp im Direktrechner umschalten (Single / Duo / Trio / Quattro / Penta)
+            calcSetUnits(n) {
+                CALC_STATE.directUnits = Number(n) || 1;
+                const rooms = CALC_STATE.directRooms || [];
+                while (rooms.length < CALC_STATE.directUnits) rooms.push({ kw: '', len: Number(CALC_STATE.directLength) || 5 });
+                CALC_STATE.directRooms = rooms.slice(0, Math.max(1, CALC_STATE.directUnits));
+                renderCalc();
+            },
+
+            // Leistung oder Leitungslaenge eines einzelnen Innengeraets aendern
+            calcSetRoom(i, feld, wert) {
+                const rooms = CALC_STATE.directRooms || [];
+                if (!rooms[i]) rooms[i] = { kw: '', len: 5 };
+                rooms[i][feld] = feld === 'len' ? (Number(wert) || 0) : wert;
+                CALC_STATE.directRooms = rooms;
+                renderCalc();
+            },
+
+            // Multi-Anlage ins Projekt/Angebot uebernehmen - je Innengeraet die
+            // eigene Leitungslaenge, Rohre nach Dimension zusammengefasst.
+            async calcMultiToOffer() {
+                const M = await calcMultiCompute();
+                if (!M.ag) { showToast('Kein passendes Außengerät gefunden.', 'error'); return; }
+                const mats = await db.getAll('materials');
+                const normS = v => String(v || '').replace(/[\u2033"']/g, '').trim();
+                const rohrMat = dim => mats.find(m => m.category === 'Kupfer & Rohrsysteme'
+                    && normS(m.size) === dim && Number(m.sellingPrice) > 0);
+                const findM = keys => mats.find(m => keys.some(k => (m.name || '').toLowerCase().includes(k))
+                    && Number(m.sellingPrice) > 0);
+
+                const pos = [];
+                const mk = (m, qty, unit, name, preis) => ({
+                    materialId: m?.id || null, name: name || m?.name || '',
+                    manufacturer: m?.manufacturer || '', articleNumber: m?.articleNumber || '',
+                    category: m?.category || '', bauart: matBauart(m) || '',
+                    unit, quantity: Math.round(qty * 10) / 10,
+                    price: preis != null ? preis : matUnitPrice(m, unit),
+                    priceIncludesVat: true, discount: 0
+                });
+
+                // Innengeraete
+                M.rows.forEach(r => { if (r.ig) pos.push(mk(r.ig, 1, 'Stk')); });
+                pos.push(mk(M.ag, 1, 'Stk'));
+
+                // Rohre: je Innengeraet Fluessig + Gas, nach Dimension summiert
+                const dims = {};
+                M.rows.forEach(r => {
+                    if (!r.ig) return;
+                    const kw = parseFloat(String(r.ig.size || '').replace(',', '.')) || 0;
+                    const d = this._rohrDim(kw, r.ig.manufacturer, r.ig.series);
+                    [d.fluessig, d.gas].forEach(dim => { dims[dim] = (dims[dim] || 0) + (Number(r.len) || 0); });
+                });
+                Object.entries(dims).forEach(([dim, meter]) => {
+                    const m = rohrMat(dim);
+                    const preis = m ? matUnitPrice(m, 'm') : (dim === '1/4' ? 8.52 : dim === '3/8' ? 10.32 : 13.8);
+                    pos.push(mk(m, meter, 'm', `Kupferrohr isoliert ${dim}"`, preis));
+                });
+
+                // Kabel, Kondensat, Kanal - Gesamtlaenge ueber alle Innengeraete
+                const L = M.totalLen;
+                const zeile = (keys, name, fallback) => {
+                    const m = findM(keys);
+                    pos.push(mk(m, L, 'm', name, m ? matUnitPrice(m, 'm') : fallback));
+                };
+                zeile(['kommunikationskabel', 'steuerleitung'], 'Kommunikationskabel', 2.82);
+                zeile(['stromkabel', 'zuleitung', 'nym'], 'Stromzuleitung', 3.48);
+                zeile(['kondensat'], 'Kondensatschlauch', 3.24);
+                zeile(['kabelkanal'], 'Kabelkanal', 12);
+                const kons = findM(['konsole', 'wandhalter', 'standfuß']);
+                pos.push(mk(kons, 1, 'Set', 'Wandkonsole / Standfuß Außengerät', kons ? matUnitPrice(kons, 'Set') : 51.6));
+                const klein = findM(['kleinmaterial', 'dübel', 'schellen']);
+                pos.push(mk(klein, 1, 'Psch', 'Kleinmaterial', klein ? matUnitPrice(klein, 'Psch') : 54));
+
+                pos.push(...await this._montagePositionen(M.units, L));
+
+                const r = await this.openStuecklisteVorschau(pos.filter(p => p.quantity > 0), {
+                    modalTitel: 'Positionen prüfen',
+                    titel: `${M.units}-fach Multi-Split · ${M.sumKw} kW · ${L} m Leitung gesamt`
+                });
+                if (!r) return;
+
+                const cId = await db.add('customers', { firstName: '', lastName: 'Direktanfrage', phone: '', email: '' });
+                const pId = await db.add('projects', {
+                    customerId: cId, name: `Multi-Split ${M.units}-fach · ${M.sumKw} kW`,
+                    status: 'Neu', progress: 5, createdAt: new Date().toISOString()
+                });
+                const rId = await db.add('rooms', {
+                    projectId: pId, name: 'Anlage', tech: {
+                        pipeLength: L, powerCableLength: L, commCableLength: L, condensateLine: L,
+                        cableDuct: L, coreDrills: M.units,
+                        devManufacturer: M.ag.manufacturer || '', devModel: M.ag.name || ''
+                    }
+                });
+                showToast(await this._positionenAnlegen(pId, r, rId), 'success');
+                this.navigate('projects', pId);
+            },
+
             // ===== Bauart bei vorhandenen Materialien nachtragen =====
             // Manuell ausloesbar aus dem Schnellrechner. Gleiche Logik wie die
             // Startmigration, aber ohne Flag - laesst sich beliebig oft ausfuehren.

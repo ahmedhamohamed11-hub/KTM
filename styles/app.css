@@ -1567,3 +1567,27 @@
 .ek-line--ist { border-top:1px solid var(--border); margin-top:4px; padding-top:7px; }
 .ek-line--ist b { color:var(--success); }
 .ek-hint { font-size:11.5px; color:var(--text-muted); margin-top:8px; line-height:1.45; }
+
+/* Anlagentyp-Auswahl im Schnellrechner */
+.anlagentyp { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin:10px 0 4px; }
+.at-btn { display:flex; flex-direction:column; align-items:center; gap:2px; padding:9px 4px;
+    border:1px solid var(--border); border-radius:10px; background:var(--bg-secondary);
+    cursor:pointer; color:var(--text-primary); }
+.at-btn strong { font-size:12.5px; }
+.at-btn small { font-size:9.5px; color:var(--text-muted); text-align:center; line-height:1.2; }
+.at-btn--on { background:var(--accent); border-color:var(--accent); }
+.at-btn--on strong, .at-btn--on small { color:#fff; }
+
+/* Innengerät-Zeilen bei Multi-Split */
+.mu-list { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.mu-row { display:grid; grid-template-columns:auto 1fr 1fr; gap:8px; align-items:end;
+    padding:10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-tertiary); }
+.mu-nr { font-weight:700; font-size:12px; color:var(--accent); padding-bottom:8px; }
+.mu-f label { display:block; font-size:11px; color:var(--text-muted); margin-bottom:3px; }
+.mu-f select, .mu-f input { width:100%; padding:7px 8px; font-size:13px;
+    border:1px solid var(--border); border-radius:7px; }
+.mu-dev { grid-column:1 / -1; font-size:12px; color:var(--text-secondary); }
+.mu-sum { margin-top:12px; padding:11px 13px; border-radius:var(--radius); background:var(--accent-light); }
+.mu-sum div { display:flex; justify-content:space-between; font-size:13px; padding:3px 0; gap:12px; }
+.mu-sum strong { text-align:right; }
+.mu-alt { font-size:11.5px; color:var(--text-muted); margin-top:8px; }

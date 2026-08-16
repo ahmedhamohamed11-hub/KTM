@@ -13,6 +13,10 @@
             // Direkt-Modus
             calcMode: 'direct',   // 'direct' | 'kuehlast'
             directKw: '2,5', directBrand: '', directLength: 5,
+            // Anlagentyp im Direktrechner: 1 = Single-Split, 2..5 = Multi (Duo..Penta)
+            directUnits: 1,
+            // Je Innengerät eine Zeile: { kw, len }
+            directRooms: [{ kw: '', len: 5 }],
         });
 
         // Direkt-Modus: Konfiguration nach gewählter Leistung + Marke
@@ -50,6 +54,64 @@
             if (/RX|AS\d|X\/EU|AJ\d|MU\d|FM\d|\.CA3|\.CL2|\.C24|AMW/.test(txt))
                 return multi ? 'Außengerät Multi-Split' : 'Außengerät Single-Split';
             return '';
+        }
+
+        // Multi-Split-Konfiguration: N Innengeraete, je eigene Leistung und
+        // eigene Leitungslaenge, dazu ein passendes Multi-Aussengeraet.
+        async function calcMultiCompute() {
+            const S = CALC_STATE;
+            const mats = await db.getAll('materials');
+            const brand = S.directBrand || '';
+            const norm = v => String(v || '').trim().toLowerCase();
+            const kwOf = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+            const units = Math.max(2, Math.min(5, Number(S.directUnits) || 2));
+
+            const byBrand = m => !brand || norm(m.manufacturer) === norm(brand);
+            const igAll = mats.filter(m => matBauart(m) === 'Innengerät Multi-Split' && byBrand(m));
+            const agAll = mats.filter(m => matBauart(m) === 'Außengerät Multi-Split' && byBrand(m));
+
+            const availBrands = [...new Set(mats
+                .filter(m => ['Innengerät Multi-Split', 'Außengerät Multi-Split'].includes(matBauart(m)))
+                .map(m => m.manufacturer).filter(Boolean))].sort();
+            const availKw = [...new Set(igAll.map(m => m.size).filter(Boolean))].sort((a, b) => kwOf(a) - kwOf(b));
+
+            // Zeilen auf die gewaehlte Anzahl bringen
+            const rows = [];
+            for (let i = 0; i < units; i++) {
+                const r = (S.directRooms || [])[i] || {};
+                rows.push({ kw: r.kw || availKw[0] || '', len: Number(r.len) || Number(S.directLength) || 5 });
+            }
+
+            // Innengeraet je Zeile: exakte Leistung, sonst naechstgroesseres
+            const pick = kw => {
+                const want = kwOf(kw);
+                const exact = igAll.filter(m => kwOf(m.size) === want);
+                if (exact.length) return exact.sort((a, b) => (Number(a.sellingPrice)||0) - (Number(b.sellingPrice)||0))[0];
+                const groesser = igAll.filter(m => kwOf(m.size) >= want).sort((a, b) => kwOf(a.size) - kwOf(b.size));
+                return groesser[0] || null;
+            };
+            rows.forEach(r => { r.ig = pick(r.kw); });
+
+            const sumKw = rows.reduce((a, r) => a + kwOf(r.kw), 0);
+            // Aussengeraet: genug Anschluesse UND genug Leistung, danach guenstigstes
+            const maxIe = m => {
+                const t = `${m.name || ''} ${m.notes || ''}`;
+                const mm = t.match(/max\.?\s*(\d+)\s*IE|\((\d+)\s*IE\)/i);
+                if (mm) return Number(mm[1] || mm[2]);
+                const pre = String(m.articleNumber || '').match(/^(\d)/);   // 2MXM.., 4AMW.., MU4R..
+                if (pre) return Number(pre[1]);
+                const mu = String(m.articleNumber || '').match(/MU(\d)R/i);
+                return mu ? Number(mu[1]) : 0;
+            };
+            const passend = agAll
+                .filter(m => maxIe(m) >= units && kwOf(m.size) >= sumKw * 0.7)
+                .sort((a, b) => (Number(a.sellingPrice) || 0) - (Number(b.sellingPrice) || 0));
+            const ag = passend[0] || null;
+            const alternativen = passend.slice(0, 4);
+
+            const totalLen = rows.reduce((a, r) => a + (Number(r.len) || 0), 0);
+            return { units, rows, ag, alternativen, sumKw: Math.round(sumKw * 10) / 10,
+                     totalLen, availBrands, availKw, brand, maxIeOf: maxIe };
         }
 
         async function calcDirectCompute() {
@@ -287,6 +349,64 @@
                 const allMats = await db.getAll('materials');
 
                 // ── DIREKT-MODUS ─────────────────────────────────────────
+                if (S.calcMode !== 'kuehlast' && Number(S.directUnits || 1) > 1) {
+                    const M = await calcMultiCompute();
+                    const zeilen = M.rows.map((r, i) => `
+                        <div class="mu-row">
+                            <div class="mu-nr">IG ${i + 1}</div>
+                            <div class="mu-f">
+                                <label>Leistung</label>
+                                <select onchange="app.calcSetRoom(${i},'kw',this.value)">
+                                    ${M.availKw.map(k => `<option value="${escapeHtml(k)}" ${k === r.kw ? 'selected' : ''}>${escapeHtml(k)} kW</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="mu-f">
+                                <label>Leitung (m)</label>
+                                <input type="number" min="1" max="50" value="${r.len}"
+                                    onchange="app.calcSetRoom(${i},'len',this.value)">
+                            </div>
+                            <div class="mu-dev">${r.ig ? escapeHtml(r.ig.name) : '<span style="color:var(--danger);">kein Gerät</span>'}</div>
+                        </div>`).join('');
+
+                    contentArea.innerHTML = `
+                        <div class="calc-wrap">
+                            <div class="calc-mode-tabs">
+                                <button class="calc-mode-tab active" onclick="">⚡ Direkt-Konfiguration</button>
+                                <button class="calc-mode-tab" onclick="app.calcSetGlobal('calcMode','kuehlast');renderCalc()">🏠 Kühllast-Rechner</button>
+                            </div>
+                            <div class="anlagentyp">
+                                ${[[1,'Single'],[2,'Duo'],[3,'Trio'],[4,'Quattro'],[5,'Penta']].map(([n,label]) => `
+                                    <button type="button" class="at-btn ${M.units===n?'at-btn--on':''}" onclick="app.calcSetUnits(${n})">
+                                        <strong>${label}</strong><small>${n === 1 ? '1 Innengerät' : n + ' Innengeräte'}</small>
+                                    </button>`).join('')}
+                            </div>
+                            <div class="calc-direct-form">
+                                <div class="form-group" style="max-width:220px;">
+                                    <label>Marke</label>
+                                    <select onchange="app.calcSetGlobal('directBrand',this.value);renderCalc()">
+                                        <option value="">Alle Marken</option>
+                                        ${M.availBrands.map(b => `<option value="${escapeHtml(b)}" ${b === M.brand ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mu-list">${zeilen}</div>
+                            <div class="mu-sum">
+                                <div><span>Summe Innengeräte</span><strong>${M.sumKw} kW</strong></div>
+                                <div><span>Leitung gesamt</span><strong>${M.totalLen} m</strong></div>
+                                <div><span>Außengerät</span><strong>${M.ag ? escapeHtml(M.ag.name) : '– keins passend –'}</strong></div>
+                            </div>
+                            ${M.ag ? `<button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="app.calcMultiToOffer()">→ Übernehmen</button>` : `
+                                <div class="calc-note" style="margin-top:12px;color:var(--warning);">
+                                    Kein Multi-Außengerät mit mindestens ${M.units} Anschlüssen und ${M.sumKw} kW gefunden${M.brand ? ' bei ' + escapeHtml(M.brand) : ''}.
+                                </div>`}
+                            ${M.alternativen.length > 1 ? `<div class="mu-alt">Alternativen: ${M.alternativen.slice(1).map(a => escapeHtml(a.name)).join(' · ')}</div>` : ''}
+                            <div class="calc-note" style="margin-top:12px;font-size:12px;color:var(--text-muted);">
+                                Richtwerte – finaler Preis nach Besichtigung.
+                            </div>
+                        </div>`;
+                    return;
+                }
+
                 if (S.calcMode !== 'kuehlast') {
                     const D = await calcDirectCompute();
                     const kwOf = v => parseFloat(String(v||'').replace(',','.')) || 0;
@@ -418,6 +538,13 @@
                             <button class="calc-mode-tab active" onclick="">⚡ Direkt-Konfiguration</button>
                             <button class="calc-mode-tab" onclick="app.calcSetGlobal('calcMode','kuehlast');renderCalc()">🏠 Kühllast-Rechner</button>
                         </div>
+                        <div class="anlagentyp">
+                            ${[[1,'Single'],[2,'Duo'],[3,'Trio'],[4,'Quattro'],[5,'Penta']].map(([n,label]) => `
+                                <button type="button" class="at-btn ${Number(S.directUnits||1)===n?'at-btn--on':''}"
+                                    onclick="app.calcSetUnits(${n})">
+                                    <strong>${label}</strong><small>${n === 1 ? '1 Innengerät' : n + ' Innengeräte'}</small>
+                                </button>`).join('')}
+                        </div>
                         <div class="calc-direct-form">
                             <div class="form-row" style="gap:12px;flex-wrap:wrap;align-items:flex-end;">
                                 <div class="form-group" style="min-width:160px;">
@@ -539,7 +666,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v114</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v115</span></div>
                         </div>
                     </div>`;
             })();
