@@ -956,6 +956,8 @@
                 // aus dem Rabatt vorkalkuliert ist. Kalkuliertes Material darf nicht
                 // als tatsaechlicher Einkauf in den Gewinn einfliessen.
                 let ekIst = 0, ekKalk = 0, laborSales = 0, missing = 0, kalkPos = 0;
+                // Positionen ohne Einkaufspreis sammeln, um sie oben sichtbar zu machen
+                const fehlendeEk = [];
                 const rows = positions.map((it, idx) => {
                     const qty = Number(it.quantity) || 0;
                     const disc = Number(it.discount) || 0;
@@ -1016,6 +1018,7 @@
                     // passende Material (fokussiert im Einkaufspreis-Feld) bzw. bietet an,
                     // ein neues Material anzulegen, wenn keins verknüpft ist.
                     const missingRow = !known && !labor;
+                    if (missingRow) fehlendeEk.push({ idx, name: it.name || '(ohne Namen)', hatMaterial: !!m });
                     return `<tr class="${missingRow ? 'diag-missing diag-row-clickable' : ''}" ${missingRow ? `data-idx="${idx}" title="Klicken, um den Einkaufspreis am Material einzutragen"` : ''}>
                         <td>${escapeHtml(it.name || '(ohne Namen)')}
                             <div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div>
@@ -1053,6 +1056,14 @@
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
                     ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn direkt unten in der Tabelle nach, dann stimmt die Marge sofort.</div>` : ''}
+                    ${fehlendeEk.length ? `
+                        <div class="diag-fehlt">
+                            <div class="diag-fehlt-titel">${fehlendeEk.length} Position${fehlendeEk.length > 1 ? 'en' : ''} ohne Einkaufspreis – nicht im Gewinn enthalten</div>
+                            ${fehlendeEk.map(f => `<button type="button" class="diag-fehlt-btn" data-fix="${f.idx}">
+                                <span>${escapeHtml(f.name)}</span>
+                                <em>${f.hatMaterial ? 'EK oder Rabatt eintragen' : 'Material fehlt – anlegen'}</em>
+                            </button>`).join('')}
+                        </div>` : ''}
                     ${(offer.positions || []).some(p => p.materialId && materials.find(mm => String(mm.id) === String(p.materialId) && Number(mm.purchasePrice) > 0)) ? `
                         <div class="diag-hinweis">
                             Bei einigen Positionen ist ein <strong>fester Einkaufspreis</strong> gespeichert. Der hat Vorrang vor dem Händlerrabatt – deshalb steht dort „Rabatt 0 %“.
@@ -1140,6 +1151,11 @@
                 // Material-Bearbeitung statt nur des schnellen Inline-Felds - u.a. wenn
                 // noch mehr als der EK gepflegt werden muss, oder das Material im Katalog
                 // fehlt (dann Rückfrage zum Neuanlegen + automatische Verknüpfung).
+                diagModal.querySelectorAll('.diag-fehlt-btn[data-fix]').forEach(b => {
+                    b.addEventListener('click', () => {
+                        app.fixMissingEkFromDiagnosis(offerId, parseInt(b.dataset.fix, 10), diagModal);
+                    });
+                });
                 diagModal.querySelectorAll('tr.diag-row-clickable[data-idx]').forEach(tr => {
                     tr.addEventListener('click', (e) => {
                         if (e.target.closest('.diag-ek-edit')) return; // Inline-Feld/Button hat Vorrang
