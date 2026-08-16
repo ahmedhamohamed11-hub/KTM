@@ -25,7 +25,7 @@
         // verlassen. Aeltere Materialien haben kein bauart; frueher fand der Rechner
         // deshalb gar nichts. Reihenfolge: gespeichertes Feld, dann Herstellerkatalog
         // ueber die Artikelnummer, dann Modellnummer-Muster.
-        let _bauartKat = null;
+        let _bauartKat = null, _bauartName = null;
         function matBauart(m) {
             if (!m) return '';
             if (m.bauart) return m.bauart;
@@ -41,17 +41,48 @@
                     if (alt && alt.includes('Single') && !k.bauart.includes('Single')) continue;
                     _bauartKat.set(key, k.bauart);
                 }
+                // Zusaetzlich nach Namen: Bosch & Co. haben numerische Artikelnummern
+                // (781.3003), die im Materialnamen nicht vorkommen.
+                _bauartName = new Map();
+                for (const k of (window.KTM_KATALOG || [])) {
+                    if (!k.bauart || !k.name) continue;
+                    const key = String(k.name).trim().toLowerCase();
+                    const alt = _bauartName.get(key);
+                    if (alt && alt.includes('Single') && !k.bauart.includes('Single')) continue;
+                    _bauartName.set(key, k.bauart);
+                }
             }
             const art = String(m.articleNumber || '').toLowerCase();
             if (art && _bauartKat.has(art)) return _bauartKat.get(art);
 
+            // Viele Materialien haben keine Artikelnummer, tragen die Modellnummer
+            // aber im Namen ("Daikin FTXM25A"). Deshalb den Namen gegen den Katalog
+            // pruefen - das ist zuverlaessiger als Muster zu raten.
+            const nm = String(m.name || '').trim().toLowerCase();
+            if (nm) {
+                if (_bauartName && _bauartName.has(nm)) return _bauartName.get(nm);
+                for (const [a, b] of _bauartKat) {
+                    if (a.length >= 5 && nm.includes(a)) return b;
+                }
+            }
+
             const txt = `${m.articleNumber || ''} ${m.name || ''}`.toUpperCase();
             if ((m.articleNumber || '').includes('+')) return 'Klimaset';
-            const multi = /MULTI/i.test(`${m.series || ''} ${m.notes || ''}`);
+            const multi = /MULTI/i.test(`${m.series || ''} ${m.notes || ''} ${m.name || ''}`);
+            // Modellnummern, die die Bauart selbst verraten:
+            //   Daikin  2MXM/3MXM/4MXM/5MXM = Multi-Aussengeraet, FTXM/CTXM = Multi-Innen
+            //   LG      MU2R..MU5R, FM..    = Multi-Aussengeraet
+            //   Samsung AJ0..                = Multi-Aussengeraet
+            //   Hisense 2AMW..5AMW           = Multi-Aussengeraet
+            if (/\b[2-5]MXM|\bMU[2-5]R|\bFM\d{2}|\bAJ0\d|\b[2-5]AMW/.test(txt)) return 'Außengerät Multi-Split';
+            if (/\bFTXM|\bCTXM/.test(txt)) return 'Innengerät Multi-Split';
             if (/FVXM|CVXM/.test(txt)) return 'Truhengerät';
+            // Bauformen, die immer Innengeraete sind
+            if (/DECKEN|KASSETT|KANALGER|TRUHENGER|WANDGER/.test(txt))
+                return multi ? 'Innengerät Multi-Split' : 'Innengerät Single-Split';
             if (/FTX|CTX|HB\d|N\/EU|\.CS[JK]|\.NS[AJ]/.test(txt))
                 return multi ? 'Innengerät Multi-Split' : 'Innengerät Single-Split';
-            if (/RX|AS\d|X\/EU|AJ\d|MU\d|FM\d|\.CA3|\.CL2|\.C24|AMW/.test(txt))
+            if (/RX|AS\d|X\/EU|MU\d|FM\d|\.CA3|\.CL2|\.C24|AMW/.test(txt))
                 return multi ? 'Außengerät Multi-Split' : 'Außengerät Single-Split';
             return '';
         }
@@ -666,7 +697,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v115</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v116</span></div>
                         </div>
                     </div>`;
             })();
