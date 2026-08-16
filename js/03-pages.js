@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v125</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v126</span></div>
                         </div>
                     </div>`;
             })();
@@ -1877,12 +1877,14 @@
                     const salesNet       = R ? R.net     : 0;   // nach Positionsrabatt
                     const globalDiscount = R ? R.globalDiscount : 0;  // Gesamt-Rabatt €
                     const salesAfter     = R ? R.netAfter : salesNet; // nach allem Rabatt (ohne MwSt)
-                    // vereinbarter Preis überschreibt netAfter (Sonderpreis mit Kunde vereinbart)
+                    // Vereinbarter Preis = was der Kunde zahlt (brutto) -> auf netto
+                    // herunterrechnen, sonst steht Brutto gegen Netto-Einkauf.
+                    const nettoAnteil = (R && R.total > 0) ? (R.netAfter / R.total) : (1 / 1.2);
                     const salesEffective = (o.agreedPrice != null && o.agreedPrice !== '')
-                        ? Number(o.agreedPrice)
+                        ? Number(o.agreedPrice) * nettoAnteil
                         : salesAfter;
 
-                    const isLabor = (it) => { const c = (it.category||'').toLowerCase(), n = (it.name||'').toLowerCase(); return c.includes('arbeit')||c.includes('anfahrt')||c.includes('montage')||c.includes('lohn')||n.includes('arbeitsleistung')||n.includes('montage')||n.includes('anfahrt')||n.includes('arbeitsstunde'); };
+                    const isLabor = (it) => (typeof isLaborPos === 'function') ? isLaborPos(it) : false;
                     const positions = (o.positions || []).filter(it => it && (Number(it.quantity)||0) > 0 && (Number(it.price)||0) >= 0);
                     let materialCost = 0, laborSales = 0, missingCount = 0;
                     const lines = [];

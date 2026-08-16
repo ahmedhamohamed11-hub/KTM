@@ -940,8 +940,16 @@
                 const globalDisc     = R ? R.globalDiscount : 0;
                 const discRate       = R ? R.rate           : 0;
                 const salesAfter     = R ? R.netAfter       : salesNet;
+                // Der vereinbarte Preis ist das, was der KUNDE ZAHLT - also brutto.
+                // Fuer den Gewinn muss er auf netto heruntergerechnet werden, sonst
+                // steht Brutto-Erloes gegen Netto-Einkauf und der Gewinn ist um die
+                // Umsatzsteuer zu hoch. Das Verhaeltnis netto/brutto kommt aus der
+                // Angebotsberechnung, damit die Mischung Material/Arbeit stimmt.
+                const nettoAnteil = (R && R.total > 0) ? (R.netAfter / R.total) : (1 / 1.2);
                 const salesEffective = (offer.agreedPrice != null && offer.agreedPrice !== '')
-                    ? Number(offer.agreedPrice) : salesAfter;
+                    ? Number(offer.agreedPrice) * nettoAnteil : salesAfter;
+                const kundeZahlt = (offer.agreedPrice != null && offer.agreedPrice !== '')
+                    ? Number(offer.agreedPrice) : (R ? R.total : 0);
 
                 const positions = (offer.positions || []).filter(it => it && (Number(it.quantity) || 0) > 0);
                 // Getrennt fuehren: was tatsaechlich eingekauft wurde und was nur
@@ -1049,7 +1057,7 @@
                             <button type="button" id="diagClearAll">Alle zurücksetzen und Händlerrabatt verwenden</button>
                         </div>` : ''}
                     <div class="diag-kurz">
-                        <div><span>Kunde zahlt</span><b>${formatCurrency(R ? R.total : salesEffective)}</b></div>
+                        <div><span>Kunde zahlt</span><b>${formatCurrency(kundeZahlt)}</b><small>netto ${formatCurrency(salesEffective)}</small></div>
                         <div><span>Mein Einkauf</span><b>${formatCurrency(materialCost * 1.2)}</b><small>${formatCurrency(materialCost)} + USt.${ekKalk > 0 ? ` · davon ${formatCurrency(ekKalk)} kalkuliert` : ''}</small></div>
                         <div class="diag-kurz--gewinn"><span>Bleibt mir</span><b>${formatCurrency(profit)}</b><small>${margin.toFixed(1)} % Marge</small></div>
                     </div>
