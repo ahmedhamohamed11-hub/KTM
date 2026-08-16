@@ -1001,7 +1001,7 @@
                     const ekCell = labor ? '—' : (m
                         ? `<div class="diag-ek-edit">
                              <input type="number" step="0.01" min="0" class="diag-ek-input" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" value="${known ? (Math.round(ekUnit * 100) / 100) : ''}" placeholder="EK/${escapeHtml(it.unit || m.unit || 'Stk')}">
-                             <button type="button" class="btn btn-sm btn-primary diag-ek-save" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" title="Einkaufspreis speichern">✓</button>
+                             <button type="button" class="btn btn-sm btn-primary diag-ek-save" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" title="Einkaufspreis speichern">✓</button>${EKI.quelle === 'ist' ? `<button type="button" class="btn btn-sm diag-ek-clear" data-mat="${escapeHtml(String(m.id))}" title="Gespeicherten EK löschen – dann gilt wieder der Händlerrabatt">↺</button>` : ''}
                            </div>`
                         : '<span style="color:var(--danger);font-weight:600;text-decoration:underline;">fehlt</span>');
                     // Bei fehlendem EK ist die ganze Zeile klickbar: öffnet direkt das
@@ -1037,6 +1037,11 @@
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
                     ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn direkt unten in der Tabelle nach, dann stimmt die Marge sofort.</div>` : ''}
+                    ${(offer.positions || []).some(p => p.materialId && materials.find(mm => String(mm.id) === String(p.materialId) && Number(mm.purchasePrice) > 0)) ? `
+                        <div class="diag-hinweis">
+                            Bei einigen Positionen ist ein <strong>fester Einkaufspreis</strong> gespeichert. Der hat Vorrang vor dem Händlerrabatt – deshalb steht dort „Rabatt 0 %“.
+                            <button type="button" id="diagClearAll">Alle zurücksetzen und Händlerrabatt verwenden</button>
+                        </div>` : ''}
                     <div class="diag-kurz">
                         <div><span>Kunde zahlt</span><b>${formatCurrency(R ? R.total : salesEffective)}</b></div>
                         <div><span>Mein Einkauf</span><b>${formatCurrency(ekIst * 1.2)}</b><small>${formatCurrency(ekIst)} + USt.</small></div>
@@ -1087,6 +1092,32 @@
                         diagModal.remove();
                         app.showOfferDiagnosis(offerId);
                     });
+                });
+
+                // Gespeicherten EK loeschen: danach greift wieder der Haendlerrabatt.
+                diagModal.querySelectorAll('.diag-ek-clear').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const mat = await db.get('materials', btn.dataset.mat);
+                        if (!mat) return;
+                        await db.put('materials', { ...mat, purchasePrice: 0 });
+                        showToast(`EK bei „${mat.name}" gelöscht – es gilt wieder der Händlerrabatt.`, 'success');
+                        diagModal.remove();
+                        app.showOfferDiagnosis(offerId);
+                    });
+                });
+
+                // Alle gespeicherten EK dieses Angebots zuruecksetzen
+                diagModal.querySelector('#diagClearAll')?.addEventListener('click', async () => {
+                    const ids = [...new Set((offer.positions || []).map(p => p.materialId).filter(Boolean))];
+                    let n = 0;
+                    for (const id of ids) {
+                        const mat = await db.get('materials', id);
+                        if (mat && Number(mat.purchasePrice) > 0) { await db.put('materials', { ...mat, purchasePrice: 0 }); n++; }
+                    }
+                    showToast(n ? `${n} gespeicherte Einkaufspreise gelöscht.` : 'Keine gespeicherten Einkaufspreise gefunden.', 'success');
+                    diagModal.remove();
+                    app.showOfferDiagnosis(offerId);
                 });
 
                 // Ganze Zeile klickbar (bei fehlendem EK): öffnet die volle

@@ -1616,3 +1616,13 @@
 .mu-dev select { width:100%; padding:7px 8px; font-size:12.5px;
     border:1px solid var(--border); border-radius:7px; }
 .mu-dev small { display:block; font-size:10.5px; color:var(--text-muted); margin-top:3px; }
+
+/* Hinweis auf fest gespeicherte Einkaufspreise */
+.diag-hinweis { padding:11px 13px; margin-bottom:12px; border-radius:var(--radius);
+    background:rgba(230,150,30,.12); border:1px solid rgba(230,150,30,.35);
+    font-size:12.5px; line-height:1.5; }
+.diag-hinweis button { display:block; width:100%; margin-top:9px; padding:8px;
+    border:0; border-radius:8px; background:var(--accent); color:#fff;
+    font-weight:600; font-size:13px; cursor:pointer; }
+.diag-ek-clear { margin-left:4px; background:var(--bg-secondary);
+    border:1px solid var(--border); color:var(--text-secondary); }
