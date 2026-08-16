@@ -5222,6 +5222,25 @@
                     if (nb && !(nb in newMap)) newMap[nb] = 0;
                     await setSetting('dealerDiscounts', JSON.stringify(newMap));
                     window.__ktmDealerDiscounts = newMap;
+
+                    // Ein gespeicherter fester EK ueberstimmt jeden Markenrabatt. Deshalb
+                    // hier anbieten, die festen EK der betroffenen Marken zu loeschen -
+                    // sonst wirkt ein neu eingetragener Rabatt scheinbar gar nicht.
+                    const marken = Object.keys(newMap);
+                    const mats = await db.getAll('materials');
+                    const betroffen = mats.filter(m => Number(m.purchasePrice) > 0
+                        && marken.includes((m.manufacturer || '').trim()));
+                    if (betroffen.length) {
+                        const ok = await showConfirm(
+                            `Bei <strong>${betroffen.length}</strong> Artikeln dieser Marken ist ein fester Einkaufspreis gespeichert. ` +
+                            `Der hat Vorrang – der Rabatt würde dort nicht greifen.<br><br>Feste Einkaufspreise löschen und den Händlerrabatt verwenden?`,
+                            { title: 'Feste Einkaufspreise gefunden', okText: 'Löschen, Rabatt nutzen', cancelText: 'Behalten' });
+                        if (ok) {
+                            for (const m of betroffen) await db.put('materials', { ...m, purchasePrice: 0 });
+                            showToast(`${betroffen.length} feste Einkaufspreise gelöscht – Händlerrabatte gelten jetzt.`, 'success');
+                            return;
+                        }
+                    }
                     showToast('Händlerrabatte gespeichert.', 'success');
                 });
             },
@@ -5649,10 +5668,12 @@
                     const recalc = (fromDiscount) => {
                         const sell = parseFloat(sellEl.value) || 0;
                         const disc = effectiveDiscount();
-                        // Wenn ein Rabatt greift, EK automatisch berechnen
-                        if (fromDiscount && disc != null) {
-                            purchEl.value = (sell * (1 - disc / 100)).toFixed(2);
-                        }
+                        // KEIN Auto-Eintrag mehr in das EK-Feld! Frueher wurde hier der
+                        // aus dem Rabatt berechnete Wert hineingeschrieben. Beim Speichern
+                        // wurde daraus ein FESTER Einkaufspreis, der ab dann jeden
+                        // Haendlerrabatt ueberstimmt hat - genau die Ursache fuer
+                        // 'Rabatt 0 %' und fehlende Rabatte in den Angeboten.
+                        // Der berechnete EK wird nur noch angezeigt.
                         const purch = parseFloat(purchEl.value) || 0;
                         const profit = sell - purch;
                         const marginPct = sell > 0 ? (profit / sell * 100) : 0;
@@ -5667,7 +5688,12 @@
                         } else {
                             discInfo = 'kein Rabatt hinterlegt';
                         }
-                        const ekCalc = (sell > 0 && disc != null) ? `<span style="color:var(--text-muted);font-size:11.5px;">${formatCurrency(sell)} − ${disc}% = EK ${formatCurrency(sell * (1 - disc / 100))}</span>` : '';
+                        const ekAusRabatt = (sell > 0 && disc != null) ? sell * (1 - disc / 100) : null;
+                        const ekCalc = ekAusRabatt != null
+                            ? `<span style="color:var(--text-muted);font-size:11.5px;">${formatCurrency(sell)} − ${disc}% = <strong>EK ${formatCurrency(ekAusRabatt)}</strong></span>`
+                              + (Number(purchEl.value) > 0 ? ` <a href="#" id="matEkClear" style="color:var(--accent);font-weight:600;font-size:11.5px;">↺ festen EK löschen</a>`
+                                                          : ` <a href="#" id="matEkTake" style="color:var(--accent);font-weight:600;font-size:11.5px;">als festen EK übernehmen</a>`)
+                            : '';
                         box.innerHTML = `<div class="mat-profit-in">
                             <span>${discInfo}</span>
                             <span class="mat-profit-val ${profit >= 0 ? 'pos' : 'neg'}">Gewinn: ${formatCurrency(profit)} (${marginPct.toFixed(0)}%)</span>
@@ -5675,14 +5701,20 @@
                         // Reset-Link verdrahten
                         const resetLink = box.querySelector('#matDiscReset');
                         if (resetLink) resetLink.addEventListener('click', (e) => { e.preventDefault(); discEl.value = ''; recalc(true); });
+                        box.querySelector('#matEkTake')?.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            if (ekAusRabatt != null) { purchEl.value = ekAusRabatt.toFixed(2); recalc(false); }
+                        });
+                        box.querySelector('#matEkClear')?.addEventListener('click', (e) => {
+                            e.preventDefault(); purchEl.value = ''; recalc(false);
+                        });
                     };
-                    // Auto-EK beim Öffnen, wenn Rabatt greift und noch kein EK gesetzt
-                    if ((!mat || !(Number(mat.purchasePrice) > 0)) && effectiveDiscount() != null) recalc(true);
-                    else recalc(false);
-                    sellEl.addEventListener('input', () => recalc(true));
-                    discEl.addEventListener('input', () => recalc(true));
+                    // Beim Oeffnen nur anzeigen, nie vorbefuellen
+                    recalc(false);
+                    sellEl.addEventListener('input', () => recalc(false));
+                    discEl.addEventListener('input', () => recalc(false));
                     purchEl.addEventListener('input', () => recalc(false));
-                    modal.querySelector('#matManufacturer')?.addEventListener('input', () => recalc(true));
+                    modal.querySelector('#matManufacturer')?.addEventListener('input', () => recalc(false));
 
                     // ===== Rolle/Bund/Stange: EK/VK pro Meter live berechnen =====
                     // Kategorie: bei "+ neue Kategorie" das Textfeld einblenden
