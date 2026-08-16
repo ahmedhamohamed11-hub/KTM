@@ -1012,7 +1012,7 @@
                     // '—' - unverstaendlich, wenn ein Materialartikel faelschlich in der
                     // Kategorie Arbeitsleistung liegt. Jetzt mit Grund und Korrekturweg.
                     const ekCell = labor
-                        ? `<div class="diag-labor"><span>Arbeitsleistung</span>${m ? `<button type="button" class="diag-tomat" data-mat="${escapeHtml(String(m.id))}">Kategorie ändern</button>` : ''}</div>`
+                        ? `<div class="diag-labor"><span>Arbeitsleistung</span>${m ? '<em>Preis/Kategorie ändern ›</em>' : ''}</div>`
                         : (m
                         ? `<div class="diag-ek-edit">
                              <input type="number" step="0.01" min="0" class="diag-ek-input" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" value="${known ? (Math.round(ekUnit * 100) / 100) : ''}" placeholder="EK/${escapeHtml(it.unit || m.unit || 'Stk')}">
@@ -1024,7 +1024,11 @@
                     // ein neues Material anzulegen, wenn keins verknüpft ist.
                     const missingRow = !known && !labor;
                     if (missingRow) fehlendeEk.push({ idx, name: it.name || '(ohne Namen)', hatMaterial: !!m });
-                    return `<tr class="${missingRow ? 'diag-missing diag-row-clickable' : ''}" ${missingRow ? `data-idx="${idx}" title="Klicken, um den Einkaufspreis am Material einzutragen"` : ''}>
+                    // Arbeitszeile MIT verknuepftem Material: ganze Zeile klickbar, oeffnet
+                    // direkt die Materialbearbeitung (Kategorie + Preis zusammen aendern -
+                    // Kleinmaterial in der Kategorie "Arbeitsleistung" hat sonst kein EK-Feld).
+                    const laborMatRow = labor && !!m;
+                    return `<tr class="${missingRow ? 'diag-missing diag-row-clickable' : (laborMatRow ? 'diag-row-clickable' : '')}" ${missingRow ? `data-idx="${idx}" title="Klicken, um den Einkaufspreis am Material einzutragen"` : (laborMatRow ? `data-labormat="${escapeHtml(String(m.id))}" title="Klicken, um Kategorie oder Preis zu ändern"` : '')}>
                         <td>${escapeHtml(it.name || '(ohne Namen)')}
                             <div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div>
                             ${!labor && m ? `<div class="diag-kalk">
@@ -1156,11 +1160,10 @@
                 // Material-Bearbeitung statt nur des schnellen Inline-Felds - u.a. wenn
                 // noch mehr als der EK gepflegt werden muss, oder das Material im Katalog
                 // fehlt (dann Rückfrage zum Neuanlegen + automatische Verknüpfung).
-                diagModal.querySelectorAll('.diag-tomat[data-mat]').forEach(b => {
-                    b.addEventListener('click', (e) => {
-                        e.stopPropagation();
+                diagModal.querySelectorAll('tr[data-labormat]').forEach(tr => {
+                    tr.addEventListener('click', () => {
                         diagModal.remove();
-                        app.openMaterialModal(b.dataset.mat, {
+                        app.openMaterialModal(tr.dataset.labormat, {
                             skipNavigate: true,
                             onSaved: () => app.showOfferDiagnosis(offerId)
                         });

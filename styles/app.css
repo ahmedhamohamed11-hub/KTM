@@ -1355,6 +1355,9 @@
         .diag-table tr.diag-missing { background: rgba(202,138,4,0.09); }
         .diag-table tr.diag-row-clickable { cursor: pointer; }
         .diag-table tr.diag-row-clickable:hover { background: rgba(202,138,4,0.18); }
+        .diag-table tr[data-labormat]:hover { background: var(--accent-light); }
+        .diag-labor em { display:block; font-style:normal; font-size:11px; color:var(--accent);
+            font-weight:600; margin-top:2px; }
         .diag-ek-edit { display: inline-flex; align-items: center; gap: 5px; }
         .diag-ek-input { width: 76px; padding: 4px 6px; font-size: 12.5px; text-align: right; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); }
         .diag-ek-save { padding: 3px 8px; line-height: 1; }
