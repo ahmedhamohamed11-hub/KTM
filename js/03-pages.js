@@ -125,15 +125,44 @@
 
             const sumKw = rows.reduce((a, r) => a + kwOf(r.kw), 0);
             // Aussengeraet: genug Anschluesse UND genug Leistung, danach guenstigstes
-            const maxIe = m => {
-                const t = `${m.name || ''} ${m.notes || ''}`;
-                const mm = t.match(/max\.?\s*(\d+)\s*IE|\((\d+)\s*IE\)/i);
-                if (mm) return Number(mm[1] || mm[2]);
-                const pre = String(m.articleNumber || '').match(/^(\d)/);   // 2MXM.., 4AMW.., MU4R..
-                if (pre) return Number(pre[1]);
-                const mu = String(m.articleNumber || '').match(/MU(\d)R/i);
-                return mu ? Number(mu[1]) : 0;
+            // Anzahl anschliessbarer Innengeraete. Reihenfolge: Text am Material,
+            // dann derselbe Artikel im Herstellerkatalog (viele Materialien haben
+            // keine Artikelnummer und einen gekuerzten Namen), zuletzt das
+            // Modellnummern-Muster.
+            const ieAusText = t => {
+                const mm = String(t || '').match(/max\.?\s*(\d+)\s*(?:IE|Innengeräte|Innengeraete)|\((\d+)\s*IE\)/i);
+                return mm ? Number(mm[1] || mm[2]) : 0;
             };
+            const ieAusModell = t => {
+                const T = String(t || '').toUpperCase();
+                let mm = T.match(/\b([2-5])(?:MXM|AMW)/);        if (mm) return Number(mm[1]);   // Daikin, Hisense
+                mm = T.match(/\bMU([2-5])R/);                     if (mm) return Number(mm[1]);   // LG
+                mm = T.match(/TXJ([2-5])KG/);                      if (mm) return Number(mm[1]);   // Samsung
+                mm = T.match(/\/\s*([2-5])\s*E\b/);             if (mm) return Number(mm[1]);   // Bosch 105/4 E
+                mm = T.match(/\bFM(\d{2})/);                     if (mm) return Number(mm[1]) >= 41 ? 7 : 0;
+                return 0;
+            };
+            let _katIe = null;
+            const ieAusKatalog = m => {
+                if (!_katIe) {
+                    _katIe = [];
+                    for (const k of (window.KTM_KATALOG || [])) {
+                        const n = ieAusText(`${k.name || ''} ${k.notes || ''}`) || ieAusModell(k.articleNumber || k.name);
+                        if (n) _katIe.push({ art: String(k.articleNumber || '').toLowerCase(), n });
+                    }
+                }
+                const art = String(m.articleNumber || '').toLowerCase();
+                const nm = String(m.name || '').toLowerCase();
+                for (const e of _katIe) {
+                    if (!e.art) continue;
+                    if (art && art === e.art) return e.n;
+                    if (e.art.length >= 5 && nm.includes(e.art)) return e.n;
+                }
+                return 0;
+            };
+            const maxIe = m => ieAusText(`${m.name || ''} ${m.notes || ''}`)
+                || ieAusKatalog(m)
+                || ieAusModell(`${m.articleNumber || ''} ${m.name || ''}`);
             const passend = agAll
                 .filter(m => maxIe(m) >= units && kwOf(m.size) >= sumKw * 0.7)
                 .sort((a, b) => (Number(a.sellingPrice) || 0) - (Number(b.sellingPrice) || 0));
@@ -697,7 +726,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v116</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v117</span></div>
                         </div>
                     </div>`;
             })();
