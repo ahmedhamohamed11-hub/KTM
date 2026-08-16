@@ -1028,11 +1028,17 @@
                 // Gewinn = Verkaufserloes netto − TATSAECHLICHER EK netto − tatsaechliche
                 // sonstige Kosten. Kalkulierter EK bleibt aussen vor (Vorkalkulation).
                 const sonstige = Number(offer.otherCosts) || 0;
-                const materialCost = ekIst + ekKalk;                  // nur fuer die Vorkalkulation
-                const profit = salesEffective - ekIst - sonstige;     // tatsaechlich
+                // Der Gewinn muss den GESAMTEN Materialeinsatz gegenrechnen: den
+                // tatsaechlichen EK, wo eine Lieferantenrechnung hinterlegt ist, und
+                // sonst den aus dem Haendlerrabatt kalkulierten. Wuerde man nur den
+                // tatsaechlichen abziehen, waere jedes Material ohne EK gratis - das
+                // ergab Margen von 90 % und mehr.
+                const materialCost = ekIst + ekKalk;
+                const profit = salesEffective - materialCost - sonstige;
                 const margin = salesEffective > 0 ? (profit / salesEffective) * 100 : 0;
-                const profitKalk = salesEffective - materialCost - sonstige;
-                const marginKalk = salesEffective > 0 ? (profitKalk / salesEffective) * 100 : 0;
+                // Zusatzblick: was bliebe, wenn nur die belegten Einkaeufe zaehlen
+                const profitNurIst = salesEffective - ekIst - sonstige;
+                const marginNurIst = salesEffective > 0 ? (profitNurIst / salesEffective) * 100 : 0;
                 const complete = missing === 0;
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
@@ -1044,7 +1050,7 @@
                         </div>` : ''}
                     <div class="diag-kurz">
                         <div><span>Kunde zahlt</span><b>${formatCurrency(R ? R.total : salesEffective)}</b></div>
-                        <div><span>Mein Einkauf</span><b>${formatCurrency(ekIst * 1.2)}</b><small>${formatCurrency(ekIst)} + USt.</small></div>
+                        <div><span>Mein Einkauf</span><b>${formatCurrency(materialCost * 1.2)}</b><small>${formatCurrency(materialCost)} + USt.${ekKalk > 0 ? ` · davon ${formatCurrency(ekKalk)} kalkuliert` : ''}</small></div>
                         <div class="diag-kurz--gewinn"><span>Bleibt mir</span><b>${formatCurrency(profit)}</b><small>${margin.toFixed(1)} % Marge</small></div>
                     </div>
                     <div class="diag-summary">
@@ -1053,15 +1059,15 @@
                         ${globalDisc > 0 ? `<div class="diag-row"><span>− Gesamt-Rabatt (${(discRate * 100).toFixed(1)} %)</span><strong>−${formatCurrency(globalDisc)}</strong></div>` : ''}
                         <div class="diag-row" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px;"><span>Verkaufspreis nach Rabatt</span><strong>${formatCurrency(salesAfter)}</strong></div>
                         ${offer.agreedPrice != null && offer.agreedPrice !== '' ? `<div class="diag-row"><span>Vereinbarter Preis</span><strong>${formatCurrency(salesEffective)}</strong></div>` : ''}
-                        <div class="diag-row"><span>− Materialeinkauf <strong style="color:var(--success);">tatsächlich</strong></span><strong>${formatCurrency(ekIst)}</strong></div>
-                        ${ekKalk > 0 ? `<div class="diag-row" style="color:var(--text-muted);"><span>( nur kalkuliert, ${kalkPos} Position${kalkPos > 1 ? 'en' : ''} – nicht im Gewinn )</span><strong style="font-weight:400;">${formatCurrency(ekKalk)}</strong></div>` : ''}
+                        <div class="diag-row"><span>− Materialeinkauf <strong style="color:var(--success);">belegt</strong></span><strong>${formatCurrency(ekIst)}</strong></div>
+                        ${ekKalk > 0 ? `<div class="diag-row"><span>− Materialeinkauf <em>kalkuliert</em> (${kalkPos} Position${kalkPos > 1 ? 'en' : ''} aus Händlerrabatt)</span><strong>${formatCurrency(ekKalk)}</strong></div>` : ''}
                         <div class="diag-row"><span>− Arbeitskosten</span><strong>0,00 € <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(Arbeit ist Ertrag)</span></strong></div>
                         <div class="diag-row"><span>− Sonstige Kosten (tatsächlich)</span><strong>${formatCurrency(sonstige)}</strong></div>
                         <div class="diag-row diag-total"><span>= Gewinn</span><strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(profit)}</strong></div>
                         <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Marge (tatsächlich)</span><strong style="font-weight:600;">${margin.toFixed(1)} %</strong></div>
                         <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Brutto-Differenz (VK brutto − EK brutto)</span><strong style="font-weight:600;">${formatCurrency(profit * 1.2)}</strong></div>
                         <div style="font-size:11px;color:var(--text-muted);line-height:1.45;margin-top:6px;">Die Brutto-Differenz ist um die Umsatzsteuer höher als der Gewinn. Die 20 % aus dem Verkauf führst du ab, die 20 % aus dem Einkauf bekommst du als Vorsteuer zurück – beides hebt sich auf. Was dir bleibt, ist der Gewinn netto.</div>
-                        ${ekKalk > 0 ? `<div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Vorkalkulation inkl. kalkuliertem EK</span><strong style="font-weight:600;">${formatCurrency(profitKalk)} · ${marginKalk.toFixed(1)} %</strong></div>` : ''}
+                        ${ekKalk > 0 ? `<div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Nur mit belegten Einkäufen (Rest als Ertrag)</span><strong style="font-weight:600;">${formatCurrency(profitNurIst)} · ${marginNurIst.toFixed(1)} %</strong></div>` : ''}
                         <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
                         <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>
                     </div>
