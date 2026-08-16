@@ -1008,7 +1008,12 @@
                     // sofort korrekt zu sehen. Eingabe ist EK je verkaufter Einheit
                     // (z.B. €/m bei Rollenware); wird beim Speichern zurück auf den
                     // Material-Einkaufspreis (ggf. × Gebindelänge) umgerechnet.
-                    const ekCell = labor ? '—' : (m
+                    // Arbeitszeilen haben bewusst kein EK-Feld. Frueher stand dort nur ein
+                    // '—' - unverstaendlich, wenn ein Materialartikel faelschlich in der
+                    // Kategorie Arbeitsleistung liegt. Jetzt mit Grund und Korrekturweg.
+                    const ekCell = labor
+                        ? `<div class="diag-labor"><span>Arbeitsleistung</span>${m ? `<button type="button" class="diag-tomat" data-mat="${escapeHtml(String(m.id))}">Kategorie ändern</button>` : ''}</div>`
+                        : (m
                         ? `<div class="diag-ek-edit">
                              <input type="number" step="0.01" min="0" class="diag-ek-input" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" value="${known ? (Math.round(ekUnit * 100) / 100) : ''}" placeholder="EK/${escapeHtml(it.unit || m.unit || 'Stk')}">
                              <button type="button" class="btn btn-sm btn-primary diag-ek-save" data-idx="${idx}" data-mat="${escapeHtml(String(m.id))}" data-unit="${escapeHtml(it.unit || m.unit || 'Stk')}" title="Einkaufspreis speichern">✓</button>${EKI.quelle === 'ist' ? `<button type="button" class="btn btn-sm diag-ek-clear" data-mat="${escapeHtml(String(m.id))}" title="Gespeicherten EK löschen – dann gilt wieder der Händlerrabatt">↺</button>` : ''}
@@ -1151,6 +1156,16 @@
                 // Material-Bearbeitung statt nur des schnellen Inline-Felds - u.a. wenn
                 // noch mehr als der EK gepflegt werden muss, oder das Material im Katalog
                 // fehlt (dann Rückfrage zum Neuanlegen + automatische Verknüpfung).
+                diagModal.querySelectorAll('.diag-tomat[data-mat]').forEach(b => {
+                    b.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        diagModal.remove();
+                        app.openMaterialModal(b.dataset.mat, {
+                            skipNavigate: true,
+                            onSaved: () => app.showOfferDiagnosis(offerId)
+                        });
+                    });
+                });
                 diagModal.querySelectorAll('.diag-fehlt-btn[data-fix]').forEach(b => {
                     b.addEventListener('click', () => {
                         app.fixMissingEkFromDiagnosis(offerId, parseInt(b.dataset.fix, 10), diagModal);
@@ -5088,6 +5103,46 @@
                 });
                 showToast(await this._positionenAnlegen(pId, r, rId), 'success');
                 this.navigate('projects', pId);
+            },
+
+            // Preis eines Materials direkt aus der Liste aendern - ohne das grosse
+            // Bearbeiten-Fenster. Eingegeben wird der LISTENPREIS NETTO, angezeigt
+            // wird daneben sofort der Endpreis inkl. 20 %.
+            async quickPrice(matId) {
+                const m = await db.get('materials', matId);
+                if (!m) { showToast('Material nicht gefunden.', 'error'); return; }
+                const netto = (typeof matNetto === 'function') ? matNetto(m) : (Number(m.sellingPrice) || 0);
+                const bl = Number(m.bundleLength) || 0;
+                const isPack = ['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && bl > 0;
+                const overlay = showModal(m.name || 'Preis ändern', `
+                    <div class="form-group">
+                        <label>Listenpreis netto${isPack ? ` (je ${m.unit}, ${bl} m)` : ''}</label>
+                        <input type="number" step="0.01" min="0" id="qpPrice" value="${netto.toFixed(2)}">
+                        <div id="qpInfo" style="font-size:12.5px;color:var(--text-muted);margin-top:6px;"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Einkaufspreis netto <small>– leer lassen, dann gilt der Händlerrabatt</small></label>
+                        <input type="number" step="0.01" min="0" id="qpEk" value="${Number(m.purchasePrice) > 0 ? Number(m.purchasePrice).toFixed(2) : ''}" placeholder="aus Rabatt">
+                    </div>`,
+                    async (ov) => {
+                        const v = parseFloat(ov.querySelector('#qpPrice').value);
+                        if (!(v >= 0)) { showToast('Bitte einen gültigen Preis eingeben.', 'error'); return; }
+                        const ekRaw = ov.querySelector('#qpEk').value.trim();
+                        await db.put('materials', { ...m, sellingPrice: Math.round(v * 100) / 100,
+                            purchasePrice: ekRaw === '' ? 0 : (parseFloat(ekRaw) || 0) });
+                        ov.remove();
+                        showToast(`Preis für „${m.name}" gespeichert.`, 'success');
+                        renderMaterials();
+                    });
+                const inp = overlay.querySelector('#qpPrice');
+                const info = overlay.querySelector('#qpInfo');
+                const upd = () => {
+                    const v = parseFloat(inp.value) || 0;
+                    const brutto = m.priceIncludesVat ? v : v * 1.2;
+                    info.innerHTML = `Endpreis für den Kunden: <strong>${formatCurrency(brutto)}</strong>`
+                        + (isPack ? ` · <strong>${formatCurrency(brutto / bl)}</strong> je Meter` : '');
+                };
+                inp.addEventListener('input', upd); upd(); inp.focus(); inp.select();
             },
 
             // ===== Bauart bei vorhandenen Materialien nachtragen =====

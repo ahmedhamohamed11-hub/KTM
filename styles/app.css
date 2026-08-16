@@ -1645,3 +1645,11 @@
     border-radius:9px; background:var(--bg-secondary); cursor:pointer; text-align:left; }
 .diag-fehlt-btn span { font-size:13px; font-weight:600; color:var(--text-primary); }
 .diag-fehlt-btn em { font-size:11px; font-style:normal; color:var(--accent); white-space:nowrap; }
+
+/* Arbeitszeile in der Diagnose + Preis-Schnellbearbeitung */
+.diag-labor { display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
+.diag-labor span { font-size:11px; color:var(--text-muted); }
+.diag-tomat { border:1px solid var(--border); background:var(--bg-secondary);
+    color:var(--accent); border-radius:7px; padding:4px 7px; font-size:11px; cursor:pointer; }
+.mat-price { cursor:pointer; }
+.mat-price small { opacity:.75; }
