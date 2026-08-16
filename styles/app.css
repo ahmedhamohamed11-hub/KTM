@@ -1610,3 +1610,9 @@
 .diag-kurz--gewinn { background:var(--accent-light); }
 .diag-kurz--gewinn b { color:var(--success); }
 @media (max-width:400px) { .diag-kurz { grid-template-columns:1fr; } }
+
+/* Modellauswahl je Innengerät */
+.mu-dev label { display:block; font-size:11px; color:var(--text-muted); margin:6px 0 3px; }
+.mu-dev select { width:100%; padding:7px 8px; font-size:12.5px;
+    border:1px solid var(--border); border-radius:7px; }
+.mu-dev small { display:block; font-size:10.5px; color:var(--text-muted); margin-top:3px; }

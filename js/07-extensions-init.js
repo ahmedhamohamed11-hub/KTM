@@ -4941,6 +4941,8 @@
                 const rooms = CALC_STATE.directRooms || [];
                 if (!rooms[i]) rooms[i] = { kw: '', len: 5 };
                 rooms[i][feld] = feld === 'len' ? (Number(wert) || 0) : wert;
+                // Bei geaenderter Leistung passt das bisher gewaehlte Modell nicht mehr
+                if (feld === 'kw') rooms[i].devId = null;
                 CALC_STATE.directRooms = rooms;
                 renderCalc();
             },

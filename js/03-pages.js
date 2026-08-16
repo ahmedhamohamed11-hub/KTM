@@ -110,18 +110,26 @@
             const rows = [];
             for (let i = 0; i < units; i++) {
                 const r = (S.directRooms || [])[i] || {};
-                rows.push({ kw: r.kw || availKw[0] || '', len: Number(r.len) || Number(S.directLength) || 5 });
+                rows.push({ kw: r.kw || availKw[0] || '', len: Number(r.len) || Number(S.directLength) || 5, devId: r.devId || null });
             }
 
             // Innengeraet je Zeile: exakte Leistung, sonst naechstgroesseres
-            const pick = kw => {
+            // Alle Innengeraete dieser Leistung als Auswahl anbieten - so kann pro
+            // Raum die Bauform gewaehlt werden (Wandgeraet, Truhe, Kassette ...).
+            const optionen = kw => {
                 const want = kwOf(kw);
-                const exact = igAll.filter(m => kwOf(m.size) === want);
-                if (exact.length) return exact.sort((a, b) => (Number(a.sellingPrice)||0) - (Number(b.sellingPrice)||0))[0];
-                const groesser = igAll.filter(m => kwOf(m.size) >= want).sort((a, b) => kwOf(a.size) - kwOf(b.size));
-                return groesser[0] || null;
+                let liste = igAll.filter(m => kwOf(m.size) === want);
+                if (!liste.length) {
+                    const groesser = igAll.filter(m => kwOf(m.size) >= want).sort((a, b) => kwOf(a.size) - kwOf(b.size));
+                    const naechste = groesser.length ? kwOf(groesser[0].size) : 0;
+                    liste = igAll.filter(m => kwOf(m.size) === naechste);
+                }
+                return liste.sort((a, b) => (Number(a.sellingPrice) || 0) - (Number(b.sellingPrice) || 0));
             };
-            rows.forEach(r => { r.ig = pick(r.kw); });
+            rows.forEach(r => {
+                r.optionen = optionen(r.kw);
+                r.ig = r.optionen.find(m => String(m.id) === String(r.devId)) || r.optionen[0] || null;
+            });
 
             const sumKw = rows.reduce((a, r) => a + kwOf(r.kw), 0);
             // Aussengeraet: genug Anschluesse UND genug Leistung, danach guenstigstes
@@ -425,7 +433,15 @@
                                 <input type="number" min="1" max="50" value="${r.len}"
                                     onchange="app.calcSetRoom(${i},'len',this.value)">
                             </div>
-                            <div class="mu-dev">${r.ig ? escapeHtml(r.ig.name) : '<span style="color:var(--danger);">kein Gerät</span>'}</div>
+                            <div class="mu-dev">
+                                ${r.optionen && r.optionen.length ? `
+                                    <label>Modell / Bauform</label>
+                                    <select onchange="app.calcSetRoom(${i},'devId',this.value)">
+                                        ${r.optionen.map(o => `<option value="${escapeHtml(String(o.id))}" ${r.ig && String(o.id) === String(r.ig.id) ? 'selected' : ''}>${escapeHtml(o.name)}${o.series ? ' · ' + escapeHtml(o.series) : ''} – ${formatCurrency(matBrutto(o))}</option>`).join('')}
+                                    </select>
+                                    ${r.optionen.length === 1 ? '<small>nur ein Modell in dieser Leistung im Katalog</small>' : `<small>${r.optionen.length} Modelle zur Auswahl</small>`}
+                                ` : '<span style="color:var(--danger);">kein Gerät in dieser Leistung</span>'}
+                            </div>
                         </div>`).join('');
 
                     contentArea.innerHTML = `
@@ -726,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v121</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v122</span></div>
                         </div>
                     </div>`;
             })();
