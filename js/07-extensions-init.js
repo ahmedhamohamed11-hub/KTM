@@ -5697,12 +5697,38 @@
                         };
                         if (!data.name) { showToast('Artikelname ist erforderlich.', 'error'); return; }
                         let savedId = id;
+                        // WICHTIG: offer.positions[].category ist eine SNAPSHOT-Kopie vom
+                        // Moment des Hinzufuegens - nicht live mit dem Material verknuepft.
+                        // Aendert man hier die Kategorie (z.B. von 'Arbeitsleistung' auf
+                        // 'Zubehör'), bleibt jede bereits erstellte Angebotsposition sonst
+                        // fuer immer auf der alten Kategorie stehen: 'Einkaufspreis fehlt'
+                        // verschwindet dann nie, egal was man am Material aendert.
+                        // Deshalb bei Kategoriewechsel alle bestehenden Positionen nachziehen.
+                        const kategorieAlt = mat?.category || '';
+                        const kategorieNeu = data.category;
                         if (id) {
                             data.id = id;
                             data.createdAt = mat.createdAt;
                             await db.put('materials', data);
                         } else {
                             savedId = await db.add('materials', data);
+                        }
+                        if (id && kategorieNeu !== kategorieAlt) {
+                            const alleAngebote = await db.getAll('offers');
+                            let betroffeneAngebote = 0, betroffenePositionen = 0;
+                            for (const o of alleAngebote) {
+                                let geaendert = false;
+                                for (const p of (o.positions || [])) {
+                                    if (String(p.materialId) === String(id) && p.category !== kategorieNeu) {
+                                        p.category = kategorieNeu;
+                                        geaendert = true; betroffenePositionen++;
+                                    }
+                                }
+                                if (geaendert) { await db.put('offers', o); betroffeneAngebote++; }
+                            }
+                            if (betroffenePositionen > 0) {
+                                showToast(`Kategorie aktualisiert – ${betroffenePositionen} Position${betroffenePositionen > 1 ? 'en' : ''} in ${betroffeneAngebote} Angebot${betroffeneAngebote > 1 ? 'en' : ''} angepasst.`, 'success');
+                            }
                         }
                         overlay.remove();
                         showToast(id ? 'Material aktualisiert.' : 'Material angelegt.', 'success');
