@@ -1037,6 +1037,11 @@
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
                     ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn direkt unten in der Tabelle nach, dann stimmt die Marge sofort.</div>` : ''}
+                    <div class="diag-kurz">
+                        <div><span>Kunde zahlt</span><b>${formatCurrency(R ? R.total : salesEffective)}</b></div>
+                        <div><span>Mein Einkauf</span><b>${formatCurrency(ekIst * 1.2)}</b><small>${formatCurrency(ekIst)} + USt.</small></div>
+                        <div class="diag-kurz--gewinn"><span>Bleibt mir</span><b>${formatCurrency(profit)}</b><small>${margin.toFixed(1)} % Marge</small></div>
+                    </div>
                     <div class="diag-summary">
                         <div class="diag-row"><span>Verkaufspreis (vor Rabatt)</span><strong>${formatCurrency(salesGross)}</strong></div>
                         ${salesNet < salesGross ? `<div class="diag-row"><span>− Positionsrabatte</span><strong>−${formatCurrency(salesGross - salesNet)}</strong></div>` : ''}
@@ -2892,7 +2897,7 @@
                 doc.autoTable({
                     startY: y,
                     margin: { left: mx, right: mx, bottom: 26 },
-                    head: [['Nr.', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis\ninkl. USt.', 'Gesamt']],
+                    head: [['Nr.', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
                     body: rows,
                     ...PDF_TABLE_STYLES,
                     columnStyles: {
@@ -2921,7 +2926,7 @@
                 if (_R.posDiscount > 0) {
                     summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R.posDiscount)}`]);
                 }
-                summaryRows.push(['Zwischensumme inkl. USt.', formatCurrency(_R.grossMaterial)]);
+                summaryRows.push(['Zwischensumme', formatCurrency(_R.grossMaterial)]);
                 if (_R.discountEnabled && _R.grossDiscount > 0) {
                     summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(_R.grossDiscount)}`]);
                 }
@@ -6674,7 +6679,7 @@ async exportOfferPDF(offerId, share = false, withCustomer = true) {
     doc.autoTable({
         startY: y,
         margin: { left: marginX, right: marginX },
-        head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis\ninkl. USt.', 'Gesamt']],
+        head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis', 'Gesamt']],
         body: rows,
         styles: { font: 'helvetica', fontSize: 8.8, cellPadding: 3, textColor: [40,44,50], lineColor: lightGray, lineWidth: 0.2 },
         headStyles: { fillColor: [26,29,35], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },

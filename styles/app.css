@@ -1598,3 +1598,15 @@
     padding:6px 8px; border-radius:8px; background:var(--bg-tertiary); font-size:11px; }
 .diag-kalk span { color:var(--text-muted); }
 .diag-kalk b { text-align:right; font-weight:600; }
+
+
+/* Kurzübersicht oben in der Gewinn-Diagnose */
+.diag-kurz { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px; }
+.diag-kurz > div { padding:10px 8px; border-radius:var(--radius); background:var(--bg-tertiary);
+    text-align:center; display:flex; flex-direction:column; gap:2px; }
+.diag-kurz span { font-size:11px; color:var(--text-muted); }
+.diag-kurz b { font-size:15px; font-weight:700; }
+.diag-kurz small { font-size:10px; color:var(--text-muted); }
+.diag-kurz--gewinn { background:var(--accent-light); }
+.diag-kurz--gewinn b { color:var(--success); }
+@media (max-width:400px) { .diag-kurz { grid-template-columns:1fr; } }
