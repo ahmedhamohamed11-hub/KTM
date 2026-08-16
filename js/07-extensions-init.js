@@ -5520,9 +5520,16 @@
                         <div id="matRollCalc" class="mat-roll-calc" style="display:none;"></div>
                         <div class="form-row">
                             <div class="form-group"><label>Kategorie</label>
-                                <input type="text" id="matCategory" value="${escapeHtml(mat?.category || '')}" list="dl_matCats" placeholder="z. B. Kältemittel, Kupferrohr, Werkzeug ...">
-                                <datalist id="dl_matCats">${getMaterialCategories().map(c => `<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
-                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Frei wählbar – vorhandene Gruppe wählen oder neue eintippen. Mit "/" entstehen Unterordner, z. B. "Elektromaterial/Kabel".</div>
+                                <select id="matCategorySel">
+                                    ${(() => {
+                                        const cur = mat?.category || '';
+                                        const alle = [...new Set([...(typeof MATERIAL_CATEGORIES !== 'undefined' ? MATERIAL_CATEGORIES : []), ...getMaterialCategories().map(c => c.name), cur].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+                                        return alle.map(c => `<option value="${escapeHtml(c)}" ${cur === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')
+                                            + `<option value="__neu__">+ neue Kategorie eintippen …</option>`;
+                                    })()}
+                                </select>
+                                <input type="text" id="matCategory" value="${escapeHtml(mat?.category || '')}" placeholder="neue Kategorie" style="display:none;margin-top:6px;">
+                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Zum Verschieben einfach eine andere Kategorie wählen.</div>
                             </div>
                             <div class="form-group"><label>Einheit</label><input type="text" id="matUnit" value="${escapeHtml(mat?.unit || 'Stk')}"></div>
                         </div>
@@ -5535,6 +5542,11 @@
                             <div class="form-group"><label>Listenpreis / Verkaufspreis (€)</label><input type="number" id="matSellingPrice" step="0.01" value="${mat?.sellingPrice || 0}"><div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">Der Preis, den der Kunde zahlt. Der Einkaufspreis wird daraus per Rabatt berechnet.</div></div>
                             <div class="form-group"><label>Händlerrabatt (%) – Rabatt auf den Listenpreis, nicht der EK-Anteil</label><input type="number" id="matDiscount" step="1" min="0" max="100" value="${mat?.dealerDiscount != null ? mat.dealerDiscount : ''}" placeholder="auto"></div>
                         </div>
+                        <label class="mat-vat-toggle">
+                            <input type="checkbox" id="matVatIncluded" ${mat?.priceIncludesVat ? 'checked' : ''}>
+                            <span><strong>Preis ist bereits der Endpreis – keine 20 % aufschlagen</strong>
+                            <small>Standard: der Listenpreis wird für das Angebot mit 1,20 hochgerechnet. Für Artikel mit Festpreis diesen Haken setzen – dann erscheint im Angebot genau der eingetragene Betrag.</small></span>
+                        </label>
                         <div class="form-group"><label>Einkaufspreis (€)</label><input type="number" id="matPurchasePrice" step="0.01" value="${mat?.purchasePrice || 0}">
                             <div id="matProfitBox" class="mat-profit"></div>
                         </div>
@@ -5557,11 +5569,17 @@
                             bundleLength: parseFloat(String(overlay.querySelector('#matBundle').value).replace(',', '.')) || 0,
                             markup: overlay.querySelector('#matMarkup')?.value.trim() === '' ? null : (parseFloat(String(overlay.querySelector('#matMarkup').value).replace(',', '.')) || 0),
                             openMeters: mat?.openMeters ?? 0,
-                            category: overlay.querySelector('#matCategory').value.trim() || 'Zubehör',
+                            category: (() => {
+                                const sel = overlay.querySelector('#matCategorySel')?.value || '';
+                                if (sel && sel !== '__neu__') return sel;
+                                return overlay.querySelector('#matCategory').value.trim() || 'Zubehör';
+                            })(),
                             bauart: overlay.querySelector('#matBauart')?.value || '',
                             unit: (() => { const pu = overlay.querySelector('#matPackUnit')?.value; return (pu && pu !== 'Stück') ? pu : (overlay.querySelector('#matUnit').value.trim() || 'Stk'); })(),
                             purchasePrice: parseFloat(overlay.querySelector('#matPurchasePrice').value) || 0,
                             sellingPrice: parseFloat(overlay.querySelector('#matSellingPrice').value) || 0,
+                            // true = eingetragener Preis ist der Endpreis, kein USt-Aufschlag
+                            priceIncludesVat: !!overlay.querySelector('#matVatIncluded')?.checked,
                             dealerDiscount: overlay.querySelector('#matDiscount').value.trim() === '' ? null : (parseFloat(overlay.querySelector('#matDiscount').value) || 0),
                             description: overlay.querySelector('#matDescription').value.trim(),
                             notes: overlay.querySelector('#matNotes').value.trim(),
@@ -5651,6 +5669,17 @@
                     modal.querySelector('#matManufacturer')?.addEventListener('input', () => recalc(true));
 
                     // ===== Rolle/Bund/Stange: EK/VK pro Meter live berechnen =====
+                    // Kategorie: bei "+ neue Kategorie" das Textfeld einblenden
+                    const catSel = modal.querySelector('#matCategorySel');
+                    const catTxt = modal.querySelector('#matCategory');
+                    if (catSel && catTxt) {
+                        catSel.addEventListener('change', () => {
+                            const neu = catSel.value === '__neu__';
+                            catTxt.style.display = neu ? '' : 'none';
+                            if (neu) { catTxt.value = ''; catTxt.focus(); }
+                        });
+                    }
+
                     const packEl = modal.querySelector('#matPackUnit');
                     const bundleEl = modal.querySelector('#matBundle');
                     const markupEl = modal.querySelector('#matMarkup');
