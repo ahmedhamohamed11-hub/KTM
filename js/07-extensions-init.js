@@ -1345,9 +1345,12 @@
                 const kond   = findM(['kondensatschlauch','kondensat']);
                 const montM  = findM(['montage','arbeitsleistung']);
 
-                const cId = await db.add('customers', { firstName: 'Direktanfrage', lastName: '', createdAt: new Date().toISOString() });
+                // Kein Kundendatensatz auf Verdacht: das Projekt laeuft ohne Kunde und
+                // heisst 'Direktanfrage'. Ein Kunde entsteht erst, wenn echte Daten
+                // eingetragen werden (Projekt -> Bearbeiten -> Kunde).
                 const desc = `${ig.manufacturer||''} ${ig.size||''} kW Single-Split · ${D.len} m Leitung`;
-                const pId = await db.add('projects', { title: desc, customerId: cId, source: 'Schnellrechner', createdAt: new Date().toISOString() });
+                const pId = await db.add('projects', { title: desc, customerId: null,
+                    source: 'Direktanfrage', createdAt: new Date().toISOString() });
 
                 const mkPos = (m, qty, unit, name, price) => ({
                     materialId: m?.id || null, name: name || m?.name || '',
@@ -1400,7 +1403,6 @@
                     // Abgebrochen: angelegten Kunden/Projekt-Rumpf wieder entfernen,
                     // damit keine Leichen in der Projektliste stehen.
                     await db.delete('projects', pId).catch(() => {});
-                    await db.delete('customers', cId).catch(() => {});
                     return;
                 }
                 // Raum mit den Leitungslaengen anlegen: die Live-Zusammenfassung im Projekt
@@ -5006,9 +5008,10 @@
                 });
                 if (!r) return;
 
-                const cId = await db.add('customers', { firstName: '', lastName: 'Direktanfrage', phone: '', email: '' });
                 const pId = await db.add('projects', {
-                    customerId: cId, name: `Multi-Split ${M.units}-fach · ${M.sumKw} kW`,
+                    // 'title' ist Pflichtfeld in Supabase - mit 'name' schlaegt die Sync fehl
+                    title: `Multi-Split ${M.units}-fach · ${M.sumKw} kW`,
+                    customerId: null, source: 'Direktanfrage',
                     status: 'Neu', progress: 5, createdAt: new Date().toISOString()
                 });
                 const rId = await db.add('rooms', {

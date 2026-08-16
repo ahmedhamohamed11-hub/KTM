@@ -726,7 +726,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v120</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v121</span></div>
                         </div>
                     </div>`;
             })();
@@ -1102,7 +1102,7 @@
                                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px;">
                                     <div>
                                         <h3 style="margin:0;">${escapeHtml(project.title || 'Unbenannt')}</h3>
-                                        <div style="color:var(--text-muted);font-size:13px;">${customer ? `${escapeHtml(customer.firstName)} ${escapeHtml(customer.lastName)}${customer.phone ? ` · <a href="tel:${escapeHtml(String(customer.phone).replace(/\s+/g, ''))}" class="contact-link">📞 ${escapeHtml(customer.phone)}</a>` : ''}${[customer.street, customer.city].filter(Boolean).length ? ` · <a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([customer.street, customer.city].filter(Boolean).join(', '))}" target="_blank" rel="noopener" class="contact-link">🧭 Route</a>` : ''}` : 'Kein Kunde zugewiesen'}</div>
+                                        <div style="color:var(--text-muted);font-size:13px;">${customer ? `${escapeHtml(customer.firstName)} ${escapeHtml(customer.lastName)}${customer.phone ? ` · <a href="tel:${escapeHtml(String(customer.phone).replace(/\s+/g, ''))}" class="contact-link">📞 ${escapeHtml(customer.phone)}</a>` : ''}${[customer.street, customer.city].filter(Boolean).length ? ` · <a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([customer.street, customer.city].filter(Boolean).join(', '))}" target="_blank" rel="noopener" class="contact-link">🧭 Route</a>` : ''}` : (project.source === 'Direktanfrage' ? '⚡ Direktanfrage – noch kein Kunde hinterlegt' : 'Kein Kunde zugewiesen')}</div>
                                         <div class="pc-progress" style="max-width:260px;margin-top:7px;"><div class="pc-progress-bar" style="width:${statusProgress(project.status || 'Besichtigung')}%;"></div></div>
                                         <div style="font-size:11.5px;color:var(--accent);font-weight:700;">${statusProgress(project.status || 'Besichtigung')} % · ${escapeHtml(project.status || 'Besichtigung')}</div>
                                     </div>
@@ -1423,7 +1423,7 @@
                                          ondragstart="app.dragProjectCard(event, '${escapeHtml(String(p.id))}')"
                                          onclick="app.navigate('projects', ${idJS(p.id)})">
                                         <div class="pc-title">${escapeHtml(p.title || 'Unbenannt')}</div>
-                                        <div class="pc-sub">${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : 'Kein Kunde')}</div>
+                                        <div class="pc-sub">${escapeHtml(cust ? `${cust.firstName} ${cust.lastName}` : (p.source === 'Direktanfrage' ? '⚡ Direktanfrage' : 'Kein Kunde'))}</div>
                                         <div class="pc-progress"><div class="pc-progress-bar" style="width:${statusProgress(p.status || 'Besichtigung')}%;"></div></div>
                                         <div class="pc-sub" style="margin-top:7px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
                                             <select class="pc-status" onclick="event.stopPropagation()" onchange="event.stopPropagation(); app.setProjectStatus(${idJS(p.id)}, this.value)">
