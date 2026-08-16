@@ -960,6 +960,10 @@
                     const lineSales = unitNet * qty * (1 - disc / 100);
                     const labor = isLabor(it);
                     let cost = 0, known = true, ekUnit = 0, note = '', m = null, quelle = 'keiner';
+                    // Aufschluesselung je Einheit: Listenpreis netto -> Rabatt -> EK netto
+                    // -> EK brutto, und der Verkaufspreis brutto aus der Position.
+                    let EKI = { listenpreis: 0, rabatt: null, anteil: null, ekNetto: 0, quelle: 'keiner' };
+                    const vkBruttoUnit = it.priceIncludesVat ? (Number(it.price) || 0) : unitNet * 1.2;
                     if (labor) {
                         laborSales += lineSales;
                         note = 'Arbeit (kein Materialeinkauf)';
@@ -967,6 +971,17 @@
                         m = materials.find(mm => String(mm.id) === String(it.materialId));
                         if (!m) { known = false; note = '⚠️ Material nicht mehr in Datenbank'; }
                         else {
+                            if (typeof ekInfo === 'function') {
+                                const info = ekInfo(m);
+                                const bl = Number(m.bundleLength) || 0;
+                                const proMeter = ['Rolle','Bund','Stange'].includes(m.unit || '') && bl > 0 && (it.unit === 'm');
+                                EKI = {
+                                    listenpreis: proMeter ? info.listenpreis / bl : info.listenpreis,
+                                    rabatt: info.rabatt, anteil: info.anteil,
+                                    ekNetto: proMeter ? info.ekNetto / bl : info.ekNetto,
+                                    quelle: info.quelle
+                                };
+                            }
                             const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek; quelle = r.quelle;
                             if (known) {
                                 cost = ekUnit * qty;
@@ -994,7 +1009,16 @@
                     // ein neues Material anzulegen, wenn keins verknüpft ist.
                     const missingRow = !known && !labor;
                     return `<tr class="${missingRow ? 'diag-missing diag-row-clickable' : ''}" ${missingRow ? `data-idx="${idx}" title="Klicken, um den Einkaufspreis am Material einzutragen"` : ''}>
-                        <td>${escapeHtml(it.name || '(ohne Namen)')}<div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div></td>
+                        <td>${escapeHtml(it.name || '(ohne Namen)')}
+                            <div style="font-size:11px;color:var(--text-muted);">${qty} ${escapeHtml(it.unit || 'Stk')}${disc > 0 ? ` · −${disc}%` : ''}${note ? ` · ${note}` : ''}</div>
+                            ${!labor && m ? `<div class="diag-kalk">
+                                <span>Liste netto</span><b>${formatCurrency(EKI.listenpreis)}</b>
+                                <span>Rabatt</span><b>${EKI.rabatt != null ? EKI.rabatt + ' %' : '–'}</b>
+                                <span>EK netto</span><b>${EKI.ekNetto > 0 ? formatCurrency(EKI.ekNetto) : '–'}</b>
+                                <span>EK brutto</span><b>${EKI.ekNetto > 0 ? formatCurrency(EKI.ekNetto * 1.2) : '–'}</b>
+                                <span>VK brutto</span><b>${formatCurrency(vkBruttoUnit)}</b>
+                            </div>` : ''}
+                        </td>
                         <td style="text-align:right;">${formatCurrency(lineSales)}</td>
                         <td style="text-align:right;">${ekCell}</td>
                         <td style="text-align:right;font-weight:600;color:${lineProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">${known || labor ? formatCurrency(lineProfit) : '?'}</td>
@@ -1025,13 +1049,15 @@
                         <div class="diag-row"><span>− Sonstige Kosten (tatsächlich)</span><strong>${formatCurrency(sonstige)}</strong></div>
                         <div class="diag-row diag-total"><span>= Gewinn</span><strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(profit)}</strong></div>
                         <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Marge (tatsächlich)</span><strong style="font-weight:600;">${margin.toFixed(1)} %</strong></div>
+                        <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Brutto-Differenz (VK brutto − EK brutto)</span><strong style="font-weight:600;">${formatCurrency(profit * 1.2)}</strong></div>
+                        <div style="font-size:11px;color:var(--text-muted);line-height:1.45;margin-top:6px;">Die Brutto-Differenz ist um die Umsatzsteuer höher als der Gewinn. Die 20 % aus dem Verkauf führst du ab, die 20 % aus dem Einkauf bekommst du als Vorsteuer zurück – beides hebt sich auf. Was dir bleibt, ist der Gewinn netto.</div>
                         ${ekKalk > 0 ? `<div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Vorkalkulation inkl. kalkuliertem EK</span><strong style="font-weight:600;">${formatCurrency(profitKalk)} · ${marginKalk.toFixed(1)} %</strong></div>` : ''}
                         <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
                         <div class="diag-row" style="font-size:11.5px;color:var(--text-muted);"><span>davon Arbeitsanteil (Verkauf)</span><span>${formatCurrency(laborSales)}</span></div>
                     </div>
                     <div class="diag-detail-title">Positionen im Detail <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">– EK direkt eintragen &amp; mit ✓ speichern, oder auf eine „fehlt"-Zeile klicken für die volle Materialbearbeitung</span></div>
                     <div class="table-container"><table class="diag-table">
-                        <thead><tr><th>Position</th><th style="text-align:right;">VK netto<div style="font-weight:400;font-size:10px;color:var(--text-muted);">ohne USt.</div></th><th style="text-align:right;">EK netto<div style="font-weight:400;font-size:10px;color:var(--text-muted);">je Einheit</div></th><th style="text-align:right;">Gewinn</th></tr></thead>
+                        <thead><tr><th>Position</th><th style="text-align:right;">VK netto<div style="font-weight:400;font-size:10px;color:var(--text-muted);">Zeile, ohne USt.</div></th><th style="text-align:right;">EK netto<div style="font-weight:400;font-size:10px;color:var(--text-muted);">je Einheit</div></th><th style="text-align:right;">Gewinn</th></tr></thead>
                         <tbody>${rows||'<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">Keine Positionen.</td></tr>'}</tbody>
                     </table></div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Nur für dich sichtbar – erscheint nie im Kundenangebot oder PDF.</div>
