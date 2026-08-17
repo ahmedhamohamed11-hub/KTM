@@ -142,8 +142,16 @@
                     });
                 }
 
-                const manEinnahmen = manuell.filter(e => e.type === 'einnahme').reduce((s, e) => s + (Number(e.amount) || 0), 0);
-                const manAusgaben  = manuell.filter(e => e.type === 'ausgabe').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                const einnahmeEintraege = manuell.filter(e => e.type === 'einnahme');
+                // "Auf Zeit" gekaufte Ausgaben (Material auf Rechnung/Kredit beim
+                // Lieferanten): das Geld ist noch nicht wirklich weg, solange nicht als
+                // bezahlt markiert. Zaehlt deshalb erst zu den Ausgaben, wenn e.paid=true;
+                // bis dahin steht es separat als offene Schuld ("Offen auf Zeit").
+                const bezahlteAusgaben = manuell.filter(e => e.type === 'ausgabe' && (!e.onCredit || e.paid));
+                const offenAufZeit = manuell.filter(e => e.type === 'ausgabe' && e.onCredit && !e.paid);
+                const manEinnahmen = einnahmeEintraege.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                const manAusgaben  = bezahlteAusgaben.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                const aufZeitSumme = offenAufZeit.reduce((s, e) => s + (Number(e.amount) || 0), 0);
                 // Ruecklage: Geld wird NICHT ausgegeben, nur zur Seite gelegt (z. B. fuer
                 // Steuern). Zaehlt deshalb NICHT als Kosten und schmaelert den Gewinn nicht -
                 // sie teilt den Gewinn nur auf in "zurückgelegt" und "frei verfügbar".
@@ -166,6 +174,7 @@
                             ${manRuecklage > 0 ? `
                             <div class="fo-card"><span>🔒 Zurückgelegt</span><b>${formatCurrency(manRuecklage)}</b><small>Rücklage – gehört noch zum Gewinn, ist nur beiseitegelegt</small></div>
                             <div class="fo-card"><span>Frei verfügbar</span><b style="color:${freiVerfuegbar >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(freiVerfuegbar)}</b><small>Gewinn abzüglich Rücklage</small></div>` : ''}
+                            ${aufZeitSumme > 0 ? `<div class="fo-card"><span>📋 Offen auf Zeit</span><b style="color:var(--warning);">${formatCurrency(aufZeitSumme)}</b><small>${offenAufZeit.length} Posten noch nicht bezahlt – noch nicht im Gewinn abgezogen</small></div>` : ''}
                         </div>
 
                         <div class="fo-hint">Einnahmen/Einkauf-Karten beziehen sich nur auf ausgestellte Rechnungen. Eigene Posten (unten) sind separat und fließen nur in den Gewinn ein. Für die Vorkalkulation eines einzelnen Auftrags die Gewinn-Diagnose im jeweiligen Angebot verwenden.</div>
@@ -176,16 +185,22 @@
                         </div>
                         <div class="fo-list">
                             ${manuell.length ? manuell.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => {
-                                const farbe = e.type === 'ausgabe' ? 'var(--danger)' : e.type === 'ruecklage' ? 'var(--accent)' : 'var(--success)';
+                                const offen = e.type === 'ausgabe' && e.onCredit && !e.paid;
+                                const farbe = offen ? 'var(--warning)' : e.type === 'ausgabe' ? 'var(--danger)' : e.type === 'ruecklage' ? 'var(--accent)' : 'var(--success)';
                                 const zeichen = e.type === 'ausgabe' ? '−' : e.type === 'ruecklage' ? '🔒' : '+';
+                                const teile = [e.date ? formatDate(e.date) : ''];
+                                if (e.category) teile.push(escapeHtml(e.category));
+                                if (e.type === 'ruecklage') teile.push('Rücklage');
+                                if (offen) teile.push('auf Zeit – noch offen');
+                                else if (e.type === 'ausgabe' && e.onCredit) teile.push('auf Zeit – bezahlt');
                                 return `<div class="fo-row" onclick="app.openFinanceEntryModal('${e.id}')">
                                     <div class="fo-row-main">
                                         <div class="fo-row-title">${escapeHtml(e.label || '(ohne Bezeichnung)')}</div>
-                                        <div class="fo-row-sub">${e.date ? formatDate(e.date) : ''}${e.type === 'ruecklage' ? ' · Rücklage' : ''}</div>
+                                        <div class="fo-row-sub">${teile.filter(Boolean).join(' · ')}</div>
                                     </div>
                                     <div class="fo-row-amount" style="color:${farbe};">${zeichen}${formatCurrency(Math.abs(Number(e.amount) || 0))}</div>
                                 </div>`;
-                            }).join('') : '<div class="empty-note">Noch keine eigenen Posten – z. B. Werkzeugkauf, Rücklage für Steuern.</div>'}
+                            }).join('') : '<div class="empty-note">Noch keine eigenen Posten – z. B. Werkzeugkauf, Material, Rücklage für Steuern.</div>'}
                         </div>
                     </div>`;
             })();

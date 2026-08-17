@@ -5179,28 +5179,47 @@
             async openFinanceEntryModal(entryId = null) {
                 const list = (typeof getFinanceEntries === 'function') ? await getFinanceEntries() : [];
                 const entry = entryId ? list.find(e => e.id === entryId) : null;
+                const KATEGORIEN = ['Material', 'Werkzeug', 'Fahrzeug / Sprit', 'Büro', 'Sonstiges'];
+                const offen = entry?.type === 'ausgabe' && entry?.onCredit && !entry?.paid;
                 const modal = showModal(entry ? 'Posten bearbeiten' : 'Neuer Posten', `
                     <div class="form-group"><label>Art</label>
                         <select id="feType">
-                            <option value="ausgabe" ${!entry || entry.type === 'ausgabe' ? 'selected' : ''}>Ausgabe (z. B. Werkzeug, Sprit)</option>
+                            <option value="ausgabe" ${!entry || entry.type === 'ausgabe' ? 'selected' : ''}>Ausgabe (z. B. Material, Werkzeug, Sprit)</option>
                             <option value="einnahme" ${entry?.type === 'einnahme' ? 'selected' : ''}>Einnahme (zusätzliches Geld)</option>
                             <option value="ruecklage" ${entry?.type === 'ruecklage' ? 'selected' : ''}>🔒 Rücklage (vom Gewinn zur Seite gelegt)</option>
                         </select>
                         <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px;">Rücklage zählt nicht als Ausgabe – sie teilt den Gewinn nur auf in „zurückgelegt" und „frei verfügbar" (z. B. für Steuern).</div>
                     </div>
+                    <div class="form-group" id="feCatWrap" style="display:${!entry || entry.type === 'ausgabe' ? '' : 'none'};">
+                        <label>Kategorie (optional)</label>
+                        <select id="feCategory">
+                            <option value="">– keine –</option>
+                            ${KATEGORIEN.map(k => `<option value="${k}" ${entry?.category === k ? 'selected' : ''}>${k}</option>`).join('')}
+                        </select>
+                    </div>
                     <div class="form-group"><label>Bezeichnung</label><input type="text" id="feLabel" value="${escapeHtml(entry?.label || '')}" placeholder="z. B. Werkzeugkauf, Sprit, Büromaterial"></div>
                     <div class="form-group"><label>Betrag (€)</label><input type="number" step="0.01" min="0" id="feAmount" value="${entry ? Math.abs(Number(entry.amount) || 0) : ''}"></div>
                     <div class="form-group"><label>Datum</label><input type="date" id="feDate" value="${entry?.date || toLocalDateString(new Date())}"></div>
-                    ${entry ? `<button type="button" class="btn btn-sm" id="feDelete" style="color:var(--danger);margin-top:6px;">🗑 Posten löschen</button>` : ''}`,
+                    <label id="feCreditWrap" style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin:6px 0 10px;${!entry || entry.type === 'ausgabe' ? '' : 'display:none;'}">
+                        <input type="checkbox" id="feCredit" ${entry?.onCredit ? 'checked' : ''} style="margin-top:2px;">
+                        <span>Auf Zeit gekauft (noch nicht bezahlt)<br>
+                        <span style="color:var(--text-muted);font-size:11.5px;">Zählt erst zu den Ausgaben, sobald als bezahlt markiert. Bis dahin steht der Betrag separat als „Offen auf Zeit".</span></span>
+                    </label>
+                    ${offen ? `<button type="button" class="btn btn-sm btn-primary" id="feMarkPaid" style="width:100%;margin-bottom:8px;">✓ Als bezahlt markieren</button>` : ''}
+                    ${entry ? `<button type="button" class="btn btn-sm" id="feDelete" style="color:var(--danger);">🗑 Posten löschen</button>` : ''}`,
                     async (overlay) => {
                         const amount = parseFloat(overlay.querySelector('#feAmount').value);
                         const label = overlay.querySelector('#feLabel').value.trim();
                         if (!(amount > 0) || !label) { showToast('Bitte Bezeichnung und Betrag angeben.', 'error'); return; }
+                        const type = overlay.querySelector('#feType').value;
+                        const onCredit = type === 'ausgabe' && !!overlay.querySelector('#feCredit')?.checked;
                         const neu = {
                             id: entry?.id || ('fe_' + Date.now()),
-                            type: overlay.querySelector('#feType').value,
-                            label, amount,
-                            date: overlay.querySelector('#feDate').value || toLocalDateString(new Date())
+                            type, label, amount,
+                            category: type === 'ausgabe' ? (overlay.querySelector('#feCategory')?.value || '') : '',
+                            date: overlay.querySelector('#feDate').value || toLocalDateString(new Date()),
+                            onCredit,
+                            paid: onCredit ? !!entry?.paid : undefined
                         };
                         const rest = list.filter(e => e.id !== neu.id);
                         await saveFinanceEntries([...rest, neu]);
@@ -5208,6 +5227,19 @@
                         showToast('Posten gespeichert.', 'success');
                         app.navigate('finanzuebersicht');
                     });
+                // Kategorie/„auf Zeit" nur bei Ausgaben zeigen
+                modal.querySelector('#feType')?.addEventListener('change', (e) => {
+                    const istAusgabe = e.target.value === 'ausgabe';
+                    modal.querySelector('#feCatWrap').style.display = istAusgabe ? '' : 'none';
+                    modal.querySelector('#feCreditWrap').style.display = istAusgabe ? '' : 'none';
+                });
+                modal.querySelector('#feMarkPaid')?.addEventListener('click', async () => {
+                    const rest = list.filter(e => e.id !== entryId);
+                    await saveFinanceEntries([...rest, { ...entry, paid: true }]);
+                    modal.remove();
+                    showToast('Als bezahlt markiert.', 'success');
+                    app.navigate('finanzuebersicht');
+                });
                 modal.querySelector('#feDelete')?.addEventListener('click', async () => {
                     await saveFinanceEntries(list.filter(e => e.id !== entryId));
                     modal.remove();
