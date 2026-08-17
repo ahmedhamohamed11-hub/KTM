@@ -5555,7 +5555,7 @@
                 const modal = showModal(
                     'Bild hinzufügen',
                     `
-                        <div class="form-group"><label>Bild auswählen *</label><input type="file" id="imgFile" accept="image/*" capture="environment"></div>
+                        <div class="form-group"><label>Bild auswählen *</label><input type="file" id="imgFile" accept="image/*"></div>
                         <div class="form-group"><label>Bereich *</label>
                             <select id="imgPhase">
                                 ${[['Besichtigung','🔍'],['Fertigstellung','✅'],['Mängel','⚠️']].map(([p,ic]) => `<option value="${p}" ${p === defaultPhase ? 'selected' : ''}>${ic} ${p}</option>`).join('')}
