@@ -583,6 +583,31 @@ async function backgroundSyncPushInner() {
                         .select());
                 }
 
+                // SELBSTHEILUNG 2: ein Pflichtfeld ist NULL (z. B. weil ein Datensatz
+                // aus einer aelteren App-Version stammt, die das Feld anders befuellt
+                // hat). Ohne diese Reparatur bleibt der Datensatz fuer immer "unsynced"
+                // und derselbe Fehler-Toast kommt bei jedem Sync erneut - das genau war
+                // der wiederkehrende 'projects.title'-Fehler.
+                const NOT_NULL_FALLBACK = {
+                    projects: { title: (r) => r.name || r.title || `Projekt vom ${new Date(r.createdAt || Date.now()).toLocaleDateString('de-AT')}` },
+                };
+                let guard2 = 0;
+                while (error && /null value in column "(\w+)".*not-null constraint/.test(error.message) && guard2 < 5) {
+                    guard2++;
+                    const col = error.message.match(/null value in column "(\w+)"/)[1];
+                    const fallbackFn = NOT_NULL_FALLBACK[t]?.[col];
+                    if (!fallbackFn) break;   // kein bekannter Ersatzwert - nicht raten
+                    const wert = fallbackFn(rec);
+                    p[col] = wert;
+                    // Reparatur auch lokal dauerhaft speichern, sonst versucht der
+                    // naechste Sync wieder denselben kaputten Wert.
+                    rec[col] = wert;
+                    await db.putLocalOnly(t, rec);
+                    ({ data, error } = await sb.from(sbTable(t))
+                        .upsert(p, { onConflict: t === 'settings' ? 'key' : 'id' })
+                        .select());
+                }
+
                 if (!error && data?.length) {
                     // WICHTIG: Nicht blind zurückschreiben - der Datensatz kann sich
                     // WÄHREND des Pushs lokal geändert haben (z. B. schnelle Eingaben,
