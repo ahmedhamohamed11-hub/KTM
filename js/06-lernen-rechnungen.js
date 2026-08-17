@@ -110,14 +110,22 @@
                 const nochOffen = invoices.filter(iv => iv.status !== 'Storniert')
                     .reduce((s, iv) => s + (typeof invoiceOpen === 'function' ? Math.max(0, invoiceOpen(iv)) : 0), 0);
 
-                // Tatsaechlich eingekauft: nur BELEGTER Einkauf (eigene Lieferantenrechnung
-                // hinterlegt) ueber alle Angebote - keine Schaetzung aus Rabatten.
-                let eingekauft = 0, offeneMitEk = 0;
-                for (const o of offers) {
+                // Tatsaechlich eingekauft: NUR ueber tatsaechlich AUSGESTELLTE RECHNUNGEN,
+                // nicht ueber alle jemals angelegten Angebote (Entwuerfe, Duplikate,
+                // Testangebote waeren sonst mitgezaehlt und haetten die Zahl massiv
+                // aufgeblaeht - genau das war der Fehler: 27 Angebote statt der paar
+                // tatsaechlich gestellten Rechnungen).
+                const offerById = new Map(offers.map(o => [String(o.id), o]));
+                let eingekauft = 0, rechnungenMitEk = 0, rechnungenOhneAngebot = 0;
+                for (const iv of invoices) {
+                    if (iv.status === 'Storniert') continue;
+                    if (iv.offerId == null) { rechnungenOhneAngebot++; continue; }
+                    const o = offerById.get(String(iv.offerId));
+                    if (!o) continue;
                     const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
                     if (!C) continue;
                     eingekauft += C.ekIst;
-                    if (C.ekIst > 0) offeneMitEk++;
+                    if (C.ekIst > 0) rechnungenMitEk++;
                 }
 
                 const manEinnahmen = manuell.filter(e => e.type === 'einnahme').reduce((s, e) => s + (Number(e.amount) || 0), 0);
@@ -131,7 +139,7 @@
                     <div class="fo-wrap">
                         <div class="fo-grid">
                             <div class="fo-card"><span>Tatsächlich eingenommen</span><b>${formatCurrency(einnahmenGesamt)}</b><small>${bezahlteRechnungen} bezahlte/angezahlte Rechnung${bezahlteRechnungen === 1 ? '' : 'en'}${manEinnahmen > 0 ? ` · +${formatCurrency(manEinnahmen)} eigene Posten` : ''}</small></div>
-                            <div class="fo-card"><span>Tatsächlich eingekauft</span><b>${formatCurrency(ausgabenGesamt)}</b><small>${offeneMitEk} Angebot${offeneMitEk === 1 ? '' : 'e'} mit belegtem Einkauf${manAusgaben > 0 ? ` · +${formatCurrency(manAusgaben)} eigene Posten` : ''}</small></div>
+                            <div class="fo-card"><span>Tatsächlich eingekauft</span><b>${formatCurrency(ausgabenGesamt)}</b><small>${rechnungenMitEk} Rechnung${rechnungenMitEk === 1 ? '' : 'en'} mit belegtem Einkauf${rechnungenOhneAngebot > 0 ? ` · ${rechnungenOhneAngebot} Rechnung${rechnungenOhneAngebot === 1 ? '' : 'en'} ohne Angebot nicht erfasst` : ''}${manAusgaben > 0 ? ` · +${formatCurrency(manAusgaben)} eigene Posten` : ''}</small></div>
                             <div class="fo-card"><span>Noch offen beim Kunden</span><b>${formatCurrency(nochOffen)}</b><small>über alle Rechnungen</small></div>
                             <div class="fo-card fo-card--gewinn"><span>Bleibt als Gewinn</span><b style="color:${gewinn >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(gewinn)}</b><small>eingenommen − eingekauft, real (kein Angebotswert)</small></div>
                         </div>
