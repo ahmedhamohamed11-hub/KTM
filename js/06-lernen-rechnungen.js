@@ -144,11 +144,16 @@
 
                 const manEinnahmen = manuell.filter(e => e.type === 'einnahme').reduce((s, e) => s + (Number(e.amount) || 0), 0);
                 const manAusgaben  = manuell.filter(e => e.type === 'ausgabe').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                // Ruecklage: Geld wird NICHT ausgegeben, nur zur Seite gelegt (z. B. fuer
+                // Steuern). Zaehlt deshalb NICHT als Kosten und schmaelert den Gewinn nicht -
+                // sie teilt den Gewinn nur auf in "zurückgelegt" und "frei verfügbar".
+                const manRuecklage = manuell.filter(e => e.type === 'ruecklage').reduce((s, e) => s + (Number(e.amount) || 0), 0);
                 const posSaldo = manEinnahmen - manAusgaben;
 
                 const einnahmenGesamt = eingenommenRe;
                 const ausgabenGesamt  = eingekauft;
                 const gewinn = einnahmenGesamt - ausgabenGesamt + posSaldo;
+                const freiVerfuegbar = gewinn - manRuecklage;
                 window.__foKaufZeilen = kaufZeilen;   // fuer die Aufschlüsselung beim Antippen
 
                 contentArea.innerHTML = `
@@ -158,6 +163,9 @@
                             <div class="fo-card fo-card--click" onclick="app.openPurchaseBreakdown()"><span>Tatsächlich eingekauft</span><b>${formatCurrency(ausgabenGesamt)}</b><small>${rechnungenMitEk} Rechnung${rechnungenMitEk === 1 ? '' : 'en'} mit belegtem Einkauf${rechnungenOhneAngebot > 0 ? ` · ${rechnungenOhneAngebot} ohne Angebot` : ''} · antippen zum Bearbeiten ›</small></div>
                             <div class="fo-card"><span>Noch offen beim Kunden</span><b>${formatCurrency(nochOffen)}</b><small>über alle Rechnungen</small></div>
                             <div class="fo-card fo-card--gewinn"><span>Bleibt als Gewinn</span><b style="color:${gewinn >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(gewinn)}</b><small>eingenommen − eingekauft${posSaldo !== 0 ? ` ${posSaldo >= 0 ? '+' : '−'} ${formatCurrency(Math.abs(posSaldo))} eigene Posten` : ''}, real (kein Angebotswert)</small></div>
+                            ${manRuecklage > 0 ? `
+                            <div class="fo-card"><span>🔒 Zurückgelegt</span><b>${formatCurrency(manRuecklage)}</b><small>Rücklage – gehört noch zum Gewinn, ist nur beiseitegelegt</small></div>
+                            <div class="fo-card"><span>Frei verfügbar</span><b style="color:${freiVerfuegbar >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(freiVerfuegbar)}</b><small>Gewinn abzüglich Rücklage</small></div>` : ''}
                         </div>
 
                         <div class="fo-hint">Einnahmen/Einkauf-Karten beziehen sich nur auf ausgestellte Rechnungen. Eigene Posten (unten) sind separat und fließen nur in den Gewinn ein. Für die Vorkalkulation eines einzelnen Auftrags die Gewinn-Diagnose im jeweiligen Angebot verwenden.</div>
@@ -167,14 +175,17 @@
                             <button class="btn btn-sm btn-primary" onclick="app.openFinanceEntryModal()">+ Posten</button>
                         </div>
                         <div class="fo-list">
-                            ${manuell.length ? manuell.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => `
-                                <div class="fo-row" onclick="app.openFinanceEntryModal('${e.id}')">
+                            ${manuell.length ? manuell.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => {
+                                const farbe = e.type === 'ausgabe' ? 'var(--danger)' : e.type === 'ruecklage' ? 'var(--accent)' : 'var(--success)';
+                                const zeichen = e.type === 'ausgabe' ? '−' : e.type === 'ruecklage' ? '🔒' : '+';
+                                return `<div class="fo-row" onclick="app.openFinanceEntryModal('${e.id}')">
                                     <div class="fo-row-main">
                                         <div class="fo-row-title">${escapeHtml(e.label || '(ohne Bezeichnung)')}</div>
-                                        <div class="fo-row-sub">${e.date ? formatDate(e.date) : ''}</div>
+                                        <div class="fo-row-sub">${e.date ? formatDate(e.date) : ''}${e.type === 'ruecklage' ? ' · Rücklage' : ''}</div>
                                     </div>
-                                    <div class="fo-row-amount" style="color:${e.type === 'ausgabe' ? 'var(--danger)' : 'var(--success)'};">${e.type === 'ausgabe' ? '−' : '+'}${formatCurrency(Math.abs(Number(e.amount) || 0))}</div>
-                                </div>`).join('') : '<div class="empty-note">Noch keine eigenen Posten – z. B. Werkzeugkauf, Sprit, Bürokosten.</div>'}
+                                    <div class="fo-row-amount" style="color:${farbe};">${zeichen}${formatCurrency(Math.abs(Number(e.amount) || 0))}</div>
+                                </div>`;
+                            }).join('') : '<div class="empty-note">Noch keine eigenen Posten – z. B. Werkzeugkauf, Rücklage für Steuern.</div>'}
                         </div>
                     </div>`;
             })();

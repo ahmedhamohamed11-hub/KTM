@@ -5182,9 +5182,11 @@
                 const modal = showModal(entry ? 'Posten bearbeiten' : 'Neuer Posten', `
                     <div class="form-group"><label>Art</label>
                         <select id="feType">
-                            <option value="ausgabe" ${!entry || entry.type === 'ausgabe' ? 'selected' : ''}>Ausgabe</option>
-                            <option value="einnahme" ${entry?.type === 'einnahme' ? 'selected' : ''}>Einnahme</option>
+                            <option value="ausgabe" ${!entry || entry.type === 'ausgabe' ? 'selected' : ''}>Ausgabe (z. B. Werkzeug, Sprit)</option>
+                            <option value="einnahme" ${entry?.type === 'einnahme' ? 'selected' : ''}>Einnahme (zusätzliches Geld)</option>
+                            <option value="ruecklage" ${entry?.type === 'ruecklage' ? 'selected' : ''}>🔒 Rücklage (vom Gewinn zur Seite gelegt)</option>
                         </select>
+                        <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px;">Rücklage zählt nicht als Ausgabe – sie teilt den Gewinn nur auf in „zurückgelegt" und „frei verfügbar" (z. B. für Steuern).</div>
                     </div>
                     <div class="form-group"><label>Bezeichnung</label><input type="text" id="feLabel" value="${escapeHtml(entry?.label || '')}" placeholder="z. B. Werkzeugkauf, Sprit, Büromaterial"></div>
                     <div class="form-group"><label>Betrag (€)</label><input type="number" step="0.01" min="0" id="feAmount" value="${entry ? Math.abs(Number(entry.amount) || 0) : ''}"></div>
