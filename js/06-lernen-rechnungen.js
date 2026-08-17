@@ -128,6 +128,7 @@
                                         <td><span class="status-badge ${invoiceStatusClass(st)}">${st}</span></td>
                                         <td style="text-align:right;white-space:nowrap;">
                                             ${st !== 'Bezahlt' && st !== 'Storniert' ? `<button class="btn btn-sm btn-primary" onclick="app.openPaymentModal(${idJS(inv.id)})">€ Zahlung</button>` : ''}
+                                            ${st !== 'Bezahlt' && st !== 'Storniert' && open > 0 ? `<button class="btn btn-sm btn-outline" onclick="app.markInvoicePaid(${idJS(inv.id)})" title="Restbetrag ${formatCurrency(open)} auf einmal als bezahlt erfassen">✓ Komplett bezahlt</button>` : ''}
                                             ${st === 'Überfällig' ? `<button class="btn btn-sm btn-warning" onclick="app.exportInvoicePDF(${idJS(inv.id)}, true)">📨 Mahnung</button>` : ''}
                                             <button class="btn btn-sm btn-outline" onclick="app.exportInvoicePDF(${idJS(inv.id)})">${icon('pdf')} PDF</button>
                                             <button class="btn btn-sm btn-outline" onclick="app.exportInvoicePDF(${idJS(inv.id)}, false, true)" title="Per WhatsApp, E-Mail o. Ä. teilen">📤 Teilen</button>
@@ -217,6 +218,33 @@
                 const today = toLocalDateString(new Date());
                 const payDays = parseInt(await getSetting('paymentDays', '14'), 10) || 14;
                 const due = new Date(); due.setDate(due.getDate() + payDays);
+
+                // WICHTIG: den tatsaechlichen Rechnungsbetrag nehmen, nicht den
+                // urspruenglichen Angebotspreis. Wurde telefonisch ein abweichender
+                // Preis vereinbart (offer.agreedPrice), muss GENAU der in Rechnung
+                // gestellt werden - bisher landete hier immer offer.totalPrice, der
+                // vereinbarte Preis ging beim Rechnungserstellen verloren.
+                const R = (typeof recomputeOffer === 'function') ? recomputeOffer(offer) : null;
+                const hatVereinbart = offer.agreedPrice != null && offer.agreedPrice !== '';
+                const totalPrice = hatVereinbart ? Number(offer.agreedPrice) : (R ? R.total : Number(offer.totalPrice) || 0);
+                // Netto/USt-Ausweis proportional auf den tatsaechlichen Betrag skalieren,
+                // sonst passen Zwischensumme + USt auf der Rechnung nicht mehr zusammen.
+                const skala = (R && R.total > 0) ? (totalPrice / R.total) : 1;
+                const subtotal = R ? Math.round(R.netAfter * skala * 100) / 100 : (offer.subtotal || 0);
+                const vatAmount = R ? Math.round(R.vatAmount * skala * 100) / 100 : (offer.vatAmount || 0);
+
+                // Eine am Angebot bereits erfasste Anzahlung (Menü "Zahlung") wird als
+                // erste Zahlungszeile uebernommen - sonst zeigt die neue Rechnung faelsch-
+                // lich den vollen Betrag als offen, obwohl der Kunde schon angezahlt hat.
+                const payments = [];
+                if (Number(offer.depositAmount) > 0) {
+                    payments.push({
+                        date: offer.depositDate || today,
+                        amount: Number(offer.depositAmount),
+                        note: 'Anzahlung – aus dem Angebot übernommen'
+                    });
+                }
+
                 const inv = {
                     invoiceNumber: await nextInvoiceNumber(),
                     offerId: offer.id,
@@ -226,15 +254,15 @@
                     dueDate: toLocalDateString(due),
                     skontoRate: parseFloat(await getSetting('skontoRate', '0')) || 0,
                     skontoDays: parseInt(await getSetting('skontoDays', '7'), 10) || 7,
-                    subtotal: offer.subtotal || 0,
-                    vatRate: offer.vatRate || 0,
-                    vatAmount: offer.vatAmount || 0,
-                    totalPrice: offer.totalPrice || 0,
+                    subtotal, vatRate: offer.vatRate || 0, vatAmount, totalPrice,
                     status: 'Offen',
-                    payments: [],
-                    notes: ''
+                    payments,
+                    notes: hatVereinbart ? `Vereinbarter Preis lt. Angebot: ${formatCurrency(totalPrice)}` : ''
                 };
                 await db.add('invoices', inv);
+                if (payments.length) {
+                    showToast(`Anzahlung von ${formatCurrency(payments[0].amount)} aus dem Angebot übernommen.`, 'success');
+                }
                 // Projekt-Status automatisch weiterschalten
                 if (inv.projectId) {
                     const p = await db.get('projects', inv.projectId);
@@ -245,6 +273,30 @@
                 }
                 showToast(`Rechnung ${inv.invoiceNumber} erstellt (fällig ${formatDate(inv.dueDate)}).`, 'success');
                 app.navigate('invoices');
+            },
+
+            // Schnellaktion: den kompletten offenen Restbetrag auf einmal als
+            // Zahlung erfassen ("erledigt"), ohne das Formular zu oeffnen.
+            async markInvoicePaid(invoiceId) {
+                const inv = await db.get('invoices', invoiceId);
+                if (!inv) return;
+                const open = invoiceOpen(inv);
+                if (!(open > 0)) { showToast('Diese Rechnung ist bereits vollständig bezahlt.', 'info'); return; }
+                const ok = await showConfirm(
+                    `Restbetrag <strong>${formatCurrency(open)}</strong> von „${escapeHtml(inv.invoiceNumber || '')}“ als heute vollständig bezahlt erfassen?`,
+                    { title: 'Komplett bezahlt', okText: 'Als bezahlt markieren' });
+                if (!ok) return;
+                inv.payments = [...(inv.payments || []), {
+                    date: toLocalDateString(new Date()), amount: open, note: 'Vollständig ausbezahlt'
+                }];
+                inv.status = invoiceStatus(inv);
+                await db.put('invoices', inv);
+                if (inv.projectId) {
+                    const p = await db.get('projects', inv.projectId);
+                    if (p && !['Archiviert', 'Archiv'].includes(p.status)) { p.status = 'Bezahlt'; await db.put('projects', p); }
+                }
+                showToast(`✅ „${inv.invoiceNumber}“ ist jetzt vollständig bezahlt.`, 'success');
+                this.navigate('invoices');
             },
 
             async openPaymentModal(invoiceId) {
@@ -264,7 +316,7 @@
                             <div class="form-group"><label>Datum</label><input type="date" id="payDate" value="${today}"></div>
                             <div class="form-group"><label>Betrag (€) *</label><input type="number" inputmode="decimal" step="0.01" min="0" id="payAmount" value="${open.toFixed(2)}"></div>
                         </div>
-                        ${(inv.payments || []).length ? `<div style="font-size:12.5px;color:var(--text-muted);">Bisherige Zahlungen:<br>${inv.payments.map(p => `• ${formatDate(p.date)} – ${formatCurrency(p.amount)}`).join('<br>')}</div>` : ''}
+                        ${(inv.payments || []).length ? `<div style="font-size:12.5px;color:var(--text-muted);">Bisherige Zahlungen:<br>${inv.payments.map(p => `• ${formatDate(p.date)} – ${formatCurrency(p.amount)}${p.note ? ' · ' + escapeHtml(p.note) : ''}`).join('<br>')}</div>` : ''}
                     `,
                     async (overlay) => {
                         const amount = parseFloat(String(overlay.querySelector('#payAmount').value).replace(',', '.'));
