@@ -328,7 +328,15 @@ async put(storeName, data) {
 
         const db = new DatabaseManager();
 
-        async function handleRemoteChange(payload) {
+        function softRefreshCurrentPage() {
+    if (app.currentPage === 'projects' && app.currentProjectId && typeof app.reloadProject === 'function') {
+        app.reloadProject(app.currentProjectId);
+    } else {
+        app.navigate(app.currentPage, app.currentProjectId);
+    }
+}
+
+async function handleRemoteChange(payload) {
           try {
             const { eventType, new: newRec, old: oldRec } = payload;
             const table = localStore(payload.table);
@@ -357,7 +365,7 @@ merged._remote = true;
 
 await db.putLocalOnly(table, merged);
             }
-            app.navigate(app.currentPage, app.currentProjectId);
+            softRefreshCurrentPage();
           } catch (e) {
             console.warn('Live-Update konnte nicht verarbeitet werden:', e, payload);
           }
@@ -438,7 +446,7 @@ await db.putLocalOnly(table, merged);
                 } else {
                     updateSyncStatus('online', '🟢 Online');
                 }
-                app.navigate(app.currentPage, app.currentProjectId);
+                softRefreshCurrentPage();
             } catch(e) {
                 console.error("Sync Error:", e);
                 updateSyncStatus('offline', '🔴 Sync Fehler');

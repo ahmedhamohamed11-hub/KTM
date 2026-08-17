@@ -1656,3 +1656,11 @@
     color:var(--accent); border-radius:7px; padding:4px 7px; font-size:11px; cursor:pointer; }
 .mat-price { cursor:pointer; }
 .mat-price small { opacity:.75; }
+
+/* Bilder nach Bereich (Besichtigung / Fertigstellung / Mängel) */
+.img-phase { margin-bottom: 16px; }
+.img-phase-title { font-size: 12.5px; font-weight: 700; color: var(--text-secondary);
+    margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+.img-phase--warn .img-phase-title { color: var(--danger); }
+.img-phase--warn { padding: 10px; border-radius: var(--radius);
+    background: rgba(200,60,60,.07); border: 1px solid rgba(200,60,60,.25); }

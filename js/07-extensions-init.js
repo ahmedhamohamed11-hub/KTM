@@ -5547,10 +5547,20 @@
             },
 
             async openImageModal(projectId) {
+                // Sinnvolle Vorauswahl je nach Projektstatus: laeuft die Montage schon
+                // oder ist sie fertig, macht "Besichtigung" als Default keinen Sinn mehr.
+                const proj = await db.get('projects', projectId);
+                const statusPhase = { 'Rechnung erstellt': 'Fertigstellung', 'Bezahlt': 'Fertigstellung', 'Montage': 'Fertigstellung' };
+                const defaultPhase = statusPhase[proj?.status] || 'Besichtigung';
                 const modal = showModal(
                     'Bild hinzufügen',
                     `
                         <div class="form-group"><label>Bild auswählen *</label><input type="file" id="imgFile" accept="image/*" capture="environment"></div>
+                        <div class="form-group"><label>Bereich *</label>
+                            <select id="imgPhase">
+                                ${[['Besichtigung','🔍'],['Fertigstellung','✅'],['Mängel','⚠️']].map(([p,ic]) => `<option value="${p}" ${p === defaultPhase ? 'selected' : ''}>${ic} ${p}</option>`).join('')}
+                            </select>
+                        </div>
                         <div class="form-group"><label>Kategorie</label>
                             <select id="imgCategory">
                                 ${['Bestandssituation','Außeneinheit','Innengerät','Elektroanschluss','Kondensatablauf','Rohrleitung','Wanddurchbruch','Sonstiges'].map(c => `<option value="${c}">${c}</option>`).join('')}
@@ -5567,6 +5577,7 @@
                             const data = {
                                 projectId,
                                 data: compressedData,
+                                phase: overlay.querySelector('#imgPhase').value,
                                 category: overlay.querySelector('#imgCategory').value,
                                 label: overlay.querySelector('#imgLabel').value.trim(),
                                 createdAt: new Date().toISOString()
@@ -5574,7 +5585,7 @@
                             await db.add('images', data);
                             overlay.remove();
                             showToast('Bild gespeichert.', 'success');
-                            this.navigate('projects', projectId);
+                            app.reloadProject(projectId);
                         }).catch(() => {
                             showToast('Fehler beim Komprimieren des Bildes.', 'error');
                         });

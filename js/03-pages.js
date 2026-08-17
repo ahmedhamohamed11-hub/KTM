@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v136</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v137</span></div>
                         </div>
                     </div>`;
             })();
@@ -1359,20 +1359,38 @@
                                     </div>
                                 </div>` : ''}
 
-                                <!-- ===== Bilder ===== -->
+                                <!-- ===== Bilder: nach Bereich getrennt (Besichtigung / Fertigstellung / Mängel) ===== -->
                                 <div class="detail-section">
                                     <div class="detail-section-head">
                                         <h4>📷 Bilder (${(project.images||[]).length})</h4>
                                         <button class="btn btn-sm btn-primary" onclick="app.openImageModal(${idJS(project.id)})">${icon('plus')} Bild</button>
                                     </div>
-                                    <div class="image-grid">
-                                        ${(project.images||[]).map(img => `
-                                            <div class="image-card" onclick="app.viewImage('${img.data}')">
-                                                <img src="${img.data}" alt="${escapeHtml(img.category||'')}">
-                                                <div class="img-overlay">${escapeHtml(img.category||'Sonstiges')} ${img.label ? '- '+escapeHtml(img.label) : ''}</div>
-                                            </div>
-                                        `).join('') || '<div class="empty-note" style="grid-column:1/-1;">Keine Bilder</div>'}
-                                    </div>
+                                    ${(() => {
+                                        // Bestehende Bilder ohne "phase" gelten als Besichtigung (das war bisher
+                                        // die einzige Phase, in der Fotos gemacht wurden).
+                                        const imgs = project.images || [];
+                                        const PHASES = [
+                                            { key: 'Besichtigung', icon: '🔍' },
+                                            { key: 'Fertigstellung', icon: '✅' },
+                                            { key: 'Mängel', icon: '⚠️' },
+                                        ];
+                                        if (!imgs.length) return '<div class="empty-note">Keine Bilder</div>';
+                                        return PHASES.map(ph => {
+                                            const list = imgs.filter(img => (img.phase || 'Besichtigung') === ph.key);
+                                            if (!list.length) return '';
+                                            return `<div class="img-phase ${ph.key === 'Mängel' ? 'img-phase--warn' : ''}">
+                                                <div class="img-phase-title">${ph.icon} ${ph.key} (${list.length})</div>
+                                                <div class="image-grid">
+                                                    ${list.map(img => `
+                                                        <div class="image-card" onclick="app.viewImage('${img.data}')">
+                                                            <img src="${img.data}" alt="${escapeHtml(img.category||'')}">
+                                                            <div class="img-overlay">${escapeHtml(img.category||'Sonstiges')}${img.label ? ' - '+escapeHtml(img.label) : ''}</div>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            </div>`;
+                                        }).join('');
+                                    })()}
                                 </div>
                                 <!-- ===== Planung / Grundriss ===== -->
                                 <div class="detail-section">
