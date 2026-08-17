@@ -350,10 +350,12 @@ if (
     return;
 }
 
-localData._synced = true; localData._pushedAt = localData._pushedAt || new Date().toISOString();
-localData._remote = true;
+// MERGEN statt ersetzen - siehe Begruendung in initialFullSync.
+const merged = existing ? { ...existing, ...localData } : localData;
+merged._synced = true; merged._pushedAt = merged._pushedAt || new Date().toISOString();
+merged._remote = true;
 
-await db.putLocalOnly(table, localData);
+await db.putLocalOnly(table, merged);
             }
             app.navigate(app.currentPage, app.currentProjectId);
           } catch (e) {
@@ -397,7 +399,16 @@ await db.putLocalOnly(table, localData);
                     if (!error && data) {
                         const remoteIds = new Set(data.map(r => String(t === 'settings' ? r.key : r.id)));
                         for (const row of data) {
-                            const localData = toCamel(row);
+                            const remoteData = toCamel(row);
+                            // WICHTIG: MERGEN statt ersetzen. Fehlt in der Supabase-Tabelle
+                            // eine Spalte (z.B. weil ein Feld wie agreedPrice neuer ist als
+                            // das Server-Schema), liefert toCamel(row) dieses Feld gar nicht
+                            // erst zurueck. Ein kompletter Ersatz haette dann lokal
+                            // eingegebene Werte wie den vereinbarten Preis bei JEDEM Sync
+                            // geloescht - nicht nur bei Aenderungen an genau diesem Feld.
+                            const key = remoteData.id ?? remoteData.key;
+                            const existing = key != null ? await db.get(t, key) : null;
+                            const localData = existing ? { ...existing, ...remoteData } : remoteData;
                             localData._synced = true; localData._pushedAt = localData._pushedAt || new Date().toISOString();
                             localData._remote = true;
                             await db.putLocalOnly(t, localData);
