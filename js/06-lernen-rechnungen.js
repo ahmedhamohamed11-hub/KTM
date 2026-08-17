@@ -113,10 +113,16 @@
                 // Tatsaechlich eingekauft: NUR ueber tatsaechlich AUSGESTELLTE RECHNUNGEN,
                 // nicht ueber alle jemals angelegten Angebote (Entwuerfe, Duplikate,
                 // Testangebote waeren sonst mitgezaehlt und haetten die Zahl massiv
-                // aufgeblaeht - genau das war der Fehler: 27 Angebote statt der paar
-                // tatsaechlich gestellten Rechnungen).
+                // aufgeblaeht) und OHNE die eigenen Posten - "eigene Posten" sind freie
+                // Ausgaben/Einnahmen wie Werkzeug oder Privatanschaffungen, kein
+                // Material-Einkauf fuer einen Auftrag. Beides bleibt getrennt.
+                // Je Rechnung ist der EK ueberschreibbar (ekOverride) - dann gilt der
+                // von Hand eingetragene Wert statt der Summe aus den Materialpreisen.
+                const customers = await db.getAll('customers');
+                const custById = new Map(customers.map(c => [String(c.id), c]));
                 const offerById = new Map(offers.map(o => [String(o.id), o]));
                 let eingekauft = 0, rechnungenMitEk = 0, rechnungenOhneAngebot = 0;
+                const kaufZeilen = [];
                 for (const iv of invoices) {
                     if (iv.status === 'Storniert') continue;
                     if (iv.offerId == null) { rechnungenOhneAngebot++; continue; }
@@ -124,27 +130,37 @@
                     if (!o) continue;
                     const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
                     if (!C) continue;
-                    eingekauft += C.ekIst;
-                    if (C.ekIst > 0) rechnungenMitEk++;
+                    const hatOverride = iv.ekOverride != null && iv.ekOverride !== '';
+                    const wert = hatOverride ? Number(iv.ekOverride) : C.ekIst;
+                    eingekauft += wert;
+                    if (wert > 0) rechnungenMitEk++;
+                    const cust = custById.get(String(iv.customerId));
+                    kaufZeilen.push({
+                        invoiceId: iv.id, invoiceNumber: iv.invoiceNumber || '',
+                        kunde: cust ? `${cust.firstName || ''} ${cust.lastName || ''}`.trim() : (iv.customerName || 'Ohne Kunde'),
+                        berechnet: C.ekIst, wert, hatOverride
+                    });
                 }
 
                 const manEinnahmen = manuell.filter(e => e.type === 'einnahme').reduce((s, e) => s + (Number(e.amount) || 0), 0);
                 const manAusgaben  = manuell.filter(e => e.type === 'ausgabe').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                const posSaldo = manEinnahmen - manAusgaben;
 
-                const einnahmenGesamt = eingenommenRe + manEinnahmen;
-                const ausgabenGesamt  = eingekauft + manAusgaben;
-                const gewinn = einnahmenGesamt - ausgabenGesamt;
+                const einnahmenGesamt = eingenommenRe;
+                const ausgabenGesamt  = eingekauft;
+                const gewinn = einnahmenGesamt - ausgabenGesamt + posSaldo;
+                window.__foKaufZeilen = kaufZeilen;   // fuer die Aufschlüsselung beim Antippen
 
                 contentArea.innerHTML = `
                     <div class="fo-wrap">
                         <div class="fo-grid">
-                            <div class="fo-card"><span>Tatsächlich eingenommen</span><b>${formatCurrency(einnahmenGesamt)}</b><small>${bezahlteRechnungen} bezahlte/angezahlte Rechnung${bezahlteRechnungen === 1 ? '' : 'en'}${manEinnahmen > 0 ? ` · +${formatCurrency(manEinnahmen)} eigene Posten` : ''}</small></div>
-                            <div class="fo-card"><span>Tatsächlich eingekauft</span><b>${formatCurrency(ausgabenGesamt)}</b><small>${rechnungenMitEk} Rechnung${rechnungenMitEk === 1 ? '' : 'en'} mit belegtem Einkauf${rechnungenOhneAngebot > 0 ? ` · ${rechnungenOhneAngebot} Rechnung${rechnungenOhneAngebot === 1 ? '' : 'en'} ohne Angebot nicht erfasst` : ''}${manAusgaben > 0 ? ` · +${formatCurrency(manAusgaben)} eigene Posten` : ''}</small></div>
+                            <div class="fo-card"><span>Tatsächlich eingenommen</span><b>${formatCurrency(einnahmenGesamt)}</b><small>${bezahlteRechnungen} bezahlte/angezahlte Rechnung${bezahlteRechnungen === 1 ? '' : 'en'}</small></div>
+                            <div class="fo-card fo-card--click" onclick="app.openPurchaseBreakdown()"><span>Tatsächlich eingekauft</span><b>${formatCurrency(ausgabenGesamt)}</b><small>${rechnungenMitEk} Rechnung${rechnungenMitEk === 1 ? '' : 'en'} mit belegtem Einkauf${rechnungenOhneAngebot > 0 ? ` · ${rechnungenOhneAngebot} ohne Angebot` : ''} · antippen zum Bearbeiten ›</small></div>
                             <div class="fo-card"><span>Noch offen beim Kunden</span><b>${formatCurrency(nochOffen)}</b><small>über alle Rechnungen</small></div>
-                            <div class="fo-card fo-card--gewinn"><span>Bleibt als Gewinn</span><b style="color:${gewinn >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(gewinn)}</b><small>eingenommen − eingekauft, real (kein Angebotswert)</small></div>
+                            <div class="fo-card fo-card--gewinn"><span>Bleibt als Gewinn</span><b style="color:${gewinn >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(gewinn)}</b><small>eingenommen − eingekauft${posSaldo !== 0 ? ` ${posSaldo >= 0 ? '+' : '−'} ${formatCurrency(Math.abs(posSaldo))} eigene Posten` : ''}, real (kein Angebotswert)</small></div>
                         </div>
 
-                        <div class="fo-hint">Basiert nur auf tatsächlich verbuchten Zahlungen und belegten Einkäufen – nicht auf Angebotswerten. Für die Vorkalkulation eines einzelnen Auftrags die Gewinn-Diagnose im jeweiligen Angebot verwenden.</div>
+                        <div class="fo-hint">Einnahmen/Einkauf-Karten beziehen sich nur auf ausgestellte Rechnungen. Eigene Posten (unten) sind separat und fließen nur in den Gewinn ein. Für die Vorkalkulation eines einzelnen Auftrags die Gewinn-Diagnose im jeweiligen Angebot verwenden.</div>
 
                         <div class="detail-section-head" style="margin-top:22px;">
                             <h4>Eigene Posten</h4>

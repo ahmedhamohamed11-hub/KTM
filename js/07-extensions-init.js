@@ -5214,6 +5214,56 @@
                 });
             },
 
+            // Aufschluesselung "Tatsächlich eingekauft" nach Kunde/Rechnung, mit der
+            // Moeglichkeit jeden Wert von Hand zu korrigieren (z.B. wenn die echte
+            // Lieferantenrechnung von der Materialkalkulation abweicht).
+            openPurchaseBreakdown() {
+                const zeilen = window.__foKaufZeilen || [];
+                if (!zeilen.length) { showToast('Noch keine Rechnung mit Einkaufsdaten.', 'info'); return; }
+                const html = zeilen.map(z => `
+                    <div class="fo-row" onclick="app.editPurchaseOverride('${escapeHtml(String(z.invoiceId))}')">
+                        <div class="fo-row-main">
+                            <div class="fo-row-title">${escapeHtml(z.kunde)}</div>
+                            <div class="fo-row-sub">${escapeHtml(z.invoiceNumber)}${z.hatOverride ? ` · von Hand korrigiert (berechnet: ${formatCurrency(z.berechnet)})` : ''}</div>
+                        </div>
+                        <div class="fo-row-amount">${formatCurrency(z.wert)}</div>
+                    </div>`).join('');
+                showModal('Tatsächlicher Einkauf je Rechnung', `
+                    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Antippen, um den Einkaufspreis für diese Rechnung von Hand einzutragen.</div>
+                    <div class="fo-list">${html}</div>`,
+                    null, null);
+            },
+
+            // Einkaufspreis fuer genau eine Rechnung von Hand setzen oder zuruecksetzen.
+            async editPurchaseOverride(invoiceId) {
+                const iv = await db.get('invoices', invoiceId);
+                if (!iv) return;
+                const zeile = (window.__foKaufZeilen || []).find(z => String(z.invoiceId) === String(invoiceId));
+                document.querySelector('.modal-overlay')?.remove();
+                const modal = showModal(`Einkauf – ${iv.invoiceNumber || ''}`, `
+                    <div class="form-group">
+                        <label>Tatsächlicher Einkauf für diese Rechnung (€)</label>
+                        <input type="number" step="0.01" min="0" id="poAmount" value="${iv.ekOverride != null && iv.ekOverride !== '' ? Number(iv.ekOverride).toFixed(2) : (zeile ? zeile.berechnet.toFixed(2) : '')}">
+                        <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">Berechnet aus den Materialpreisen: ${formatCurrency(zeile ? zeile.berechnet : 0)}. Trag hier den echten Betrag laut Lieferantenrechnung ein, wenn er abweicht.</div>
+                    </div>
+                    ${iv.ekOverride != null && iv.ekOverride !== '' ? `<button type="button" class="btn btn-sm" id="poReset" style="margin-top:4px;">↺ Auf berechneten Wert zurücksetzen</button>` : ''}`,
+                    async (ov) => {
+                        const v = parseFloat(ov.querySelector('#poAmount').value);
+                        iv.ekOverride = (v >= 0) ? v : null;
+                        await db.put('invoices', iv);
+                        ov.remove();
+                        showToast('Einkaufspreis gespeichert.', 'success');
+                        app.navigate('finanzuebersicht');
+                    });
+                modal.querySelector('#poReset')?.addEventListener('click', async () => {
+                    iv.ekOverride = null;
+                    await db.put('invoices', iv);
+                    modal.remove();
+                    showToast('Zurückgesetzt auf den berechneten Wert.', 'success');
+                    app.navigate('finanzuebersicht');
+                });
+            },
+
             // ===== Bauart bei vorhandenen Materialien nachtragen =====
             // Manuell ausloesbar aus dem Schnellrechner. Gleiche Logik wie die
             // Startmigration, aber ohne Flag - laesst sich beliebig oft ausfuehren.

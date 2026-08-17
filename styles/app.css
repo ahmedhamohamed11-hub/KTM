@@ -1696,3 +1696,6 @@
 .fo-row-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .fo-row-amount { font-size: 15px; font-weight: 700; white-space: nowrap; }
 @media (max-width: 420px) { .fo-grid { grid-template-columns: 1fr; } .fo-card--gewinn { grid-column: 1; } }
+
+.fo-card--click { cursor: pointer; }
+.fo-card--click:active { opacity: .85; }
