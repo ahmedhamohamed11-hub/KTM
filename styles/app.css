@@ -1677,3 +1677,22 @@
 .fin-note { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius);
     background: var(--bg-tertiary); font-size: 12.5px; white-space: pre-wrap; }
 @media (max-width: 400px) { .fin-grid { grid-template-columns: 1fr; } .fin-card--gewinn { grid-column: 1; } }
+
+/* Finanzen – Übersicht (eigener Bereich, unabhängig von Angebot/Projekt) */
+.fo-wrap { max-width: 720px; }
+.fo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fo-card { padding: 14px; border-radius: var(--radius); background: var(--bg-tertiary);
+    display: flex; flex-direction: column; gap: 4px; }
+.fo-card span { font-size: 12px; color: var(--text-muted); }
+.fo-card b { font-size: 20px; font-weight: 700; }
+.fo-card small { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+.fo-card--gewinn { background: var(--accent-light); grid-column: 1 / -1; }
+.fo-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
+.fo-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.fo-row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 11px 13px; border-radius: var(--radius); background: var(--bg-secondary);
+    border: 1px solid var(--border); cursor: pointer; }
+.fo-row-title { font-size: 13.5px; font-weight: 600; }
+.fo-row-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.fo-row-amount { font-size: 15px; font-weight: 700; white-space: nowrap; }
+@media (max-width: 420px) { .fo-grid { grid-template-columns: 1fr; } .fo-card--gewinn { grid-column: 1; } }

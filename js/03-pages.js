@@ -1092,8 +1092,7 @@
                 const allRooms = await db.getAll('rooms');
                 const allPM = await db.getAll('projectMaterials');
                 const materials = await db.getAll('materials');
-                const allOffers = await db.getAll('offers');
-                const allInvoices = await db.getAll('invoices');
+
                 const roomCountByProject = {};
                 for (const r of allRooms) {
                     if (r.projectId === undefined || r.projectId === null) continue;
@@ -1360,58 +1359,6 @@
                                         }).join('')}
                                     </div>
                                 </div>` : ''}
-
-                                <!-- ===== Finanzuebersicht: Auftragssumme, Ausgaben, Gewinn, offener Betrag ===== -->
-                                ${(() => {
-                                    const projOffers = allOffers.filter(o => String(o.projectId) === String(project.id));
-                                    const projInvoices = allInvoices.filter(iv => String(iv.projectId) === String(project.id));
-                                    if (!projOffers.length && !projInvoices.length) return '';
-
-                                    // Auftragssumme: bevorzugt die Rechnung(en), sonst das/die Angebot(e)
-                                    let auftragssumme = 0, quelle = '';
-                                    if (projInvoices.length) {
-                                        auftragssumme = projInvoices.reduce((s, iv) => s + (Number(iv.totalPrice) || 0), 0);
-                                        quelle = projInvoices.length > 1 ? `${projInvoices.length} Rechnungen` : 'Rechnung';
-                                    } else {
-                                        auftragssumme = projOffers.reduce((s, o) => {
-                                            const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
-                                            return s + (C ? C.kundeZahlt : (Number(o.totalPrice) || 0));
-                                        }, 0);
-                                        quelle = projOffers.length > 1 ? `${projOffers.length} Angebote` : 'Angebot';
-                                    }
-
-                                    // Einkauf + Gewinn ueber alle Angebote dieses Projekts summieren
-                                    let ekGesamt = 0, gewinnGesamt = 0, salesNettoGesamt = 0;
-                                    for (const o of projOffers) {
-                                        const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
-                                        if (!C) continue;
-                                        ekGesamt += C.materialCost;
-                                        gewinnGesamt += C.profit;
-                                        salesNettoGesamt += C.salesEffective;
-                                    }
-                                    const zusatz = Number(project.otherCosts) || 0;
-                                    gewinnGesamt -= zusatz;
-                                    const margeGesamt = salesNettoGesamt > 0 ? (gewinnGesamt / salesNettoGesamt) * 100 : 0;
-
-                                    // Noch offen beim Kunden: aus den Rechnungen, sonst voller Betrag
-                                    const nochOffen = projInvoices.length
-                                        ? projInvoices.reduce((s, iv) => s + (typeof invoiceOpen === 'function' ? invoiceOpen(iv) : (Number(iv.totalPrice) || 0)), 0)
-                                        : auftragssumme;
-
-                                    return `<div class="detail-section">
-                                        <div class="detail-section-head">
-                                            <h4>💰 Finanzübersicht</h4>
-                                            <button class="btn btn-sm" onclick="app.openProjectFinanceNote(${idJS(project.id)})">✎ Notiz</button>
-                                        </div>
-                                        <div class="fin-grid">
-                                            <div class="fin-card"><span>Auftragssumme</span><b>${formatCurrency(auftragssumme)}</b><small>${quelle}</small></div>
-                                            <div class="fin-card"><span>Ausgegeben</span><b>${formatCurrency(ekGesamt + zusatz)}</b><small>${zusatz > 0 ? `davon ${formatCurrency(zusatz)} Notiz` : 'Material/Geräte'}</small></div>
-                                            <div class="fin-card"><span>Noch offen beim Kunden</span><b>${formatCurrency(nochOffen)}</b><small>${projInvoices.length ? 'lt. Rechnung' : 'noch nicht in Rechnung gestellt'}</small></div>
-                                            <div class="fin-card fin-card--gewinn"><span>Gewinn</span><b>${formatCurrency(gewinnGesamt)}</b><small>${margeGesamt.toFixed(1)} % Marge</small></div>
-                                        </div>
-                                        ${project.financeNote ? `<div class="fin-note">${escapeHtml(project.financeNote)}</div>` : ''}
-                                    </div>`;
-                                })()}
 
                                 <!-- ===== Bilder: nach Bereich getrennt (Besichtigung / Fertigstellung / Mängel) ===== -->
                                 <div class="detail-section">

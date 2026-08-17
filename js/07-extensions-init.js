@@ -3758,7 +3758,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', equipment: 'cards', maintenance: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -3774,6 +3774,7 @@
                     case 'maintenance': renderMaintenance(); break;
                     case 'katalog': this.renderKatalog(param); break;
                     case 'invoices': renderInvoices(); break;
+                    case 'finanzuebersicht': renderFinanceOverview(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
@@ -5172,6 +5173,45 @@
                         showToast('Finanzen gespeichert.', 'success');
                         app.reloadProject(projectId);
                     });
+            },
+
+            // Eigener Posten in der Finanzuebersicht: anlegen oder bearbeiten.
+            async openFinanceEntryModal(entryId = null) {
+                const list = (typeof getFinanceEntries === 'function') ? await getFinanceEntries() : [];
+                const entry = entryId ? list.find(e => e.id === entryId) : null;
+                const modal = showModal(entry ? 'Posten bearbeiten' : 'Neuer Posten', `
+                    <div class="form-group"><label>Art</label>
+                        <select id="feType">
+                            <option value="ausgabe" ${!entry || entry.type === 'ausgabe' ? 'selected' : ''}>Ausgabe</option>
+                            <option value="einnahme" ${entry?.type === 'einnahme' ? 'selected' : ''}>Einnahme</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Bezeichnung</label><input type="text" id="feLabel" value="${escapeHtml(entry?.label || '')}" placeholder="z. B. Werkzeugkauf, Sprit, Büromaterial"></div>
+                    <div class="form-group"><label>Betrag (€)</label><input type="number" step="0.01" min="0" id="feAmount" value="${entry ? Math.abs(Number(entry.amount) || 0) : ''}"></div>
+                    <div class="form-group"><label>Datum</label><input type="date" id="feDate" value="${entry?.date || toLocalDateString(new Date())}"></div>
+                    ${entry ? `<button type="button" class="btn btn-sm" id="feDelete" style="color:var(--danger);margin-top:6px;">🗑 Posten löschen</button>` : ''}`,
+                    async (overlay) => {
+                        const amount = parseFloat(overlay.querySelector('#feAmount').value);
+                        const label = overlay.querySelector('#feLabel').value.trim();
+                        if (!(amount > 0) || !label) { showToast('Bitte Bezeichnung und Betrag angeben.', 'error'); return; }
+                        const neu = {
+                            id: entry?.id || ('fe_' + Date.now()),
+                            type: overlay.querySelector('#feType').value,
+                            label, amount,
+                            date: overlay.querySelector('#feDate').value || toLocalDateString(new Date())
+                        };
+                        const rest = list.filter(e => e.id !== neu.id);
+                        await saveFinanceEntries([...rest, neu]);
+                        overlay.remove();
+                        showToast('Posten gespeichert.', 'success');
+                        app.navigate('finanzuebersicht');
+                    });
+                modal.querySelector('#feDelete')?.addEventListener('click', async () => {
+                    await saveFinanceEntries(list.filter(e => e.id !== entryId));
+                    modal.remove();
+                    showToast('Posten gelöscht.', 'success');
+                    app.navigate('finanzuebersicht');
+                });
             },
 
             // ===== Bauart bei vorhandenen Materialien nachtragen =====

@@ -76,6 +76,86 @@
             return m ? m[0] : '';
         }
 
+        // ===== Finanzen – Übersicht =====
+        // Eigener, von einzelnen Angeboten/Projekten unabhaengiger Bereich: was kam
+        // tatsaechlich rein (bezahlte/angezahlte Rechnungen), was wurde tatsaechlich
+        // eingekauft, was bleibt als Gewinn, was steht noch offen. Dazu frei editierbare
+        // eigene Posten (z. B. Werkzeugkauf, Sprit, Buerokosten), die NICHT an ein
+        // einzelnes Angebot gebunden sind. Manuelle Posten liegen als JSON in den
+        // Settings (wie z. B. dealerDiscounts) - kein Schema-Umbau der Datenbank noetig.
+        async function getFinanceEntries() {
+            const raw = await getSetting('financeManualEntries', '[]');
+            try { const a = JSON.parse(raw); return Array.isArray(a) ? a : []; } catch { return []; }
+        }
+        async function saveFinanceEntries(list) {
+            await setSetting('financeManualEntries', JSON.stringify(list));
+        }
+
+        function renderFinanceOverview() {
+            (async () => {
+                const invoices = await db.getAll('invoices');
+                const offers = await db.getAll('offers');
+                const materials = await db.getAll('materials');
+                const manuell = await getFinanceEntries();
+
+                // Tatsaechlich eingenommen: JEDE erfasste Zahlung auf JEDER Rechnung -
+                // auch Teilzahlungen/Anzahlungen zaehlen schon als real eingenommenes Geld.
+                let eingenommenRe = 0, bezahlteRechnungen = 0;
+                for (const iv of invoices) {
+                    const sum = (iv.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                    eingenommenRe += sum;
+                    if (sum > 0) bezahlteRechnungen++;
+                }
+                // Noch offen: Restbetrag ueber alle Rechnungen, die nicht storniert sind
+                const nochOffen = invoices.filter(iv => iv.status !== 'Storniert')
+                    .reduce((s, iv) => s + (typeof invoiceOpen === 'function' ? Math.max(0, invoiceOpen(iv)) : 0), 0);
+
+                // Tatsaechlich eingekauft: nur BELEGTER Einkauf (eigene Lieferantenrechnung
+                // hinterlegt) ueber alle Angebote - keine Schaetzung aus Rabatten.
+                let eingekauft = 0, offeneMitEk = 0;
+                for (const o of offers) {
+                    const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
+                    if (!C) continue;
+                    eingekauft += C.ekIst;
+                    if (C.ekIst > 0) offeneMitEk++;
+                }
+
+                const manEinnahmen = manuell.filter(e => e.type === 'einnahme').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                const manAusgaben  = manuell.filter(e => e.type === 'ausgabe').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+                const einnahmenGesamt = eingenommenRe + manEinnahmen;
+                const ausgabenGesamt  = eingekauft + manAusgaben;
+                const gewinn = einnahmenGesamt - ausgabenGesamt;
+
+                contentArea.innerHTML = `
+                    <div class="fo-wrap">
+                        <div class="fo-grid">
+                            <div class="fo-card"><span>Tatsächlich eingenommen</span><b>${formatCurrency(einnahmenGesamt)}</b><small>${bezahlteRechnungen} bezahlte/angezahlte Rechnung${bezahlteRechnungen === 1 ? '' : 'en'}${manEinnahmen > 0 ? ` · +${formatCurrency(manEinnahmen)} eigene Posten` : ''}</small></div>
+                            <div class="fo-card"><span>Tatsächlich eingekauft</span><b>${formatCurrency(ausgabenGesamt)}</b><small>${offeneMitEk} Angebot${offeneMitEk === 1 ? '' : 'e'} mit belegtem Einkauf${manAusgaben > 0 ? ` · +${formatCurrency(manAusgaben)} eigene Posten` : ''}</small></div>
+                            <div class="fo-card"><span>Noch offen beim Kunden</span><b>${formatCurrency(nochOffen)}</b><small>über alle Rechnungen</small></div>
+                            <div class="fo-card fo-card--gewinn"><span>Bleibt als Gewinn</span><b style="color:${gewinn >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(gewinn)}</b><small>eingenommen − eingekauft, real (kein Angebotswert)</small></div>
+                        </div>
+
+                        <div class="fo-hint">Basiert nur auf tatsächlich verbuchten Zahlungen und belegten Einkäufen – nicht auf Angebotswerten. Für die Vorkalkulation eines einzelnen Auftrags die Gewinn-Diagnose im jeweiligen Angebot verwenden.</div>
+
+                        <div class="detail-section-head" style="margin-top:22px;">
+                            <h4>Eigene Posten</h4>
+                            <button class="btn btn-sm btn-primary" onclick="app.openFinanceEntryModal()">+ Posten</button>
+                        </div>
+                        <div class="fo-list">
+                            ${manuell.length ? manuell.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => `
+                                <div class="fo-row" onclick="app.openFinanceEntryModal('${e.id}')">
+                                    <div class="fo-row-main">
+                                        <div class="fo-row-title">${escapeHtml(e.label || '(ohne Bezeichnung)')}</div>
+                                        <div class="fo-row-sub">${e.date ? formatDate(e.date) : ''}</div>
+                                    </div>
+                                    <div class="fo-row-amount" style="color:${e.type === 'ausgabe' ? 'var(--danger)' : 'var(--success)'};">${e.type === 'ausgabe' ? '−' : '+'}${formatCurrency(Math.abs(Number(e.amount) || 0))}</div>
+                                </div>`).join('') : '<div class="empty-note">Noch keine eigenen Posten – z. B. Werkzeugkauf, Sprit, Bürokosten.</div>'}
+                        </div>
+                    </div>`;
+            })();
+        }
+
         function renderInvoices() {
             (async () => {
                 const invoices = await db.getAll('invoices');
