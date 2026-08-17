@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v143</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v144</span></div>
                         </div>
                     </div>`;
             })();
@@ -1751,19 +1751,44 @@
                     // Katalog-Reihenfolge: Serien alphabetisch, nicht nach Anzahl
                     const ss = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'de'));
                     if (ss.length <= 1) { F.serie = ss[0] || ''; F.level = 'produkte'; renderMaterials(); return; }
-                    body = `<div class="mat-grid">${ss.map(s => {
-                        const list = groups[s];
+
+                    // Katalog-Ansicht: alle Serien direkt untereinander mit ihren Geraeten
+                    // UND Preisen zeigen - wie im gedruckten Herstellerkatalog (z. B.
+                    // "Standard Plus", "Standard II" je als eigener Block mit Tabelle),
+                    // statt erst durch eine Kartenebene tippen zu muessen.
+                    const seriesCard = (m) => {
+                        const st = matStockStatus(m);
+                        const _bl = matBundleLength(m);
+                        const perM = (['Rolle', 'Bund', 'Stange'].includes(m.unit || '') && _bl > 0 && Number(m.sellingPrice) > 0)
+                            ? `<div class="mat-perm">${formatCurrency(matUnitPrice(m, 'm'))} / m inkl. · Bund ${_bl} m</div>` : '';
+                        const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []);
+                        return `<div class="mat-card mat-product" draggable="true" ondragstart="app.matProductDragStart(event, ${idJS(m.id)})" onclick="app.openMaterialDetail(${idJS(m.id)})">
+                            <button class="mat-fav ${m.favorite ? 'on' : ''}" onclick="event.stopPropagation(); app.toggleFavorite(${idJS(m.id)})" title="Favorit">${m.favorite ? '★' : '☆'}</button>
+                            <div class="mat-product-img">${imgs.length ? `<img src="${imgs[0]}">` : `<span>${matCatIcon(m.category)}</span>`}${imgs.length > 1 ? `<span class="mat-img-count">📷 ${imgs.length}</span>` : ''}</div>
+                            <div class="mat-card-body">
+                                <div class="mat-card-title">${escapeHtml(m.name)}</div>
+                                <div class="mat-card-sub">${[m.manufacturer, m.size].filter(Boolean).map(escapeHtml).join(' · ') || '&nbsp;'}</div>
+                                ${m.articleNumber ? `<div class="mat-card-art">Art. ${escapeHtml(m.articleNumber)}</div>` : ''}
+                                <div class="mat-card-foot">
+                                    <div class="mat-price" onclick="event.stopPropagation();app.quickPrice('${escapeHtml(String(m.id))}')" title="Preis schnell ändern">${formatCurrency(matBrutto(m))}<small> inkl. 20 % ✎</small>${perM}</div>
+                                    <span class="mat-stock ${st.cls}">${st.label}</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-primary mat-add" onclick="event.stopPropagation(); app.addMaterialToProject(${idJS(m.id)})">${icon('plus')} Zum Projekt</button>
+                        </div>`;
+                    };
+
+                    body = ss.map(s => {
+                        const list = groups[s].slice().sort((a, b) =>
+                            (parseFloat(String(a.size).replace(',', '.')) || 0) - (parseFloat(String(b.size).replace(',', '.')) || 0)
+                            || (a.name || '').localeCompare(b.name || ''));
                         const kws = list.map(m => parseFloat(String(m.size).replace(',', '.'))).filter(n => !isNaN(n));
                         const range = kws.length ? `${Math.min(...kws).toFixed(1).replace('.', ',')}–${Math.max(...kws).toFixed(1).replace('.', ',')} kW` : '';
-                        return `<div class="mat-card mat-cat" onclick="app.matOpenSerie('${escapeHtml(s).replace(/'/g, "\\'")}')">
-                            <div class="mat-cat-ico">${matCatIcon(F.cat)}</div>
-                            <div class="mat-card-body">
-                                <div class="mat-card-title">${escapeHtml(s)}</div>
-                                <div class="mat-card-sub">${list.length} Modelle${range ? ' · ' + range : ''}</div>
-                            </div>
-                            <div class="mat-card-arrow">›</div>
+                        return `<div class="mat-bauart-group">
+                            <div class="mat-bauart-head">${escapeHtml(s)} <span>(${list.length}${range ? ' · ' + range : ''})</span></div>
+                            <div class="mat-grid mat-grid-products">${list.map(seriesCard).join('')}</div>
                         </div>`;
-                    }).join('')}</div>`;
+                    }).join('');
                 } else {
                     // --------- Ebene 4: Produktkarten ---------
                     const list = inScope.sort((a, b) => (parseFloat(String(a.size).replace(',', '.')) || 0) - (parseFloat(String(b.size).replace(',', '.')) || 0) || (a.name || '').localeCompare(b.name || ''));
