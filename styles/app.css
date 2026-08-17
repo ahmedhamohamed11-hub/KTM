@@ -1664,3 +1664,16 @@
 .img-phase--warn .img-phase-title { color: var(--danger); }
 .img-phase--warn { padding: 10px; border-radius: var(--radius);
     background: rgba(200,60,60,.07); border: 1px solid rgba(200,60,60,.25); }
+
+/* Finanzübersicht im Projekt */
+.fin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fin-card { padding: 11px 12px; border-radius: var(--radius); background: var(--bg-tertiary);
+    display: flex; flex-direction: column; gap: 3px; }
+.fin-card span { font-size: 11px; color: var(--text-muted); }
+.fin-card b { font-size: 16px; font-weight: 700; }
+.fin-card small { font-size: 10.5px; color: var(--text-muted); }
+.fin-card--gewinn { background: var(--accent-light); grid-column: 1 / -1; }
+.fin-card--gewinn b { color: var(--success); }
+.fin-note { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius);
+    background: var(--bg-tertiary); font-size: 12.5px; white-space: pre-wrap; }
+@media (max-width: 400px) { .fin-grid { grid-template-columns: 1fr; } .fin-card--gewinn { grid-column: 1; } }

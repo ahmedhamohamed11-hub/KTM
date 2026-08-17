@@ -5148,6 +5148,32 @@
                 inp.addEventListener('input', upd); upd(); inp.focus(); inp.select();
             },
 
+            // Freie Notiz + zusaetzliche Ausgaben zur Finanzuebersicht eines Projekts.
+            // Fuer alles, was nicht automatisch aus Angeboten/Rechnungen kommt -
+            // z. B. eine spontane Zusatzausgabe oder ein Vermerk zum Auftrag.
+            async openProjectFinanceNote(projectId) {
+                const proj = await db.get('projects', projectId);
+                if (!proj) return;
+                const modal = showModal('Finanzen – Notiz', `
+                    <div class="form-group">
+                        <label>Zusätzliche Ausgaben (€)</label>
+                        <input type="number" step="0.01" min="0" id="pfCost" value="${Number(proj.otherCosts) || 0}">
+                        <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px;">Fließt in den Gewinn dieses Projekts ein, z. B. Anfahrt, Entsorgung, Sonderfracht.</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Notiz</label>
+                        <textarea id="pfNote" rows="4" placeholder="z. B. Grund für Nachlass, offene Absprache mit dem Kunden ...">${escapeHtml(proj.financeNote || '')}</textarea>
+                    </div>`,
+                    async (overlay) => {
+                        proj.otherCosts = parseFloat(overlay.querySelector('#pfCost').value) || 0;
+                        proj.financeNote = overlay.querySelector('#pfNote').value.trim();
+                        await db.put('projects', proj);
+                        overlay.remove();
+                        showToast('Finanzen gespeichert.', 'success');
+                        app.reloadProject(projectId);
+                    });
+            },
+
             // ===== Bauart bei vorhandenen Materialien nachtragen =====
             // Manuell ausloesbar aus dem Schnellrechner. Gleiche Logik wie die
             // Startmigration, aber ohne Flag - laesst sich beliebig oft ausfuehren.
