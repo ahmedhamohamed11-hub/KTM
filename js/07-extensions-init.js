@@ -1454,25 +1454,29 @@
                 const positions = [
                     mkPos(ig, 1, 'Stk'),
                     mkPos(ag, 1, 'Stk'),
-                    ...(() => {
+                    ...(await (async () => {
                         // Zwei Leitungen je Geraet: Fluessig + Gas, Dimension nach Leistung
                         const kw = parseFloat(String(ig.size || '').replace(',', '.')) || 0;
                         const d = this._rohrDim(kw, ig.manufacturer, ig.series);
                         const normS = v => String(v || '').replace(/[\u2033"']/g, '').trim();
                         const rohr = dim => mats.find(m => m.category === 'Kupfer & Rohrsysteme'
                             && normS(m.size) === dim && Number(m.sellingPrice) > 0);
-                        return [d.fluessig, d.gas].map(dim => {
-                            const m = rohr(dim);
-                            const preis = m ? matUnitPrice(m, 'm') : (dim === '1/4' ? 7.1 : dim === '3/8' ? 8.6 : 11.5);
-                            return mkPos(m, D.len, 'm', `Kupferrohr isoliert ${dim}"`, preis);
-                        });
-                    })(),
-                    kommu  ? mkPos(kommu,  D.len, 'm', 'Kommunikationskabel', D.kommupreis) : mkPos(null, D.len, 'm', 'Kommunikationskabel', D.kommupreis),
-                    strom  ? mkPos(strom,  D.len, 'm', 'Stromzuleitung')                    : mkPos(null, D.len, 'm', 'Stromzuleitung', 2.5),
-                    kond   ? mkPos(kond,   D.len, 'm', 'Kondensatschlauch', D.kondpreis)    : mkPos(null, D.len, 'm', 'Kondensatschlauch', D.kondpreis),
-                    kanal  ? mkPos(kanal,  D.len, 'm', 'Kabelkanal')                        : mkPos(null, D.len, 'm', 'Kabelkanal', 9),
-                    konsol ? mkPos(konsol, 1, 'Set', 'Wandkonsole / Standfuß Außengerät')   : mkPos(null, 1, 'Set', 'Wandkonsole / Standfuß Außengerät', 38),
-                    klein  ? mkPos(klein,  1, 'Psch', 'Kleinmaterial (Dübel, Schellen, Dichtband)') : mkPos(null, 1, 'Psch', 'Kleinmaterial (Dübel, Schellen, Dichtband)', 45),
+                        const out = [];
+                        for (const dim of [d.fluessig, d.gas]) {
+                            const m = rohr(dim) || await this.ensureCatalogMaterial({
+                                name: `Kupferrohr isoliert ${dim}"`, category: 'Kupfer & Rohrsysteme', unit: 'm',
+                                price: dim === '1/4' ? 7.1 : dim === '3/8' ? 8.6 : 11.5
+                            });
+                            out.push(mkPos(m, D.len, 'm'));
+                        }
+                        return out;
+                    })()),
+                    mkPos(kommu  || await this.ensureCatalogMaterial({ name: 'Kommunikationskabel', category: 'Elektroinstallation', unit: 'm', price: D.kommupreis || 2.2 }), D.len, 'm'),
+                    mkPos(strom  || await this.ensureCatalogMaterial({ name: 'Stromzuleitung',       category: 'Elektroinstallation', unit: 'm', price: 2.5 }), D.len, 'm'),
+                    mkPos(kond   || await this.ensureCatalogMaterial({ name: 'Kondensatschlauch',     category: 'Kondensat',          unit: 'm', price: D.kondpreis || 1.8 }), D.len, 'm'),
+                    mkPos(kanal  || await this.ensureCatalogMaterial({ name: 'Kabelkanal',            category: 'Kabelkanäle',        unit: 'm', price: 9 }), D.len, 'm'),
+                    mkPos(konsol || await this.ensureCatalogMaterial({ name: 'Wandkonsole / Standfuß Außengerät', category: 'Befestigung & Montage', unit: 'Set', price: 38 }), 1, 'Set'),
+                    mkPos(klein  || await this.ensureCatalogMaterial({ name: 'Kleinmaterial (Dübel, Schellen, Dichtband)', category: 'Befestigung & Montage', unit: 'Psch', price: 45 }), 1, 'Psch'),
                 ].filter(p => Number(p.quantity) > 0);
                 positions.push(...await this._montagePositionen(1, D.len));
 
@@ -2962,7 +2966,12 @@
                 // Arbeitsleistung steht NICHT in der Positionstabelle, sondern als
                 // eigene Zeile nach dem Rabatt im Summenblock.
                 const _istArbeit = p => (typeof isLaborPos === 'function') ? isLaborPos(p) : false;
-                const rows = (offer.positions || []).filter(p => !_istArbeit(p)).map((p, i) => {
+                // Zusammengefuehrte Positionen (gleiche materialId+Einheit -> eine Zeile,
+                // Mengen addiert) statt der rohen offer.positions - behebt doppelte
+                // Zeilen wie zwei "Kabelkanal"-Eintraege mit unterschiedlichem Preis.
+                const _RM = (typeof recomputeOffer === 'function') ? recomputeOffer(offer) : null;
+                const _quellPositionen = _RM ? _RM.positions : (offer.positions || []);
+                const rows = _quellPositionen.filter(p => !_istArbeit(p)).map((p, i) => {
                     const disc = Number(p.discount) || 0;
                     const unit = (typeof posDisplayPrice === 'function') ? posDisplayPrice(p, offer) : (Number(p.price) || 0);
                     const lineTotal = unit * (Number(p.quantity) || 0) * (1 - disc / 100);
@@ -3002,7 +3011,7 @@
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(9.2);
                 doc.setTextColor(...PDF_INK);
-                const _R = recomputeOffer(offer);
+                const _R = _RM || recomputeOffer(offer);
                 const summaryRows = [];
                 // Positionen sind Endpreise inkl. USt. -> keine Steuerzeile.
                 //   Zwischensumme Material - Rabatt + Arbeitsleistung = Gesamt
@@ -3803,7 +3812,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', equipment: 'cards', maintenance: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -3820,6 +3829,7 @@
                     case 'katalog': this.renderKatalog(param); break;
                     case 'invoices': renderInvoices(); break;
                     case 'finanzuebersicht': renderFinanceOverview(); break;
+                    case 'katalogDuplikate': renderKatalogDuplikate(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
@@ -4307,6 +4317,47 @@
                     .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
             },
 
+            // WURZEL-FIX (Problem 2): jede Stuecklisten-Position bekommt eine echte
+            // Katalog-Referenz statt "materialId: null". Vorher liess jeder der drei
+            // Stuecklisten-Wege (Kuehllast-Rechner, Direkt-Konfiguration, Multi-Split)
+            // bei fehlendem Katalogtreffer eine Position OHNE materialId entstehen - mit
+            // je eigenem fest verdrahteten Richtwert. Dieselbe Positionsart konnte dadurch
+            // zu unterschiedlichen Zeitpunkten mit unterschiedlichem Preis UND ohne
+            // Artikelnummer/Marke im Untertitel im selben Angebot landen ("Kabelkanal
+            // 100mm2" 2x mit 17,28 und 14,40).
+            //
+            // ensureCatalogMaterial sucht zuerst nach einem vorhandenen Material mit
+            // exakt demselben Namen (case-insensitiv) - findet es eins, wird IMMER
+            // dessen aktueller Preis verwendet, nie der Richtwert. Gibt es keins, wird
+            // GENAU EINMAL ein neues Material mit dem Richtwert als Startpreis angelegt.
+            // Ab dann hat jede folgende Position denselben materialId, denselben Preis,
+            // dieselbe Artikelnummer/Marke im Untertitel - und laesst sich in
+            // recomputeOffer() zuverlaessig zu einer Zeile zusammenfassen.
+            _matEnsureCache: null,
+            async ensureCatalogMaterial({ name, category, unit, price, bauart }) {
+                const key = String(name || '').trim().toLowerCase();
+                if (!key) return null;
+                if (!this._matEnsureCache) {
+                    this._matEnsureCache = new Map();
+                    for (const m of await db.getAll('materials')) {
+                        const k = String(m.name || '').trim().toLowerCase();
+                        if (k && !this._matEnsureCache.has(k)) this._matEnsureCache.set(k, m);
+                    }
+                }
+                const vorhanden = this._matEnsureCache.get(key);
+                if (vorhanden) return vorhanden;
+                const neu = {
+                    manufacturer: '', series: 'Standard', category: category || 'Zubehör',
+                    bauart: bauart || 'Zubehör', name: String(name).trim(),
+                    articleNumber: '', size: '', sellingPrice: Math.round((Number(price) || 0) * 100) / 100,
+                    unit: unit || 'Stk', notes: 'Automatisch aus dem Schnellrechner angelegt – Preis prüfen'
+                };
+                const id = await db.add('materials', neu);
+                neu.id = id;
+                this._matEnsureCache.set(key, neu);
+                return neu;
+            },
+
             // Vorschau der Stueckliste: jede Position einzeln, Preis aenderbar.
             // Geaenderte Preise werden als neuer Standard gemerkt - bei Katalog-
             // artikeln direkt am Material, sonst als gespeicherter Richtwert.
@@ -4341,11 +4392,17 @@
                     </div>`;
                 const rows = positions.map(rowHtml).join('');
 
+                // Problem 2c: gleicher Name, aber unterschiedliche Katalog-Referenz -
+                // NICHT still vermischen, sondern sichtbar warnen.
+                const konflikte = (typeof detectPositionNameConflicts === 'function')
+                    ? detectPositionNameConflicts(positions) : [];
+
                 const html = `
                     <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;">
                         ${escapeHtml(meta.titel || '')}<br>
                         Preise sind Endpreise inkl. 20 % USt. und lassen sich hier ändern.
                     </div>
+                    ${konflikte.length ? `<div class="sl-warn">⚠️ ${konflikte.length} Artikelname${konflikte.length > 1 ? 'n' : ''} mit unterschiedlichen Katalog-Einträgen: ${konflikte.map(k => `„${escapeHtml(k.name)}“ (${k.preise.map(p => formatCurrency(p)).join(' / ')})`).join(', ')}. Bitte prüfen, ob das zwei verschiedene Artikel sind oder im Katalog zusammengeführt werden sollten.</div>` : ''}
                     <div class="sl-list" id="slList">${rows}</div>
                     <button type="button" class="sl-add-btn" id="slAddBtn">+ Position hinzufügen</button>
                     <div class="sl-addform" id="slAddForm" hidden>
@@ -4631,27 +4688,27 @@
                     const positions = [];
                     for (const s of spec) {
                         if (s.qty <= 0) continue;
-                        const hit = findCat(s.key, s.cat, s.dim);
-                        // Gemerkter Richtwert schlaegt den fest verdrahteten Fallback.
-                        const saved = hit ? null : Number(await getSetting(this._posKey(s.label), ''));
-                        // WICHTIG: bei Rollen-/Bund-/Stangenware ist sellingPrice der Preis
-                        // des ganzen Bundes. matUnitPrice rechnet auf die Meter-Einheit
-                        // herunter - sonst wird der Bundpreis je Meter berechnet.
-                        // matUnitPrice liefert bereits den Endpreis inkl. 20 %.
-                        // Richtwerte und gemerkte Preise sind ebenfalls Endpreise.
-                        const unitPrice = hit ? matUnitPrice(hit, s.unit) : (saved > 0 ? saved : s.fallback);
+                        let hit = findCat(s.key, s.cat, s.dim);
+                        if (!hit) {
+                            // Gemerkter Richtwert schlaegt den fest verdrahteten Fallback -
+                            // beides landet als STARTPREIS in ensureCatalogMaterial, danach
+                            // zaehlt nur noch der am Material gepflegte Preis.
+                            const saved = Number(await getSetting(this._posKey(s.label), ''));
+                            hit = await this.ensureCatalogMaterial({
+                                name: s.label, category: s.cat, unit: s.unit,
+                                price: saved > 0 ? saved : s.fallback
+                            });
+                        }
                         positions.push({
-                            name: hit ? hit.name : s.label,
+                            name: hit.name,
                             menge: Math.round(s.qty * 10) / 10,
-                            einheit: hit ? (hit.unit || s.unit) : s.unit,
-                            preis: unitPrice,
-                            ausKatalog: !!hit,
-                            // Verknuepfung zum Katalogartikel mitfuehren, damit die Liste
-                            // 1:1 als Angebotspositionen uebernommen werden kann.
-                            materialId: hit ? hit.id : null,
-                            manufacturer: hit ? (hit.manufacturer || '') : '',
-                            articleNumber: hit ? (hit.articleNumber || '') : '',
-                            category: hit ? (hit.category || '') : ''
+                            einheit: hit.unit || s.unit,
+                            preis: matUnitPrice(hit, s.unit),
+                            ausKatalog: true,
+                            materialId: hit.id,
+                            manufacturer: hit.manufacturer || '',
+                            articleNumber: hit.articleNumber || '',
+                            category: hit.category || ''
                         });
                     }
 
@@ -5083,21 +5140,22 @@
                 const normS = v => String(v || '').replace(/[\u2033"']/g, '').trim();
                 const rohrMat = dim => mats.find(m => m.category === 'Kupfer & Rohrsysteme'
                     && normS(m.size) === dim && Number(m.sellingPrice) > 0);
-                const findM = keys => mats.find(m => keys.some(k => (m.name || '').toLowerCase().includes(k))
-                    && Number(m.sellingPrice) > 0);
 
                 const pos = [];
-                const mk = (m, qty, unit, name, preis) => ({
-                    materialId: m?.id || null, name: name || m?.name || '',
-                    manufacturer: m?.manufacturer || '', articleNumber: m?.articleNumber || '',
-                    category: m?.category || '', bauart: matBauart(m) || '',
+                // Endpreis inkl. 20% aus dem Material - materialId ist jetzt IMMER gesetzt
+                // (ensureCatalogMaterial legt bei Bedarf ein neues Material an statt eine
+                // Position ohne Katalog-Referenz zu erzeugen - siehe Problem 2).
+                const mk = (m, qty, unit) => ({
+                    materialId: m.id, name: m.name,
+                    manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
+                    category: m.category || '', bauart: matBauart(m) || '',
                     unit, quantity: Math.round(qty * 10) / 10,
-                    price: preis != null ? preis : matUnitPrice(m, unit),
+                    price: matUnitPrice(m, unit),
                     priceIncludesVat: true, discount: 0
                 });
 
                 // Innengeraete
-                M.rows.forEach(r => { if (r.ig) pos.push(mk(r.ig, 1, 'Stk')); });
+                for (const r of M.rows) if (r.ig) pos.push(mk(r.ig, 1, 'Stk'));
                 pos.push(mk(M.ag, 1, 'Stk'));
 
                 // Rohre: je Innengeraet Fluessig + Gas, nach Dimension summiert
@@ -5108,26 +5166,31 @@
                     const d = this._rohrDim(kw, r.ig.manufacturer, r.ig.series);
                     [d.fluessig, d.gas].forEach(dim => { dims[dim] = (dims[dim] || 0) + (Number(r.len) || 0); });
                 });
-                Object.entries(dims).forEach(([dim, meter]) => {
-                    const m = rohrMat(dim);
-                    const preis = m ? matUnitPrice(m, 'm') : (dim === '1/4' ? 8.52 : dim === '3/8' ? 10.32 : 13.8);
-                    pos.push(mk(m, meter, 'm', `Kupferrohr isoliert ${dim}"`, preis));
-                });
+                for (const [dim, meter] of Object.entries(dims)) {
+                    const m = rohrMat(dim) || await this.ensureCatalogMaterial({
+                        name: `Kupferrohr isoliert ${dim}"`, category: 'Kupfer & Rohrsysteme', unit: 'm',
+                        price: dim === '1/4' ? 8.52 : dim === '3/8' ? 10.32 : 13.8
+                    });
+                    pos.push(mk(m, meter, 'm'));
+                }
 
-                // Kabel, Kondensat, Kanal - Gesamtlaenge ueber alle Innengeraete
+                // Kabel, Kondensat, Kanal - Gesamtlaenge ueber alle Innengeraete. Exakter
+                // Name statt loser Stichwortsuche - eine breite Suche wie frueher
+                // (['kommunikationskabel','steuerleitung']) konnte faelschlich ein ganz
+                // anderes Kabelprodukt treffen und dessen Marke/Artikelnummer anzeigen.
                 const L = M.totalLen;
-                const zeile = (keys, name, fallback) => {
-                    const m = findM(keys);
-                    pos.push(mk(m, L, 'm', name, m ? matUnitPrice(m, 'm') : fallback));
+                const zeile = async (name, category, fallback) => {
+                    const m = await this.ensureCatalogMaterial({ name, category, unit: 'm', price: fallback });
+                    pos.push(mk(m, L, 'm'));
                 };
-                zeile(['kommunikationskabel', 'steuerleitung'], 'Kommunikationskabel', 2.82);
-                zeile(['stromkabel', 'zuleitung', 'nym'], 'Stromzuleitung', 3.48);
-                zeile(['kondensat'], 'Kondensatschlauch', 3.24);
-                zeile(['kabelkanal'], 'Kabelkanal', 12);
-                const kons = findM(['konsole', 'wandhalter', 'standfuß']);
-                pos.push(mk(kons, 1, 'Set', 'Wandkonsole / Standfuß Außengerät', kons ? matUnitPrice(kons, 'Set') : 51.6));
-                const klein = findM(['kleinmaterial', 'dübel', 'schellen']);
-                pos.push(mk(klein, 1, 'Psch', 'Kleinmaterial', klein ? matUnitPrice(klein, 'Psch') : 54));
+                await zeile('Kommunikationskabel', 'Elektroinstallation', 2.82);
+                await zeile('Stromzuleitung', 'Elektroinstallation', 3.48);
+                await zeile('Kondensatschlauch', 'Kondensat', 3.24);
+                await zeile('Kabelkanal', 'Kabelkanäle', 12);
+                const kons = await this.ensureCatalogMaterial({ name: 'Wandkonsole / Standfuß Außengerät', category: 'Befestigung & Montage', unit: 'Set', price: 51.6 });
+                pos.push(mk(kons, 1, 'Set'));
+                const klein = await this.ensureCatalogMaterial({ name: 'Kleinmaterial', category: 'Befestigung & Montage', unit: 'Psch', price: 54 });
+                pos.push(mk(klein, 1, 'Psch'));
 
                 pos.push(...await this._montagePositionen(M.units, L));
 
@@ -5341,6 +5404,50 @@
                     showToast('Zurückgesetzt auf den berechneten Wert.', 'success');
                     app.navigate('finanzuebersicht');
                 });
+            },
+
+            // Katalog-Dubletten zusammenfuehren (Problem 2d): alle Verweise auf die
+            // zu entfernenden Materialien werden auf den gewaehlten Eintrag umgebogen -
+            // in bestehenden Angeboten (positions[].materialId) UND in Projektmaterialien
+            // (projectMaterials.materialId) - erst danach werden die Dubletten geloescht.
+            async mergeCatalogDuplicates(groupIndex) {
+                const group = (window.__dupGroups || [])[groupIndex];
+                if (!group) return;
+                const form = document.querySelector(`input[name="dupKeep${groupIndex}"]:checked`);
+                if (!form) { showToast('Bitte einen Eintrag zum Behalten auswählen.', 'error'); return; }
+                const keepId = form.value;
+                const removeIds = group.map(m => String(m.id)).filter(id => id !== String(keepId));
+                if (!removeIds.length) { showToast('Nichts zu tun.', 'info'); return; }
+
+                const ok = await showConfirm(
+                    `${removeIds.length} Katalogeintrag${removeIds.length > 1 ? 'e' : ''} werden gelöscht und alle Angebote/Projekte auf den ausgewählten Eintrag umgestellt. Fortfahren?`,
+                    { title: 'Dubletten zusammenführen', okText: 'Zusammenführen' });
+                if (!ok) return;
+
+                let angebotePositionen = 0, angeboteAnzahl = 0, pmAnzahl = 0;
+                const alleAngebote = await db.getAll('offers');
+                for (const o of alleAngebote) {
+                    let geaendert = false;
+                    for (const p of (o.positions || [])) {
+                        if (p.materialId != null && removeIds.includes(String(p.materialId))) {
+                            p.materialId = keepId;
+                            geaendert = true; angebotePositionen++;
+                        }
+                    }
+                    if (geaendert) { await db.put('offers', o); angeboteAnzahl++; }
+                }
+                const allePm = await db.getAll('projectMaterials');
+                for (const pm of allePm) {
+                    if (pm.materialId != null && removeIds.includes(String(pm.materialId))) {
+                        pm.materialId = keepId;
+                        await db.put('projectMaterials', pm);
+                        pmAnzahl++;
+                    }
+                }
+                for (const id of removeIds) await db.delete('materials', id).catch(() => {});
+
+                showToast(`Zusammengeführt: ${angebotePositionen} Position${angebotePositionen === 1 ? '' : 'en'} in ${angeboteAnzahl} Angebot${angeboteAnzahl === 1 ? '' : 'en'}, ${pmAnzahl} Projektmaterial${pmAnzahl === 1 ? '' : 'ien'} umgestellt.`, 'success');
+                app.navigate('katalogDuplikate');
             },
 
             // ===== Bauart bei vorhandenen Materialien nachtragen =====

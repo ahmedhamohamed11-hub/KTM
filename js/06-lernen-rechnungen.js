@@ -91,6 +91,52 @@
             await setSetting('financeManualEntries', JSON.stringify(list));
         }
 
+        // ===== Problem 2d: Katalog-Dublettenpruefung =====
+        // Listet alle Materialien mit gleichem oder sehr aehnlichem Namen (Schreib-
+        // weisen wie "4x1,5" vs "4*1,5" werden gleichgesetzt), aber unterschiedlicher
+        // ID oder unterschiedlichem Preis. Zusammenfuehren verschiebt alle Verweise
+        // (Angebotspositionen, Projektmaterialien) auf den gewaehlten Eintrag und
+        // loescht die uebrigen.
+        function renderKatalogDuplikate() {
+            (async () => {
+                const materials = await db.getAll('materials');
+                const norm = (typeof normalizeArtName === 'function') ? normalizeArtName : (s => String(s || '').toLowerCase().trim());
+                const groups = new Map();
+                for (const m of materials) {
+                    const key = norm(m.name);
+                    if (!key) continue;
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(m);
+                }
+                const dupGroups = [...groups.values()].filter(g => g.length > 1);
+
+                contentArea.innerHTML = `
+                    <div class="fo-wrap">
+                        <div class="fo-hint" style="margin-bottom:16px;">
+                            Artikel mit gleichem oder sehr ähnlichem Namen, aber unterschiedlicher Katalog-ID.
+                            Schreibweisen wie „4x1,5“ und „4×1,5“ zählen dabei als gleich.
+                            ${dupGroups.length ? `<strong>${dupGroups.length} Gruppe${dupGroups.length > 1 ? 'n' : ''} gefunden.</strong>` : '<strong>Keine Dubletten gefunden.</strong>'}
+                        </div>
+                        ${dupGroups.map((g, gi) => `
+                            <div class="dup-group">
+                                <div class="dup-group-name">${escapeHtml(g[0].name)} <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(${g.length} Einträge)</span></div>
+                                ${g.map((m, mi) => `
+                                    <div class="dup-item">
+                                        <label>
+                                            <input type="radio" name="dupKeep${gi}" value="${escapeHtml(String(m.id))}" ${mi === 0 ? 'checked' : ''}>
+                                            <span>${escapeHtml(m.manufacturer || '–')}${m.articleNumber ? ' · ' + escapeHtml(m.articleNumber) : ''} <small>(${escapeHtml(m.category || '')}${m.size ? ' · ' + escapeHtml(m.size) : ''})</small></span>
+                                        </label>
+                                        <strong>${formatCurrency(Number(m.sellingPrice) || 0)}</strong>
+                                    </div>`).join('')}
+                                <div class="dup-actions">
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="app.mergeCatalogDuplicates(${gi})">Ausgewählten Eintrag behalten, Rest zusammenführen</button>
+                                </div>
+                            </div>`).join('')}
+                    </div>`;
+                window.__dupGroups = dupGroups;
+            })();
+        }
+
         function renderFinanceOverview() {
             (async () => {
                 const invoices = await db.getAll('invoices');

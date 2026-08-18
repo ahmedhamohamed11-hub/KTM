@@ -932,8 +932,90 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         // Rechenreihenfolge: Rabatt auf Netto, dann MwSt pro Position.
         // Klimageraete (Klimaanlagen, Klimageraete, Innen/Aussengeraete): immer 20% MwSt.
         // Alle anderen Positionen: MwSt-Rate aus dem Angebot (vatRate), wenn vatEnabled.
+        // ===== Problem 2: doppelte Positionen zusammenfassen (Wurzel-Fix) =====
+        // Positionen mit GLEICHER materialId und GLEICHER Einheit werden zu einer
+        // Zeile zusammengefasst: Mengen addiert, der Zeilenpreis als mengengewichteter
+        // Durchschnitt aus den Original-Zeilensummen (Preis*Menge*(1-Rabatt%)) neu
+        // berechnet - der Zeilen-GESAMTBETRAG bleibt dadurch exakt gleich, nur als
+        // EINE Zeile statt mehrerer mit unterschiedlichem Anzeigepreis. Beschreibungen
+        // (z. B. Raumnamen) werden zusammengehaengt, Duplikate darin entfernt.
+        // Positionen OHNE materialId werden NIE automatisch gemischt - dafuer gibt es
+        // detectPositionNameConflicts() als sichtbare Warnung statt stiller Annahme.
+        function mergeOfferPositions(positions) {
+            const list = positions || [];
+            const groups = new Map();
+            const einzeln = [];
+            for (const p of list) {
+                if (p.materialId == null || p.materialId === '') { einzeln.push(p); continue; }
+                const key = `${String(p.materialId)}|${p.unit || ''}`;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(p);
+            }
+            const out = [];
+            for (const [, group] of groups) {
+                if (group.length === 1) { out.push(group[0]); continue; }
+                const qty = group.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
+                const totalNet = group.reduce((s, p) =>
+                    s + (Number(p.price) || 0) * (Number(p.quantity) || 0) * (1 - (Number(p.discount) || 0) / 100), 0);
+                const price = qty > 0 ? totalNet / qty : 0;
+                const desc = [...new Set(group.flatMap(p =>
+                    String(p.description || '').split(',').map(s => s.trim()).filter(Boolean)))].join(', ');
+                out.push({
+                    ...group[0],
+                    quantity: Math.round(qty * 100) / 100,
+                    price: Math.round(price * 100) / 100,
+                    discount: 0,
+                    description: desc,
+                    _merged: group.length
+                });
+            }
+            return [...out, ...einzeln];
+        }
+        window.mergeOfferPositions = mergeOfferPositions;
+
+        // Sichtbare Warnung statt stiller Vermischung: gleicher NAME, aber
+        // unterschiedliche materialId (oder unterschiedlicher Preis ohne materialId) -
+        // typischerweise ein Katalog-Duplikat oder ein Tippfehler beim Anlegen.
+        function detectPositionNameConflicts(positions) {
+            const byName = new Map();
+            for (const p of (positions || [])) {
+                const key = String(p.name || '').trim().toLowerCase();
+                if (!key) continue;
+                if (!byName.has(key)) byName.set(key, []);
+                byName.get(key).push(p);
+            }
+            const warnings = [];
+            for (const [, group] of byName) {
+                if (group.length < 2) continue;
+                const ids = new Set(group.map(p => p.materialId != null ? String(p.materialId) : `__frei_${Number(p.price).toFixed(2)}`));
+                if (ids.size > 1) {
+                    warnings.push({
+                        name: group[0].name, count: group.length,
+                        preise: [...new Set(group.map(p => Number(p.price) || 0))]
+                    });
+                }
+            }
+            return warnings;
+        }
+        window.detectPositionNameConflicts = detectPositionNameConflicts;
+
+        // Normalisierung fuer den Katalog-Dublettenvergleich: Schreibweisen wie
+        // "4x1,5" / "4*1,5" / "4×1,5" sollen als gleich gelten, ebenso
+        // Gross-/Kleinschreibung und mehrfache Leerzeichen.
+        function normalizeArtName(s) {
+            return String(s || '').toLowerCase()
+                .replace(/[×*]/g, 'x')
+                .replace(/[\u2033"'′″]/g, '')   // Zoll-/Anfuehrungszeichen
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+        window.normalizeArtName = normalizeArtName;
+
         function recomputeOffer(offer) {
-            const positions = offer.positions || [];
+            // Zusammengefuehrte Positionen sind ab hier die massgebliche Liste - fuer
+            // die Summenberechnung UND fuer jede Anzeige (PDF, Diagnose, Liste), die
+            // R.positions statt offer.positions direkt verwendet.
+            const positions = mergeOfferPositions(offer.positions || []);
             const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
             const vatBase = offer.vatEnabled !== false ? (Number(offer.vatRate) || 0.20) : 0;
 
@@ -989,7 +1071,9 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
 
             return { gross, net, posDiscount, rate, discountEnabled, globalDiscount, netAfter,
                      vatRate, vatAmount, total,
-                     netMaterial, netLabor, vatLabor, grossMaterial, grossLabor, grossDiscount };
+                     netMaterial, netLabor, vatLabor, grossMaterial, grossLabor, grossDiscount,
+                     positions,
+                     nameConflicts: detectPositionNameConflicts(offer.positions || []) };
         }
 
         // Baut den Anzeigenamen eines Kunden inkl. Anrede + Titel zusammen.
@@ -1113,7 +1197,9 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const kundeZahlt = hatVereinbart ? Number(offer.agreedPrice) : R.total;
             const salesEffective = hatVereinbart ? Number(offer.agreedPrice) * nettoAnteil : R.netAfter;
 
-            const positions = (offer.positions || []).filter(p => p && (Number(p.quantity) || 0) > 0);
+            // R.positions ist bereits zusammengefuehrt (Problem 2) - dieselben Zeilen,
+            // die auch im PDF und in der Angebotsliste erscheinen.
+            const positions = R.positions.filter(p => p && (Number(p.quantity) || 0) > 0);
             let ekIst = 0, ekKalk = 0, laborSales = 0, missing = 0, kalkPos = 0;
             const lines = [];
             for (const it of positions) {
