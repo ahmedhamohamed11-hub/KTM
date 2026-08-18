@@ -3622,6 +3622,51 @@
                         }
                     }
                 } catch (e) { console.warn('Bauart-Migration fehlgeschlagen (nicht kritisch):', e); }
+
+                // Einmalige Migration: gespeicherte Angebotssummen (totalPrice/subtotal/
+                // vatAmount) korrigieren, die ueber den alten "Angebot erstellen"-Bildschirm
+                // entstanden sind. Dessen computeOfferTotals() hat Positionspreise (bereits
+                // brutto, priceIncludesVat) faelschlich als netto behandelt und die USt ein
+                // zweites Mal aufgeschlagen - Ergebnis 44 % statt 20 % Aufschlag. Die
+                // Ursache ist behoben; hier werden nur noch die dadurch bereits falsch
+                // gespeicherten Datensaetze nachgezogen. Ansichten, die ohnehin live per
+                // recomputeOffer() rechnen (Liste, Diagnose, PDF), waren davon nicht
+                // betroffen - hier geht es um Stellen, die den gespeicherten Wert direkt
+                // lesen (Dashboard-Summen, Excel-Export, Auftrags-Trichter).
+                try {
+                    const migT = await getSetting('offerTotalsFixV144', '');
+                    if (!migT) {
+                        const allOffers = await db.getAll('offers');
+                        let geaendert = 0;
+                        const log = [];
+                        for (const o of allOffers) {
+                            if (!o || !Array.isArray(o.positions) || !o.positions.length) continue;
+                            if (typeof recomputeOffer !== 'function') break;
+                            const R = recomputeOffer(o);
+                            const alt = Number(o.totalPrice) || 0;
+                            const neu = Number(R.total) || 0;
+                            // Nur echte Abweichungen korrigieren (> 1 Cent), Rundungsrauschen ignorieren
+                            if (Math.abs(alt - neu) > 0.01) {
+                                log.push(`${o.offerNumber || o.id}: ${alt.toFixed(2)} € → ${neu.toFixed(2)} €`);
+                                o.subtotal = R.net;
+                                o.discountAmount = R.globalDiscount;
+                                o.netAfterDiscount = R.netAfter;
+                                o.vatAmount = R.vatAmount;
+                                o.totalPrice = R.total;
+                                await db.put('offers', o);
+                                geaendert++;
+                            }
+                        }
+                        await setSetting('offerTotalsFixV144', '1');
+                        if (geaendert > 0) {
+                            console.log(`Angebotssummen-Migration v144: ${geaendert} Angebot(e) korrigiert:\n${log.join('\n')}`);
+                            showToast(`${geaendert} Angebotssumme${geaendert > 1 ? 'n' : ''} korrigiert (doppelte USt entfernt).`, 'success');
+                        } else {
+                            console.log('Angebotssummen-Migration v144: keine Abweichungen gefunden.');
+                        }
+                    }
+                } catch (e) { console.warn('Angebotssummen-Migration fehlgeschlagen (nicht kritisch):', e); }
+
                 // QR-Code einer Anlage gescannt? -> direkt öffnen
                 // Splash SOFORT ausblenden - egal was danach kommt, der Nutzer
                 // sieht die App und bleibt nicht im Ladebildschirm hängen.
@@ -5596,99 +5641,6 @@
                 this.navigate('customers');
             },
 
-            async openProjectModal(id = null) {
-                const project = id ? await db.get('projects', id) : null;
-                const customers = await db.getAll('customers');
-                const statusOptions = ['Neu','Besichtigung offen','Besichtigt','Angebot offen','Angebot gesendet','Auftrag erhalten','Material bestellt','Montage geplant','Montage läuft','Fertig','Archiv'];
-                const modal = showModal(
-                    id ? 'Projekt bearbeiten' : 'Neues Projekt',
-                    `
-                        <div class="form-group"><label>Projekttitel *</label><input type="text" id="projTitle" value="${escapeHtml(project?.title || '')}"></div>
-                        <div class="form-group"><label>Kunde</label>
-                            <select id="projCustomer">
-                                <option value="">-- Kunde auswählen --</option>
-                                ${customers.map(c => `<option value="${c.id}" ${project?.customerId === c.id ? 'selected' : ''}>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="form-group"><label>Baustellenadresse (falls abweichend)</label><input type="text" id="projSiteAddress" value="${escapeHtml(project?.siteAddress || '')}" placeholder="Straße, PLZ Ort"></div>
-                        <div class="form-group"><label>Status</label>
-                            <select id="projStatus">${statusOptions.map(s => `<option value="${s}" ${project?.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-                        </div>
-                        <div class="form-group"><label>Notizen</label><textarea id="projNotes" rows="3">${escapeHtml(project?.notes || '')}</textarea></div>
-                    `,
-                    async (overlay) => {
-                        const data = {
-                            title: overlay.querySelector('#projTitle').value.trim(),
-                            customerId: parseId(overlay.querySelector('#projCustomer').value),
-                            siteAddress: overlay.querySelector('#projSiteAddress').value.trim(),
-                            status: overlay.querySelector('#projStatus').value,
-                            notes: overlay.querySelector('#projNotes').value.trim(),
-                        };
-                        if (!data.title) { showToast('Titel ist erforderlich.', 'error'); return; }
-                        if (id) {
-                            data.id = id;
-                            data.createdAt = project.createdAt;
-                            await db.put('projects', data);
-                        } else {
-                            const newId = await db.add('projects', data);
-                            data.id = newId;
-                        }
-                        overlay.remove();
-                        showToast(id ? 'Projekt aktualisiert.' : 'Projekt erstellt.', 'success');
-                        this.navigate('projects', data.id);
-                    }
-                );
-            },
-
-            async deleteProject(id) {
-                if (!await showConfirm('Projekt und alle zugehörigen Räume, Bilder und Angebote wirklich löschen?')) return;
-                try {
-                    const rooms = await db.getByIndex('rooms', 'projectId', id);
-                    const images = await db.getByIndex('images', 'projectId', id);
-                    const offers = await db.getByIndex('offers', 'projectId', id);
-                    for (const r of rooms) await db.delete('rooms', r.id);
-                    for (const i of images) await db.delete('images', i.id);
-                    for (const o of offers) await db.delete('offers', o.id);
-                    await db.delete('projects', id);
-                    showToast('Projekt gelöscht.', 'info');
-                    this.navigate('projects');
-                } catch(e) {
-                    console.error('Löschen fehlgeschlagen:', e);
-                    showToast('Fehler beim Löschen.', 'error');
-                }
-            },
-
-            async openRoomModal(projectId) {
-                const modal = showModal(
-                    'Raum hinzufügen',
-                    `
-                        <div class="form-group"><label>Raumname</label><input type="text" id="roomName" placeholder="z.B. Wohnzimmer"></div>
-                        <div class="form-row">
-                            <div class="form-group"><label>Länge (m) *</label><input type="number" id="roomLength" step="0.1" min="0" placeholder="5.0"></div>
-                            <div class="form-group"><label>Breite (m) *</label><input type="number" id="roomWidth" step="0.1" min="0" placeholder="4.0"></div>
-                            <div class="form-group"><label>Höhe (m)</label><input type="number" id="roomHeight" step="0.1" min="0" value="2.5" placeholder="2.5"></div>
-                        </div>
-                    `,
-                    async (overlay) => {
-                        const data = {
-                            projectId,
-                            name: overlay.querySelector('#roomName').value.trim() || 'Unbenannt',
-                            length: parseFloat(overlay.querySelector('#roomLength').value) || 0,
-                            width: parseFloat(overlay.querySelector('#roomWidth').value) || 0,
-                            height: parseFloat(overlay.querySelector('#roomHeight').value) || 2.5,
-                        };
-                        if (data.length <= 0 || data.width <= 0) {
-                            showToast('Länge und Breite müssen größer als 0 sein.', 'error');
-                            return;
-                        }
-                        await db.add('rooms', data);
-                        overlay.remove();
-                        showToast('Raum hinzugefügt.', 'success');
-                        this.navigate('projects', projectId);
-                    }
-                );
-            },
-
             async deleteRoom(roomId, projectId) {
                 if (!await showConfirm('Raum löschen?')) return;
                 await db.delete('rooms', roomId);
@@ -5857,6 +5809,25 @@
                             image: images[0] || '',
                         };
                         if (!data.name) { showToast('Artikelname ist erforderlich.', 'error'); return; }
+
+                        // Sicherung gegen doppelte USt: Katalogpreise sind IMMER
+                        // Listenpreis netto (ausser priceIncludesVat ist bewusst gesetzt).
+                        // Haeufigster Fehler: der bereits im Angebot angezeigte Endpreis
+                        // (netto x 1,20) wird aus Versehen zurueck in dieses Feld getippt.
+                        // Erkennung: neuer Wert passt auf den Cent zum alten Wert x 1,20
+                        // bzw. x 1/1,20 - dann nachfragen statt stillschweigend speichern.
+                        if (mat && !data.priceIncludesVat && Number(mat.sellingPrice) > 0 && data.sellingPrice > 0) {
+                            const alt = Number(mat.sellingPrice);
+                            const neu = data.sellingPrice;
+                            const wirktBrutto = Math.abs(neu - alt * 1.2) < 0.02;
+                            const wirktSchonNetto = Math.abs(neu - alt / 1.2) < 0.02 && alt > neu;
+                            if (wirktBrutto) {
+                                const weiter = await showConfirm(
+                                    `<strong>${formatCurrency(neu)}</strong> entspricht genau dem bisherigen Listenpreis <strong>${formatCurrency(alt)}</strong> × 1,20 – das sieht nach einem bereits inkl. USt. berechneten Endpreis aus, kein Netto-Listenpreis.<br><br>Wirklich als neuen Listenpreis NETTO speichern? Sonst würde die App später nochmals 20 % aufschlagen.`,
+                                    { title: 'Preis prüfen', okText: `Ja, ${formatCurrency(neu)} ist netto`, cancelText: 'Abbrechen' });
+                                if (!weiter) return;
+                            }
+                        }
                         let savedId = id;
                         // WICHTIG: offer.positions[].category ist eine SNAPSHOT-Kopie vom
                         // Moment des Hinzufuegens - nicht live mit dem Material verknuepft.
@@ -6186,6 +6157,10 @@
         }
         return [...agg.values()].map(a => ({
             materialId: a.materialId, name: a.name, unit: a.unit, price: a.price,
+            // price kommt aus matUnitPrice()/gespeichertem Positionspreis - das ist
+            // IMMER der Endpreis inkl. 20 %. Ohne dieses Flag wurde der Betrag beim
+            // Summieren nochmals mit USt beaufschlagt (doppelte Steuer).
+            priceIncludesVat: true,
             quantity: Math.round(a.quantity * 100) / 100 || 1,
             manufacturer: a.manufacturer, articleNumber: a.articleNumber, category: a.category,
             description: (a.size ? a.size + (a.rooms.size ? ' · ' : '') : '') + [...a.rooms].join(', '),
@@ -6376,47 +6351,34 @@
     // Klimageräte (Kategorie Klimaanlagen/Klimageräte/Innengeräte/Außengeräte)
     // → immer 20% MwSt, unabhängig vom Angebots-Toggle.
     // Alles andere → MwSt-Rate aus dem Angebot-Toggle (0 wenn deaktiviert).
-    const KLIMA_CATS = new Set(['Klimageräte','Klimaanlagen','Klimageraete','Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
     function vatForPos(it) {
-        const cat = (it.category || '').trim();
-        if (KLIMA_CATS.has(cat)) return 0.20;   // Klimageräte: immer 20%
-        return offerSettings.vatEnabled ? (offerSettings.vatRate || 0) : 0;
+        // Zentrale Regel (wie in recomputeOffer): Material/Geraete immer 20 %,
+        // nur Arbeitsleistung folgt dem MwSt-Schalter des Angebots.
+        if (typeof posVatRate === 'function') {
+            return posVatRate(it, { vatEnabled: offerSettings.vatEnabled, vatRate: offerSettings.vatRate });
+        }
+        if (typeof isLaborPos === 'function' && !isLaborPos(it)) return 0.20;
+        return offerSettings.vatEnabled ? (Number(offerSettings.vatRate) || 0) : 0;
     }
 
     function computeOfferTotals() {
-        // Rechenreihenfolge: Rabatt auf Netto, dann MwSt pro Position drauf.
-        // Klimageraete: immer 20% MwSt | Rest: nach offerSettings-Toggle.
-        // Beispiel Netto 3.000, Rabatt 15%, Klima 20%:
-        //   3.000 - 450 = 2.550 Netto -> + 510 MwSt = 3.060 Brutto
-
-        // Schritt 1: Netto pro Position nach Positions-Rabatt
-        const netPerPos = selected.map(it =>
-            (Number(it.price) || 0) * (Number(it.quantity) || 0) * (1 - (Number(it.discount) || 0) / 100)
-        );
-        const grossSubtotal = selected.reduce((s, it) =>
-            s + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
-        const subtotal = netPerPos.reduce((s, v) => s + v, 0);
-        const posDiscountAmount = grossSubtotal - subtotal;
-
-        // Schritt 2: Gesamt-Rabatt auf Netto
-        const discountRateVal = offerSettings.discountEnabled ? (offerSettings.discountRate / 100) : 0;
-        const globalDiscountAmount = subtotal * discountRateVal;
-        const netAfterDiscount = subtotal - globalDiscountAmount;
-
-        // Schritt 3: MwSt pro Position (nach anteiligem Gesamt-Rabatt)
-        let vatAmount = 0;
-        selected.forEach((it, i) => {
-            const netLine = netPerPos[i] * (1 - discountRateVal);
-            vatAmount += netLine * vatForPos(it);
-        });
-
-        // Schritt 4: Brutto-Endbetrag
-        const total = netAfterDiscount + vatAmount;
-
+        // EINZIGE Berechnungsstelle: dieselbe recomputeOffer()-Funktion wie
+        // Angebotsliste, Gewinn-Diagnose und PDF. Respektiert priceIncludesVat pro
+        // Position korrekt (zieht USt aus einem Bruttopreis heraus statt sie
+        // nochmals aufzuschlagen) und schlaegt daher keine doppelte USt mehr auf.
+        const tempOffer = {
+            positions: selected,
+            vatEnabled: offerSettings.vatEnabled,
+            vatRate: offerSettings.vatEnabled ? (Number(offerSettings.vatRate) || 0) : 0,
+            discountEnabled: offerSettings.discountEnabled,
+            discountRate: offerSettings.discountRate,
+            agreedPrice: null
+        };
+        const R = recomputeOffer(tempOffer);
         return {
-            grossSubtotal, subtotal, posDiscountAmount,
-            discountRate: discountRateVal, globalDiscountAmount, discountAmount: globalDiscountAmount,
-            netAfterDiscount, vatAmount, total
+            grossSubtotal: R.gross, subtotal: R.net, posDiscountAmount: R.posDiscount,
+            discountRate: R.rate, globalDiscountAmount: R.globalDiscount, discountAmount: R.globalDiscount,
+            netAfterDiscount: R.netAfter, vatAmount: R.vatAmount, total: R.total
         };
     }
 
@@ -6621,14 +6583,19 @@
             'Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
         const isKlima = it => KLIMA.has((it.category || '').trim());
 
-        // Pro Position: Netto, Rabattanteil, Netto-nach-Rabatt, MwSt, Brutto
+        // Pro Position: Netto, Rabattanteil, Netto-nach-Rabatt, MwSt, Brutto.
+        // WICHTIG: it.price ist bei priceIncludesVat=true bereits der Endpreis inkl.
+        // USt. Die USt wird dann HERAUSGERECHNET (price / (1+rate)), nicht nochmals
+        // aufgeschlagen - sonst genau die doppelte Besteuerung, die hier behoben wird.
         const posDetails = selected.map(it => {
             const qty  = Number(it.quantity) || 0;
             const disc = Number(it.discount)  || 0;
-            const netto      = (Number(it.price) || 0) * qty * (1 - disc / 100);
+            const rate = vatForPos(it);
+            const unitPreis = Number(it.price) || 0;
+            const unitNetto = it.priceIncludesVat ? (rate > 0 ? unitPreis / (1 + rate) : unitPreis) : unitPreis;
+            const netto      = unitNetto * qty * (1 - disc / 100);
             const nettoAfter = netto * (1 - discRate);
-            const vat        = isKlima(it) ? nettoAfter * 0.20
-                             : (offerSettings.vatEnabled ? nettoAfter * (offerSettings.vatRate || 0) : 0);
+            const vat        = nettoAfter * rate;
             return { ...it, qty, disc, netto, nettoAfter, vat, brutto: nettoAfter + vat, klima: isKlima(it) };
         });
 
@@ -6928,220 +6895,6 @@
     renderSummary();
 },
 
-async exportOfferPDF(offerId, share = false, withCustomer = true) {
-    if (typeof window.jspdf === 'undefined') {
-        showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error');
-        return;
-    }
-    const offer = await db.get('offers', offerId);
-    if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
-    const project = await db.get('projects', offer.projectId);
-    const customer = withCustomer && offer.customerId ? await db.get('customers', offer.customerId) : null;
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const marginX = 16;
-    const accentColor = [37, 99, 235];
-    const grayColor = [90, 95, 107];
-    const lightGray = [238, 241, 245];
-
-    const companyLogo = await getSetting('companyLogo', '');
-    const companyPhone = await getSetting('companyPhone', '');
-    const companyEmail = await getSetting('companyEmail', '');
-    const companyWebsite = await getSetting('companyWebsite', '');
-    const companyAddress = await getSetting('companyAddress', '');
-    const companyUID = await getSetting('companyUID', '');
-    const companyFirmenbuch = await getSetting('companyFirmenbuch', '');
-    const companyBank = await getSetting('companyBank', '');
-    const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
-
-    let y = 18;
-
-    if (companyLogo) {
-        try {
-            const imgProps = doc.getImageProperties(companyLogo);
-            const logoH = 16;
-            const logoW = (imgProps.width / imgProps.height) * logoH;
-            doc.addImage(companyLogo, imgProps.fileType || 'PNG', marginX, y - 4, logoW, logoH);
-        } catch(e) { console.warn('Logo-Fehler', e); }
-    }
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(...grayColor);
-    const contactLines = [companyPhone, companyEmail, companyWebsite, companyAddress].filter(Boolean);
-    let cy = y - 4;
-    contactLines.forEach(line => { doc.text(line, pageWidth - marginX, cy, { align: 'right' }); cy += 4.5; });
-
-    y = Math.max(y + 18, cy + 4);
-    doc.setDrawColor(...lightGray);
-    doc.setLineWidth(0.6);
-    doc.line(marginX, y, pageWidth - marginX, y);
-    y += 10;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(22);
-    doc.setTextColor(30, 33, 35);
-    doc.text('ANGEBOT', marginX, y);
-    y += 9;
-
-    doc.setFontSize(9.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...grayColor);
-    doc.text(`Angebotsnummer: ${offer.offerNumber || offer.id}`, marginX, y); y += 5;
-    doc.text(`Angebotsdatum: ${formatDate(offer.offerDate || offer.createdAt)}`, marginX, y); y += 5;
-
-    if (offer.validUntilEnabled && offer.validUntil) {
-        doc.text(`Gültig bis: ${formatDate(offer.validUntil)}`, marginX, y); y += 5;
-    }
-    y += 8;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(30, 33, 35);
-    if (withCustomer) {
-        const custLines = [];
-        if (customer) {
-            custLines.push(`${customer.firstName || ''} ${customer.lastName || ''}`.trim());
-            if (customer.company) custLines.push(customer.company);
-        }
-        if (project?.title) custLines.push(`Projekt: ${project.title}`);
-        if (offer.siteAddress) custLines.push(`Baustelle: ${offer.siteAddress}`);
-        if (offer.contactPerson) custLines.push(`Ansprechpartner: ${offer.contactPerson}`);
-        if (offer.contactPhone) custLines.push(`Telefon: ${offer.contactPhone}`);
-        if (offer.contactEmail) custLines.push(`E-Mail: ${offer.contactEmail}`);
-        if (custLines.length > 0) {
-            doc.text('Kunde', marginX, y); y += 6;
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(9.5);
-            doc.setTextColor(60, 64, 72);
-            custLines.forEach(line => { doc.text(line, marginX, y); y += 4.8; });
-            y += 6;
-        }
-    } else {
-        // Ohne Kundendaten: nur Anlagentyp aus Projekttitel
-        const title = project?.title || '';
-        let anlagenTyp = '';
-        if (/multi.?split/i.test(title)) anlagenTyp = 'Multi Split';
-        else if (/single.?split/i.test(title)) anlagenTyp = 'Single Split';
-        else if (/split/i.test(title)) anlagenTyp = title.replace(/\s*[-–]\s*.*$/, '').trim();
-        else anlagenTyp = title.replace(/\s+\S+@\S+|\s+\d{4,}.*$/, '').trim();
-        if (anlagenTyp) {
-            doc.setFontSize(13);
-            doc.text(anlagenTyp, marginX, y);
-            y += 12;
-        }
-    }
-
-    // Auch hier: Einzelpreis als Endpreis inkl. USt. (siehe posDisplayPrice)
-    const rows = (offer.positions || []).map((p, i) => {
-        const disc = Number(p.discount) || 0;
-        const unit = (typeof posDisplayPrice === 'function') ? posDisplayPrice(p, offer) : (Number(p.price) || 0);
-        const lineTotal = unit * (Number(p.quantity) || 0) * (1 - disc / 100);
-        return [
-            String(i + 1),
-            p.name || '',
-            (p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : '')) + (disc > 0 ? ` (−${disc}% Rabatt)` : ''),
-            String(p.quantity),
-            p.unit || 'Stk',
-            formatCurrency(unit),
-            formatCurrency(lineTotal)
-        ];
-    });
-
-    doc.autoTable({
-        startY: y,
-        margin: { left: marginX, right: marginX },
-        head: [['Pos', 'Artikel', 'Beschreibung', 'Menge', 'Einheit', 'Einzelpreis', 'Gesamt']],
-        body: rows,
-        styles: { font: 'helvetica', fontSize: 8.8, cellPadding: 3, textColor: [40,44,50], lineColor: lightGray, lineWidth: 0.2 },
-        headStyles: { fillColor: [26,29,35], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-        alternateRowStyles: { fillColor: [248, 249, 251] },
-        columnStyles: {
-            0: { cellWidth: 10, halign: 'center' },
-            3: { cellWidth: 16, halign: 'center' },
-            4: { cellWidth: 16, halign: 'center' },
-            5: { cellWidth: 26, halign: 'right' },
-            6: { cellWidth: 26, halign: 'right' },
-        },
-        didDrawPage: () => drawFooter(),
-    });
-
-    let finalY = doc.lastAutoTable.finalY + 8;
-    if (finalY > 250) { doc.addPage(); finalY = 20; }
-
-    const boxW = 78;
-    const boxX = pageWidth - marginX - boxW;
-    doc.setFontSize(9.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(60, 64, 72);
-
-    const _R2 = recomputeOffer(offer);
-    const summaryRows = [];
-    if (_R2.posDiscount > 0.005) {
-        summaryRows.push(['Zwischensumme', formatCurrency(_R2.gross)]);
-        summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R2.posDiscount)}`]);
-    }
-    summaryRows.push(['Nettobetrag', formatCurrency(_R2.net)]);
-
-    if (_R2.discountEnabled && _R2.globalDiscount > 0) {
-        summaryRows.push([`Rabatt (${(_R2.rate*100).toFixed(1)}%)`, `- ${formatCurrency(_R2.globalDiscount)}`]);
-    }
-    if (offer.vatEnabled) {
-        summaryRows.push([`MwSt. (${(_R2.vatRate*100).toFixed(0)}%)`, formatCurrency(_R2.vatAmount)]);
-    }
-
-    summaryRows.forEach(([label, val]) => {
-        doc.text(label, boxX, finalY);
-        doc.text(val, pageWidth - marginX, finalY, { align: 'right' });
-        finalY += 6;
-    });
-
-    finalY += 2;
-    doc.setFillColor(...accentColor);
-    doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(255, 255, 255);
-    doc.text('Gesamtbetrag', boxX + 4, finalY + 2);
-    doc.text(formatCurrency(_R2.total), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
-    finalY += 15;
-
-    // Vereinbarter Preis (telefonisch abweichend vom Angebot)
-    const _agreed2 = (offer.agreedPrice != null && offer.agreedPrice !== '') ? Number(offer.agreedPrice) : null;
-    if (_agreed2 != null && Math.abs(_agreed2 - _R2.total) > 0.005) {
-        doc.setFillColor(232, 245, 243);
-        doc.roundedRect(boxX, finalY - 6, boxW, 13, 2.5, 2.5, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11.5);
-        doc.setTextColor(...accentColor);
-        doc.text('Vereinbarter Preis', boxX + 4, finalY + 2);
-        doc.text(formatCurrency(_agreed2), pageWidth - marginX - 4, finalY + 2, { align: 'right' });
-        doc.setTextColor(0, 0, 0);
-    }
-
-    function drawFooter() {
-        const ph = doc.internal.pageSize.getHeight();
-        const fy = ph - 20;
-        doc.setDrawColor(...lightGray);
-        doc.setLineWidth(0.4);
-        doc.line(marginX, fy, pageWidth - marginX, fy);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...grayColor);
-        const left = [companyAddress, [companyPhone, companyEmail].filter(Boolean).join('  ·  '), companyWebsite].filter(Boolean).join('   |   ');
-        const right = [companyUID ? `UID: ${companyUID}` : '', companyFirmenbuch ? `FB-Nr.: ${companyFirmenbuch}` : '', companyBank].filter(Boolean).join('   |   ');
-        doc.text(left, marginX, fy + 5);
-        doc.text(right, marginX, fy + 9.5);
-        doc.text(paymentTerms, pageWidth - marginX, fy + 5, { align: 'right' });
-    }
-    drawFooter();
-
-    doc.save(`${offer.offerNumber || ('Angebot_' + offer.id)}_${customer?.lastName || 'Kunde'}.pdf`);
-    showToast('PDF exportiert.', 'success');
-},
-
             async deleteOffer(id) {
                 if (!await showConfirm('Angebot löschen?')) return;
                 await db.delete('offers', id);
@@ -7385,10 +7138,6 @@ async exportOfferPDF(offerId, share = false, withCustomer = true) {
                         showToast('PDF-Einstellungen gespeichert.', 'success');
                     }
                 );
-            },
-
-            async openFieldSettings() {
-                showToast('Felder können im Code erweitert werden. Dies ist ein Profi-Feature.', 'info');
             },
 
             async resetAllData() {
