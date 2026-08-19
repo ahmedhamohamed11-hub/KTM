@@ -3812,7 +3812,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', equipment: 'cards', maintenance: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -3831,6 +3831,7 @@
                     case 'finanzuebersicht': renderFinanceOverview(); break;
                     case 'katalogDuplikate': renderKatalogDuplikate(); break;
                     case 'preiskontrolle': renderPreiskontrolle(); break;
+                    case 'katalogpreisCheck': renderKatalogpreisCheck(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
@@ -5453,6 +5454,37 @@
 
                 showToast(`Zusammengeführt: ${angebotePositionen} Position${angebotePositionen === 1 ? '' : 'en'} in ${angeboteAnzahl} Angebot${angeboteAnzahl === 1 ? '' : 'en'}, ${pmAnzahl} Projektmaterial${pmAnzahl === 1 ? '' : 'ien'} umgestellt.`, 'success');
                 app.navigate('katalogDuplikate');
+            },
+
+            // Einzelnes Material auf den Katalog-Listenpreis zuruecksetzen (Reparatur
+            // eines historisch verdoppelten Nettopreises).
+            async fixMaterialPriceFromCatalog(idx) {
+                const t = (window.__preisCheckTreffer || [])[idx];
+                if (!t) return;
+                const mat = await db.get('materials', t.m.id);
+                if (!mat) return;
+                await db.put('materials', { ...mat, sellingPrice: t.soll });
+                showToast(`„${mat.name}“: ${formatCurrency(t.ist)} → ${formatCurrency(t.soll)} korrigiert.`, 'success');
+                app.navigate('katalogpreisCheck');
+            },
+
+            // Alle gefundenen Abweichungen auf einmal korrigieren.
+            async fixAllMaterialPricesFromCatalog() {
+                const treffer = window.__preisCheckTreffer || [];
+                if (!treffer.length) return;
+                const ok = await showConfirm(
+                    `${treffer.length} Materialien auf den jeweiligen Katalog-Listenpreis zurücksetzen?`,
+                    { title: 'Alle korrigieren', okText: 'Korrigieren' });
+                if (!ok) return;
+                let n = 0;
+                for (const t of treffer) {
+                    const mat = await db.get('materials', t.m.id);
+                    if (!mat) continue;
+                    await db.put('materials', { ...mat, sellingPrice: t.soll });
+                    n++;
+                }
+                showToast(`${n} Materialien korrigiert.`, 'success');
+                app.navigate('katalogpreisCheck');
             },
 
             // ===== Bauart bei vorhandenen Materialien nachtragen =====

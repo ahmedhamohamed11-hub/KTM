@@ -194,6 +194,90 @@
             })();
         }
 
+        // ===== Katalogpreise pruefen (Reparatur bereits verdoppelt gespeicherter
+        // Nettopreise) =====
+        // Frueher gab es mehrere Codestellen, die einen ANGEZEIGTEN Endpreis (netto x
+        // 1,20, teils sogar zweimal: x 1,44) faelschlich zurueck in sellingPrice
+        // (das Netto-Feld) geschrieben haben. Die URSACHEN sind laengst behoben, aber
+        // Materialien, die WAEHREND der Fehlerphase gespeichert wurden, tragen den
+        // kaputten Wert bis heute in der Datenbank. Diese Seite vergleicht jedes
+        // Material mit dem Herstellerkatalog (js/09-katalog-import.js, die
+        // verifizierte Quelle) und zeigt Abweichungen mit einem Korrektur-Knopf.
+        function normalizeArtNr(s) {
+            // "1" und "I" werden am Zeilenende der Artikelnummer oft verwechselt
+            // (Druck/OCR) - fuer den Vergleich gleichsetzen.
+            return String(s || '').toUpperCase().replace(/\s+/g, '').replace(/1$/, 'I');
+        }
+        function renderKatalogpreisCheck() {
+            (async () => {
+                const materials = await db.getAll('materials');
+                const katalog = window.KTM_KATALOG || [];
+                const byArt = new Map();
+                const byName = new Map();
+                for (const k of katalog) {
+                    if (!(Number(k.sellingPrice) > 0)) continue;
+                    if (k.articleNumber) byArt.set(`${(k.manufacturer||'').toLowerCase()}|${normalizeArtNr(k.articleNumber)}`, k);
+                    const nk = `${(k.manufacturer||'').toLowerCase()}|${(typeof normalizeArtName === 'function' ? normalizeArtName(k.name) : k.name.toLowerCase())}`;
+                    if (!byName.has(nk)) byName.set(nk, k);
+                }
+
+                const treffer = [];
+                for (const m of materials) {
+                    if (!(Number(m.sellingPrice) > 0)) continue;
+                    let ref = null, sicher = false;
+                    if (m.articleNumber) {
+                        ref = byArt.get(`${(m.manufacturer||'').toLowerCase()}|${normalizeArtNr(m.articleNumber)}`);
+                        if (ref) sicher = true;
+                    }
+                    if (!ref) {
+                        const nk = `${(m.manufacturer||'').toLowerCase()}|${(typeof normalizeArtName === 'function' ? normalizeArtName(m.name) : (m.name||'').toLowerCase())}`;
+                        ref = byName.get(nk);
+                    }
+                    if (!ref) continue;
+                    const soll = Number(ref.sellingPrice);
+                    const ist = Number(m.sellingPrice);
+                    if (Math.abs(soll - ist) < 0.5) continue;   // stimmt schon überein
+                    const faktor = ist / soll;
+                    treffer.push({ m, soll, ist, sicher, faktor });
+                }
+
+                window.__preisCheckTreffer = treffer;
+                const rows = treffer.map((t, i) => {
+                    const verdacht = Math.abs(t.faktor - 1.2) < 0.01 ? ' · genau × 1,20 (einmal verdoppelt)'
+                        : Math.abs(t.faktor - 1.44) < 0.01 ? ' · genau × 1,44 (zweimal verdoppelt)' : '';
+                    return `<div class="dup-group">
+                        <div class="dup-group-name">${escapeHtml(t.m.name)} <span style="font-weight:400;color:var(--text-muted);font-size:12px;">${t.sicher ? '(sichere Zuordnung über Artikelnummer)' : '(Zuordnung über Namen – bitte prüfen)'}</span></div>
+                        <div class="dup-item">
+                            <label><span>Gespeichert (fehlerhaft)</span></label>
+                            <strong style="color:var(--danger);">${formatCurrency(t.ist)}</strong>
+                        </div>
+                        <div class="dup-item">
+                            <label><span>Katalog (korrekt)${verdacht}</span></label>
+                            <strong style="color:var(--success);">${formatCurrency(t.soll)}</strong>
+                        </div>
+                        <div class="dup-actions">
+                            <button type="button" class="btn btn-sm btn-primary" onclick="app.fixMaterialPriceFromCatalog(${i})">Auf Katalogpreis korrigieren</button>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                contentArea.innerHTML = `
+                    <div class="fo-wrap">
+                        <div class="fo-hint" style="margin-bottom:14px;">
+                            Vergleicht jedes Material mit dem Herstellerkatalog. Weicht der gespeicherte
+                            Listenpreis netto ab, steht das hier – häufigste Ursache: ein alter, längst
+                            behobener Fehler hat den bereits hochgerechneten Endpreis zurück ins
+                            Netto-Feld geschrieben (oft erkennbar an einem Faktor von genau × 1,20 oder × 1,44).
+                            ${treffer.length ? `<strong style="color:var(--danger);">${treffer.length} Abweichung${treffer.length > 1 ? 'en' : ''} gefunden.</strong>` : '<strong>Keine Abweichungen gefunden.</strong>'}
+                        </div>
+                        ${treffer.length ? `<div class="dup-actions" style="text-align:left;margin-bottom:14px;">
+                            <button type="button" class="btn btn-primary" onclick="app.fixAllMaterialPricesFromCatalog()">Alle ${treffer.length} auf Katalogpreis korrigieren</button>
+                        </div>` : ''}
+                        ${rows}
+                    </div>`;
+            })();
+        }
+
         function renderFinanceOverview() {
             (async () => {
                 const invoices = await db.getAll('invoices');
