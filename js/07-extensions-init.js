@@ -1004,11 +1004,23 @@
                                     quelle: info.quelle
                                 };
                             }
-                            const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek; quelle = r.quelle;
-                            if (known) {
+                            // GLEICHE Reihenfolge wie offerProfitCore: erst der an der
+                            // Position gespeicherte Snapshot, dann der Materialstamm.
+                            // Ohne diesen Schritt zeigte die Zeilenliste "fehlt", waehrend
+                            // die Summenrechnung den Snapshot laengst kannte - Warnung und
+                            // Liste widersprachen sich dann.
+                            const snapV = Number(it.purchasePriceNet);
+                            if (it.purchasePriceNet != null && it.purchasePriceNet !== '' && snapV >= 0 && isFinite(snapV)) {
+                                known = true; ekUnit = snapV; quelle = 'ist';
                                 cost = ekUnit * qty;
-                                note = quelle === 'ist' ? 'tatsächlicher EK' : 'kalkuliert aus Rabatt';
-                            } else note = '⚠️ kein EK und kein Rabatt hinterlegt';
+                                note = 'tatsächlicher EK';
+                            } else {
+                                const r = ekPerSalesUnit(m); known = r.known; ekUnit = r.ek; quelle = r.quelle;
+                                if (known) {
+                                    cost = ekUnit * qty;
+                                    note = quelle === 'ist' ? 'tatsächlicher EK' : 'kalkuliert aus Rabatt';
+                                } else note = '⚠️ kein EK und kein Rabatt hinterlegt';
+                            }
                         }
                         if (!known) missing++;
                     }
@@ -1071,7 +1083,12 @@
                 // ergab Margen von 90 % und mehr.
                 // Zahlen kommen aus offerProfitCore; die Zeilenschleife oben dient nur
                 // noch der Darstellung.
-                if (C) { ekIst = C.ekIst; ekKalk = C.ekKalk; kalkPos = C.kalkPos; missing = C.missing; }
+                if (C) { ekIst = C.ekIst; ekKalk = C.ekKalk; kalkPos = C.kalkPos; }
+                // Warnung und Liste MUESSEN dieselbe Zahl zeigen: beide aus fehlendeEk,
+                // das in der Zeilenschleife oben gefuellt wurde. Frueher kam die Warnung
+                // aus offerProfitCore und die Liste aus der Schleife - nach dem Eintragen
+                // eines EK stand dann "1 Position fehlt" ueber einer leeren Liste.
+                missing = fehlendeEk.length;
                 const materialCost = C ? C.materialCost : (ekIst + ekKalk);
                 const profit       = C ? C.profit       : (salesEffective - materialCost - sonstige);
                 const margin       = C ? C.margin       : (salesEffective > 0 ? (profit / salesEffective) * 100 : 0);
