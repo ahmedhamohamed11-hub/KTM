@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v153</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v154</span></div>
                         </div>
                     </div>`;
             })();
@@ -1981,7 +1981,7 @@
                                     const cust = proj ? customers.find(c => String(c.id) === String(proj.customerId)) : null;
                                     const p = offerProfit(o);
                                     const profitCell = p.hasData
-                                        ? `<td><div class="mg-badge ${p.complete ? marginColor(p.margin) : 'mg-yellow'}" onclick="event.stopPropagation(); app.showOfferDiagnosis(${idJS(o.id)})" title="Klick für Details">${p.profit >= 0 ? '+' : ''}${formatCurrency(p.profit)}<span class="mg-pct">${p.margin.toFixed(0)}%</span></div>${!p.complete ? `<div class="mg-note">⚠️ ${p.missingCount} × EK fehlt</div>` : ''}</td>`
+                                        ? `<td><div class="mg-badge ${p.complete ? marginColor(p.margin) : 'mg-yellow'}" onclick="event.stopPropagation(); app.showOfferDiagnosis(${idJS(o.id)})" title="Klick für Details">${p.profit >= 0 ? '+' : ''}${formatCurrency(p.profit)}<span class="mg-pct">${p.margin.toFixed(1)}%</span></div>${!p.complete ? `<div class="mg-note">⚠️ ${p.missingCount} × EK fehlt</div>` : ''}</td>`
                                         : `<td><span class="mg-na">–</span></td>`;
                                     return `<tr>
                                         <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong></td>
