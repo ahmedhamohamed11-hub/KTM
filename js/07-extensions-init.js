@@ -3812,7 +3812,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', equipment: 'cards', maintenance: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -3830,6 +3830,7 @@
                     case 'invoices': renderInvoices(); break;
                     case 'finanzuebersicht': renderFinanceOverview(); break;
                     case 'katalogDuplikate': renderKatalogDuplikate(); break;
+                    case 'preiskontrolle': renderPreiskontrolle(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
@@ -4238,6 +4239,10 @@
             // Rohrleitungsanschluss je Leistungsklasse - so wie er in den
             // Herstellerkatalogen (Daikin, Samsung, LG, Hisense) angegeben ist.
             _rohrDim(kw, hersteller, serie) {
+                // LG Standard Plus PM15SK.NSJ (4,2 kW) ist laut Herstellerkatalog eine
+                // Ausnahme von der 4,5-kW-Schwelle: 1/2" Gas statt 3/8".
+                const lgAusnahme = /lg/i.test(hersteller || '') && /standard plus/i.test(serie || '') && Math.abs(kw - 4.2) < 0.05;
+                if (lgAusnahme) return { fluessig: '1/4', gas: '1/2' };
                 if (kw <= 0 || kw <= 4.5) return { fluessig: '1/4', gas: '3/8' };   // 6,35 | 9,52
                 // Daikin Sensira/Comfora bleiben laut Katalog bis 7,1 kW bei 12,70
                 const daikinSingle = /daikin/i.test(hersteller || '') && /sensira|comfora/i.test(serie || '');

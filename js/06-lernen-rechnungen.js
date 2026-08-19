@@ -137,6 +137,63 @@
             })();
         }
 
+        // ===== Problem 4c/4d: Preis-/Rabattkontrolle =====
+        // Eine Zeile je Klimageraet: Listenpreis netto, hinterlegter Rabatt (Artikel
+        // oder Marke) inkl. Quelle, daraus berechneter EK, Endpreis fuer den Kunden.
+        // Rot markiert: kein Rabatt hinterlegt (EK unbekannt, kalkulierter Gewinn = 0).
+        function renderPreiskontrolle() {
+            (async () => {
+                const materials = await db.getAll('materials');
+                const dd = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+                const items = materials
+                    .filter(m => m.category === 'Klimageräte' && Number(m.sellingPrice) > 0)
+                    .map(m => ({ m, info: (typeof ekInfo === 'function') ? ekInfo(m, dd) : null }))
+                    .sort((a, b) => (a.m.manufacturer || '').localeCompare(b.m.manufacturer || '', 'de')
+                        || (a.m.series || '').localeCompare(b.m.series || '', 'de')
+                        || (a.m.name || '').localeCompare(b.m.name || '', 'de'));
+
+                const ohneRabatt = items.filter(x => !x.info || x.info.quelle === 'keiner').length;
+
+                const rows = items.map(({ m, info }) => {
+                    const brutto = (typeof matBrutto === 'function') ? matBrutto(m) : (Number(m.sellingPrice) || 0) * 1.2;
+                    const kritisch = !info || info.quelle === 'keiner';
+                    const quelleTxt = !info || info.quelle === 'keiner' ? 'kein Rabatt hinterlegt'
+                        : info.quelle === 'ist' ? 'tatsächlicher EK'
+                        : (m.dealerDiscount != null && m.dealerDiscount !== '') ? `Artikelrabatt ${info.rabatt}%`
+                        : `Markenrabatt ${escapeHtml(m.manufacturer || '?')} ${info.rabatt}%`;
+                    return `<tr class="${kritisch ? 'pk-row--warn' : ''}">
+                        <td>
+                            <div class="pk-name">${escapeHtml(m.name)}</div>
+                            <div class="pk-sub">${escapeHtml(m.manufacturer || '–')} · ${escapeHtml(m.series || '')}${m.articleNumber ? ' · ' + escapeHtml(m.articleNumber) : ''}</div>
+                        </td>
+                        <td style="text-align:right;">${formatCurrency(Number(m.sellingPrice) || 0)}</td>
+                        <td style="text-align:right;${kritisch ? 'color:var(--danger);font-weight:600;' : ''}">${quelleTxt}</td>
+                        <td style="text-align:right;">${info && info.ekNetto > 0 ? formatCurrency(info.ekNetto) : '–'}</td>
+                        <td style="text-align:right;font-weight:600;">${formatCurrency(brutto)}</td>
+                    </tr>`;
+                }).join('');
+
+                contentArea.innerHTML = `
+                    <div class="fo-wrap" style="max-width:100%;">
+                        <div class="fo-hint" style="margin-bottom:14px;">
+                            Listenpreis (netto laut Herstellerkatalog), hinterlegter Rabatt inkl. Quelle,
+                            daraus berechneter Einkaufspreis und Endpreis für den Kunden.
+                            ${ohneRabatt > 0 ? `<strong style="color:var(--danger);">${ohneRabatt} Artikel ohne hinterlegten Rabatt</strong> (rot markiert) – dort fließt beim Gewinn kein Einkaufspreis ein.` : 'Bei allen Klimageräten ist ein Rabatt hinterlegt.'}
+                        </div>
+                        <div style="overflow-x:auto;">
+                        <table class="pk-table">
+                            <thead><tr>
+                                <th>Artikel</th><th style="text-align:right;">Liste netto</th>
+                                <th style="text-align:right;">Rabatt</th><th style="text-align:right;">EK netto</th>
+                                <th style="text-align:right;">Endpreis Kunde</th>
+                            </tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                        </div>
+                    </div>`;
+            })();
+        }
+
         function renderFinanceOverview() {
             (async () => {
                 const invoices = await db.getAll('invoices');

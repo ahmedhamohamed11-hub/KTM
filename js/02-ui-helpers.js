@@ -3,7 +3,7 @@
         const PAGE_TITLES = {
             dashboard: 'Dashboard', customers: 'Kunden', projects: 'Projekte',
             calendar: 'Kalender', materials: 'Materialien', offers: 'Angebote',
-            orders: 'Bestellungen', invoices: 'Rechnungen', finanzuebersicht: 'Finanzen – Übersicht', katalogDuplikate: 'Katalog-Dubletten', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien',
+            orders: 'Bestellungen', invoices: 'Rechnungen', finanzuebersicht: 'Finanzen – Übersicht', katalogDuplikate: 'Katalog-Dubletten', preiskontrolle: 'Preis-/Rabattkontrolle', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien',
             calc: 'Schnellrechner', equipment: 'Anlagen', maintenance: 'Wartung', katalog: 'Katalog'
         };
         function setPageTitle(page) {
