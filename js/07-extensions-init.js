@@ -1084,10 +1084,28 @@
                 // Zahlen kommen aus offerProfitCore; die Zeilenschleife oben dient nur
                 // noch der Darstellung.
                 if (C) { ekIst = C.ekIst; ekKalk = C.ekKalk; kalkPos = C.kalkPos; }
-                // Warnung und Liste MUESSEN dieselbe Zahl zeigen: beide aus fehlendeEk,
-                // das in der Zeilenschleife oben gefuellt wurde. Frueher kam die Warnung
-                // aus offerProfitCore und die Liste aus der Schleife - nach dem Eintragen
-                // eines EK stand dann "1 Position fehlt" ueber einer leeren Liste.
+                // EINE Quelle fuer alles: die Liste der fehlenden Einkaufspreise wird aus
+                // C.lines (offerProfitCore) aufgebaut - derselben Rechnung, aus der auch
+                // die Angebotsliste ihr "x mal EK fehlt" nimmt. Vorher zaehlte die
+                // Diagnose ueber ihre eigene Zeilenschleife (rohe offer.positions),
+                // waehrend die Angebotsliste ueber die zusammengefuehrten Positionen
+                // zaehlte - dadurch stand in der Liste "1 x EK fehlt", in der geoeffneten
+                // Diagnose aber gar kein Hinweis (oder umgekehrt).
+                if (C) {
+                    fehlendeEk.length = 0;
+                    C.lines.forEach((l, i) => {
+                        if (l.known || l.labor) return;
+                        const mm = materials.find(x => String(x.id) === String(l.it.materialId));
+                        fehlendeEk.push({
+                            idx: `c${i}`,
+                            name: l.it.name || '(ohne Namen)',
+                            hatMaterial: !!mm,
+                            menge: l.qty,
+                            einheit: l.it.unit || (mm && mm.unit) || 'Stk',
+                            matId: mm ? String(mm.id) : ''
+                        });
+                    });
+                }
                 missing = fehlendeEk.length;
                 const materialCost = C ? C.materialCost : (ekIst + ekKalk);
                 const profit       = C ? C.profit       : (salesEffective - materialCost - sonstige);
@@ -1097,7 +1115,7 @@
                 const complete = missing === 0;
 
                 const diagModal = showModal(`🔒 Gewinn-Diagnose – ${escapeHtml(offer.offerNumber || 'Angebot')}`, `
-                    ${!complete ? `<div class="diag-warn">⚠️ Gewinn kann nicht vollständig berechnet werden, da bei ${missing} Position${missing > 1 ? 'en' : ''} der Einkaufspreis fehlt. Trag ihn direkt unten in der Tabelle nach, dann stimmt die Marge sofort.</div>` : ''}
+                    ${!complete ? `<div class="diag-warn">⚠️ Bei ${missing} Position${missing > 1 ? 'en' : ''} fehlt der Einkaufspreis – deshalb ist der Gewinn zu hoch angezeigt. Direkt hier darunter eintragen, dann stimmt die Marge sofort.</div>` : ''}
                     ${fehlendeEk.length ? `
                         <div class="diag-fehlt">
                             <div class="diag-fehlt-titel">${fehlendeEk.length} Position${fehlendeEk.length > 1 ? 'en' : ''} ohne Einkaufspreis – nicht im Gewinn enthalten</div>
