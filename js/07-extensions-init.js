@@ -425,10 +425,15 @@
                     const ekInfo = window.ekPerSalesUnit ? window.ekPerSalesUnit(m) : { ek: Number(m?.purchasePrice) || 0, known: (Number(m?.purchasePrice) || 0) > 0 };
                     const ek = ekInfo.known ? ekInfo.ek : 0;
                     if (ek > 0) {
-                        const profit = (vk - ek) * qty;
+                        // Das Preisfeld zeigt den ENDPREIS (inkl. 20 %), ekPerSalesUnit
+                        // liefert NETTO. Fuer den Gewinn muessen beide netto sein - sonst
+                        // enthaelt der "Gewinn" die Umsatzsteuer und ist deutlich zu hoch.
+                        const vkNetto = (typeof matNetto === 'function') ? matNetto({ sellingPrice: vk }) : vk / 1.2;
+                        const profit = (vkNetto - ek) * qty;
+                        const marge = vkNetto > 0 ? (profit / (vkNetto * qty)) * 100 : 0;
                         box.innerHTML = `<div class="pm-ek-in">
                             <span>Einkauf: <strong>${formatCurrency(ek)}</strong>${qty !== 1 ? ' × ' + qty : ''} = <strong>${formatCurrency(ek * qty)}</strong></span>
-                            <span class="pm-ek-profit ${profit >= 0 ? 'pos' : 'neg'}">Gewinn: ${formatCurrency(profit)}</span>
+                            <span class="pm-ek-profit ${profit >= 0 ? 'pos' : 'neg'}">Gewinn: ${formatCurrency(profit)}${profit > 0 ? ` · ${marge.toFixed(0)} %` : ''}</span>
                         </div>`;
                     } else {
                         box.innerHTML = `<div class="pm-ek-in"><span style="color:var(--text-muted);">Kein Einkaufspreis hinterlegt – trag ihn beim Material ein (Händlerrabatt), dann siehst du hier deinen Gewinn.</span></div>`;
@@ -5465,6 +5470,37 @@
                 if (!mat) return;
                 await db.put('materials', { ...mat, sellingPrice: t.soll });
                 showToast(`„${mat.name}“: ${formatCurrency(t.ist)} → ${formatCurrency(t.soll)} korrigiert.`, 'success');
+                app.navigate('katalogpreisCheck');
+            },
+
+            // Komplettreparatur: Listenpreise auf den Herstellerkatalog zuruecksetzen UND
+            // fest eingetragene Einkaufspreise entfernen, die genau dem Listenpreis
+            // entsprechen (dort greift sonst nie ein Haendlerrabatt).
+            async repairAllCatalogPrices() {
+                const preise = window.__preisCheckTreffer || [];
+                const eks = window.__ekCheckTreffer || [];
+                if (!preise.length && !eks.length) { showToast('Nichts zu reparieren.', 'info'); return; }
+                const ok = await showConfirm(
+                    `<strong>${preise.length}</strong> Listenpreis(e) auf den Herstellerkatalog zurücksetzen und ` +
+                    `<strong>${eks.length}</strong> fest eingetragene Einkaufspreis(e) entfernen?<br><br>` +
+                    `Danach gilt überall der Katalogpreis und dein hinterlegter Händlerrabatt.`,
+                    { title: 'Alles reparieren', okText: 'Jetzt reparieren' });
+                if (!ok) return;
+
+                let nP = 0, nE = 0;
+                for (const t of preise) {
+                    const mat = await db.get('materials', t.m.id);
+                    if (!mat) continue;
+                    await db.put('materials', { ...mat, sellingPrice: t.soll });
+                    nP++;
+                }
+                for (const m of eks) {
+                    const mat = await db.get('materials', m.id);
+                    if (!mat) continue;
+                    await db.put('materials', { ...mat, purchasePrice: 0 });
+                    nE++;
+                }
+                showToast(`Repariert: ${nP} Listenpreis(e), ${nE} Einkaufspreis(e) entfernt.`, 'success');
                 app.navigate('katalogpreisCheck');
             },
 

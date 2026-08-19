@@ -212,68 +212,77 @@
             (async () => {
                 const materials = await db.getAll('materials');
                 const katalog = window.KTM_KATALOG || [];
-                const byArt = new Map();
-                const byName = new Map();
+                // Robuste Zuordnung: Artikelnummer normalisiert (Gross/Klein, Leerzeichen,
+                // haeufige "1"/"I"-Verwechslung am Ende von LG-Nummern), sonst ueber den
+                // Namen. Der Herstellerkatalog ist die verifizierte Quelle.
+                const byArt = new Map(), byName = new Map();
                 for (const k of katalog) {
                     if (!(Number(k.sellingPrice) > 0)) continue;
-                    if (k.articleNumber) byArt.set(`${(k.manufacturer||'').toLowerCase()}|${normalizeArtNr(k.articleNumber)}`, k);
-                    const nk = `${(k.manufacturer||'').toLowerCase()}|${(typeof normalizeArtName === 'function' ? normalizeArtName(k.name) : k.name.toLowerCase())}`;
+                    if (k.articleNumber) byArt.set(normalizeArtNr(k.articleNumber), k);
+                    const nk = (typeof normalizeArtName === 'function' ? normalizeArtName(k.name) : String(k.name).toLowerCase());
                     if (!byName.has(nk)) byName.set(nk, k);
                 }
-
-                const treffer = [];
-                for (const m of materials) {
-                    if (!(Number(m.sellingPrice) > 0)) continue;
-                    let ref = null, sicher = false;
+                const findRef = (m) => {
                     if (m.articleNumber) {
-                        ref = byArt.get(`${(m.manufacturer||'').toLowerCase()}|${normalizeArtNr(m.articleNumber)}`);
-                        if (ref) sicher = true;
+                        const r = byArt.get(normalizeArtNr(m.articleNumber));
+                        if (r) return r;
                     }
-                    if (!ref) {
-                        const nk = `${(m.manufacturer||'').toLowerCase()}|${(typeof normalizeArtName === 'function' ? normalizeArtName(m.name) : (m.name||'').toLowerCase())}`;
-                        ref = byName.get(nk);
+                    const nk = (typeof normalizeArtName === 'function' ? normalizeArtName(m.name) : String(m.name || '').toLowerCase());
+                    return byName.get(nk) || null;
+                };
+
+                const preisFalsch = [], ekFalsch = [];
+                for (const m of materials) {
+                    const ref = findRef(m);
+                    if (ref && Math.abs(Number(ref.sellingPrice) - (Number(m.sellingPrice) || 0)) > 0.5) {
+                        preisFalsch.push({ m, soll: Number(ref.sellingPrice), ist: Number(m.sellingPrice) || 0 });
                     }
-                    if (!ref) continue;
-                    const soll = Number(ref.sellingPrice);
-                    const ist = Number(m.sellingPrice);
-                    if (Math.abs(soll - ist) < 0.5) continue;   // stimmt schon überein
-                    const faktor = ist / soll;
-                    treffer.push({ m, soll, ist, sicher, faktor });
+                    // Fest eingetragener EK in Hoehe des Listenpreises = 0 % Rabatt.
+                    // Das entstand durch einen alten Bug, der das EK-Feld automatisch
+                    // befuellt hat - es ist praktisch nie ein echter Einkaufspreis.
+                    const ek = Number(m.purchasePrice) || 0;
+                    const lp = Number(m.sellingPrice) || 0;
+                    if (ek > 0 && lp > 0 && Math.abs(ek - lp) < 0.5) ekFalsch.push(m);
                 }
+                window.__preisCheckTreffer = preisFalsch;
+                window.__ekCheckTreffer = ekFalsch;
 
-                window.__preisCheckTreffer = treffer;
-                const rows = treffer.map((t, i) => {
-                    const verdacht = Math.abs(t.faktor - 1.2) < 0.01 ? ' · genau × 1,20 (einmal verdoppelt)'
-                        : Math.abs(t.faktor - 1.44) < 0.01 ? ' · genau × 1,44 (zweimal verdoppelt)' : '';
-                    return `<div class="dup-group">
-                        <div class="dup-group-name">${escapeHtml(t.m.name)} <span style="font-weight:400;color:var(--text-muted);font-size:12px;">${t.sicher ? '(sichere Zuordnung über Artikelnummer)' : '(Zuordnung über Namen – bitte prüfen)'}</span></div>
-                        <div class="dup-item">
-                            <label><span>Gespeichert (fehlerhaft)</span></label>
-                            <strong style="color:var(--danger);">${formatCurrency(t.ist)}</strong>
-                        </div>
-                        <div class="dup-item">
-                            <label><span>Katalog (korrekt)${verdacht}</span></label>
-                            <strong style="color:var(--success);">${formatCurrency(t.soll)}</strong>
-                        </div>
-                        <div class="dup-actions">
-                            <button type="button" class="btn btn-sm btn-primary" onclick="app.fixMaterialPriceFromCatalog(${i})">Auf Katalogpreis korrigieren</button>
-                        </div>
-                    </div>`;
-                }).join('');
-
+                const gesamt = preisFalsch.length + ekFalsch.length;
                 contentArea.innerHTML = `
                     <div class="fo-wrap">
-                        <div class="fo-hint" style="margin-bottom:14px;">
-                            Vergleicht jedes Material mit dem Herstellerkatalog. Weicht der gespeicherte
-                            Listenpreis netto ab, steht das hier – häufigste Ursache: ein alter, längst
-                            behobener Fehler hat den bereits hochgerechneten Endpreis zurück ins
-                            Netto-Feld geschrieben (oft erkennbar an einem Faktor von genau × 1,20 oder × 1,44).
-                            ${treffer.length ? `<strong style="color:var(--danger);">${treffer.length} Abweichung${treffer.length > 1 ? 'en' : ''} gefunden.</strong>` : '<strong>Keine Abweichungen gefunden.</strong>'}
-                        </div>
-                        ${treffer.length ? `<div class="dup-actions" style="text-align:left;margin-bottom:14px;">
-                            <button type="button" class="btn btn-primary" onclick="app.fixAllMaterialPricesFromCatalog()">Alle ${treffer.length} auf Katalogpreis korrigieren</button>
-                        </div>` : ''}
-                        ${rows}
+                        ${gesamt ? `
+                        <div class="dup-group" style="border-color:var(--accent);">
+                            <div class="dup-group-name">Alles auf einmal reparieren</div>
+                            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">
+                                Setzt alle abweichenden Listenpreise auf den Herstellerkatalog zurück
+                                und entfernt fest eingetragene Einkaufspreise, die genau dem Listenpreis
+                                entsprechen (dort greift sonst kein Händlerrabatt).
+                            </div>
+                            <button type="button" class="btn btn-primary" style="width:100%;" onclick="app.repairAllCatalogPrices()">
+                                ${preisFalsch.length} Preis${preisFalsch.length === 1 ? '' : 'e'} und ${ekFalsch.length} Einkaufspreis${ekFalsch.length === 1 ? '' : 'e'} korrigieren
+                            </button>
+                        </div>` : '<div class="fo-hint"><strong>Alles in Ordnung – keine Abweichungen gefunden.</strong></div>'}
+
+                        ${preisFalsch.length ? `<div class="fo-hint" style="margin:16px 0 8px;"><strong>Listenpreise, die vom Herstellerkatalog abweichen:</strong></div>` : ''}
+                        ${preisFalsch.map((t, i) => {
+                            const f = t.soll > 0 ? t.ist / t.soll : 0;
+                            const hinweis = Math.abs(f - 1.2) < 0.01 ? ' · einmal verdoppelt (× 1,20)'
+                                : Math.abs(f - 1.44) < 0.01 ? ' · zweimal verdoppelt (× 1,44)'
+                                : Math.abs(f - 1.728) < 0.01 ? ' · dreimal verdoppelt (× 1,73)' : '';
+                            return `<div class="dup-group">
+                                <div class="dup-group-name">${escapeHtml(t.m.name)}</div>
+                                <div class="dup-item"><label><span>Gespeichert${hinweis}</span></label><strong style="color:var(--danger);">${formatCurrency(t.ist)}</strong></div>
+                                <div class="dup-item"><label><span>Katalog (korrekt)</span></label><strong style="color:var(--success);">${formatCurrency(t.soll)}</strong></div>
+                                <div class="dup-actions"><button type="button" class="btn btn-sm" onclick="app.fixMaterialPriceFromCatalog(${i})">Nur diesen korrigieren</button></div>
+                            </div>`;
+                        }).join('')}
+
+                        ${ekFalsch.length ? `<div class="fo-hint" style="margin:16px 0 8px;"><strong>Einkaufspreis = Listenpreis (0 % Rabatt – vermutlich falsch):</strong></div>
+                        ${ekFalsch.map(m => `<div class="dup-group">
+                            <div class="dup-group-name">${escapeHtml(m.name)}</div>
+                            <div class="dup-item"><label><span>Fest eingetragener Einkauf</span></label><strong style="color:var(--danger);">${formatCurrency(Number(m.purchasePrice) || 0)}</strong></div>
+                            <div class="dup-item"><label><span>Listenpreis netto</span></label><strong>${formatCurrency(Number(m.sellingPrice) || 0)}</strong></div>
+                        </div>`).join('')}` : ''}
                     </div>`;
             })();
         }
