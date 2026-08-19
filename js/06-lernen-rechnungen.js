@@ -223,12 +223,25 @@
                     if (!byName.has(nk)) byName.set(nk, k);
                 }
                 const findRef = (m) => {
+                    // 1. ueber die Artikelnummer (sicherste Zuordnung)
                     if (m.articleNumber) {
                         const r = byArt.get(normalizeArtNr(m.articleNumber));
                         if (r) return r;
                     }
+                    // 2. ueber den vollstaendigen Namen
                     const nk = (typeof normalizeArtName === 'function' ? normalizeArtName(m.name) : String(m.name || '').toLowerCase());
-                    return byName.get(nk) || null;
+                    if (byName.has(nk)) return byName.get(nk);
+                    // 3. Artikelnummer AUS DEM NAMEN herausziehen. Viele Materialien heissen
+                    // "LG EZ09CYN.CSJ1", der Katalogeintrag aber "Standard II EZ09CYN.CSJI" -
+                    // ohne diesen Schritt findet die Pruefung sie nicht und meldet faelsch-
+                    // licherweise "0 Preise".
+                    const worte = String(m.name || '').toUpperCase().split(/[\s,;]+/).filter(Boolean);
+                    for (const w of worte) {
+                        if (w.length < 5) continue;               // zu kurz fuer eine Artikelnummer
+                        const r = byArt.get(normalizeArtNr(w));
+                        if (r) return r;
+                    }
+                    return null;
                 };
 
                 const preisFalsch = [], ekFalsch = [];
@@ -240,9 +253,12 @@
                     // Fest eingetragener EK in Hoehe des Listenpreises = 0 % Rabatt.
                     // Das entstand durch einen alten Bug, der das EK-Feld automatisch
                     // befuellt hat - es ist praktisch nie ein echter Einkaufspreis.
+                    // ABER: Arbeitsleistung hat naturgemaess keinen Einkauf; dort ist
+                    // EK = Preis voellig normal und darf nicht als Fehler gemeldet werden.
+                    const istArbeit = (typeof isLaborPos === 'function') ? isLaborPos(m) : /arbeit|montage|lohn|stunde/i.test(m.category || '');
                     const ek = Number(m.purchasePrice) || 0;
                     const lp = Number(m.sellingPrice) || 0;
-                    if (ek > 0 && lp > 0 && Math.abs(ek - lp) < 0.5) ekFalsch.push(m);
+                    if (!istArbeit && ek > 0 && lp > 0 && Math.abs(ek - lp) < 0.5) ekFalsch.push(m);
                 }
                 window.__preisCheckTreffer = preisFalsch;
                 window.__ekCheckTreffer = ekFalsch;
