@@ -6675,17 +6675,35 @@
             inp.addEventListener('change', async (e) => {
                 const idx = parseInt(e.target.dataset.price);
                 const pos = selected[idx];
-                const newPrice = parseFloat(e.target.value) || 0;
+                const newPriceBrutto = parseFloat(e.target.value) || 0;   // Feld zeigt den Endpreis (brutto)
                 if (!pos.materialId) return;   // freie Position ohne Material – nichts zu speichern
                 const m = materials.find(mm => String(mm.id) === String(pos.materialId));
                 if (!m) return;
-                const oldPrice = Number(m.sellingPrice) || 0;
+                const oldPrice = Number(m.sellingPrice) || 0;   // gespeichert ist immer netto
+                // WICHTIG: materials.sellingPrice ist IMMER netto. Das Eingabefeld zeigt aber
+                // den Endpreis (brutto, priceIncludesVat) - ohne diese Umrechnung wurde der
+                // Bruttowert direkt ins Netto-Feld geschrieben und bei jeder erneuten
+                // Speicherung nochmals mit 1,20 aufgeschlagen (Ursache der wiederholt
+                // gemeldeten verdoppelten Katalogpreise).
+                // vatForPos() ist im selben Bereich weiter oben definiert (Material/
+                // Geraete immer 20%, nur Arbeit folgt dem Angebots-Toggle) - keine
+                // eigene, moeglicherweise abweichende Berechnung hier daneben.
+                const rate = vatForPos(pos);
+                const newPrice = pos.priceIncludesVat ? Math.round((newPriceBrutto / (1 + rate)) * 100) / 100 : newPriceBrutto;
                 if (Math.abs(newPrice - oldPrice) < 0.005) return;   // keine echte Änderung
-                const choice = await showPriceSaveDialog(m.name, oldPrice, newPrice);
+                // Geraete-Listenpreise kommen aus der Herstellerpreisliste und werden ueber
+                // den Haendlerrabatt gerechnet - ein einzelnes Angebot darf sie nicht
+                // dauerhaft verstellen (gleiche Regel wie in der Stuecklisten-Vorschau).
+                const istGeraet = /gerät|geraet|klima/i.test(pos.category || m.category || '');
+                if (istGeraet) {
+                    showToast(`Preisänderung gilt nur für dieses Angebot – der Listenpreis von „${m.name}" bleibt geschützt.`, 'info');
+                    return;
+                }
+                const choice = await showPriceSaveDialog(m.name, oldPrice, newPriceBrutto);
                 if (choice === 'permanent') {
                     m.sellingPrice = newPrice;
                     await db.put('materials', { ...m, sellingPrice: newPrice });
-                    showToast(`Preis für „${m.name}" dauerhaft gespeichert.`, 'success');
+                    showToast(`Preis für „${m.name}" dauerhaft gespeichert (netto ${formatCurrency(newPrice)}).`, 'success');
                 }
                 // bei 'once' bleibt der Preis nur in diesem Angebot (schon in selected gesetzt)
                 // bei 'cancel' zurücksetzen
