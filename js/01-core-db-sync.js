@@ -1212,13 +1212,27 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
                 if (labor) {
                     laborSales += lineSales;
                 } else {
-                    const m = materials.find(mm => String(mm.id) === String(it.materialId));
-                    if (!m) { known = false; }
-                    else {
-                        const r = ekPerSalesUnit(m);
-                        known = r.known; ekUnit = r.ek; quelle = r.quelle;
-                        if (known) cost = ekUnit * qty;
+                    // 1. SNAPSHOT an der Position hat Vorrang: purchasePriceNet wird beim
+                    //    Anlegen des Angebots aus dem Materialstamm uebernommen und bleibt
+                    //    danach unveraendert. Damit behaelt ein altes Angebot seinen
+                    //    damaligen EK, auch wenn der Materialstamm spaeter geaendert wird -
+                    //    und der EK geht nicht mehr verloren, wenn es vom selben Artikel
+                    //    mehrere Materialdatensaetze gibt (Duplikate).
+                    const snap = Number(it.purchasePriceNet);
+                    if (it.purchasePriceNet != null && it.purchasePriceNet !== '' && snap >= 0 && isFinite(snap)) {
+                        known = true; ekUnit = snap; quelle = 'ist'; cost = snap * qty;
+                    } else {
+                        // 2. sonst aus dem Materialstamm (tatsaechlicher EK -> Artikel-
+                        //    rabatt -> Markenrabatt), wie bisher
+                        const m = materials.find(mm => String(mm.id) === String(it.materialId));
+                        if (!m) { known = false; }
+                        else {
+                            const r = ekPerSalesUnit(m);
+                            known = r.known; ekUnit = r.ek; quelle = r.quelle;
+                            if (known) cost = ekUnit * qty;
+                        }
                     }
+                    const m = materials.find(mm => String(mm.id) === String(it.materialId));
                     if (!known) missing++;
                     if (quelle === 'ist') ekIst += cost;
                     else if (quelle === 'kalk') { ekKalk += cost; kalkPos++; }

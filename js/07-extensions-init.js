@@ -809,6 +809,7 @@
 
                         const picks = new Map();   // Position-Index -> Material-ID ('' = unverändert)
                         overlay.querySelectorAll('.var-pick').forEach(sel => picks.set(sel.dataset.idx, sel.value));
+                        const _ddVar = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
 
                         const newPositions = [];
                         let swapped = 0;
@@ -818,7 +819,12 @@
                             const repl = mats.find(m => String(m.id) === String(pick));
                             if (!repl) { newPositions.push({ ...p }); return; }
                             swapped++;
-                            newPositions.push({
+                            // EK-Snapshot des ALTEN Geraets darf nicht mituebernommen
+                            // werden - er gehoert zum ersetzten Artikel. Stattdessen den
+                            // EK des neuen Geraets aus dem Materialstamm uebernehmen.
+                            const rNeu = (typeof ekPerSalesUnit === 'function')
+                                ? ekPerSalesUnit(repl, _ddVar) : { known: false };
+                            const posNeu = {
                                 ...p,
                                 materialId: repl.id,
                                 name: repl.name,
@@ -827,28 +833,29 @@
                                 category: repl.category,
                                 price: matUnitPrice(repl, p.unit || repl.unit || 'Stk'),
                                 description: [repl.size, repl.series].filter(Boolean).join(' · ')
-                            });
+                            };
+                            delete posNeu.purchasePriceNet;
+                            if (rNeu.known) posNeu.purchasePriceNet = Math.round(rNeu.ek * 100) / 100;
+                            newPositions.push(posNeu);
                         });
                         if (swapped === 0) { showToast('Kein Gerät ausgewählt – nichts zu tauschen.', 'info'); return; }
 
-                        const net = newPositions.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
-                        const dRate = (offer.discountRate || 0) > 1 ? (offer.discountRate || 0) / 100 : (offer.discountRate || 0);
-                        const dAmount = offer.discountEnabled ? net * dRate : 0;
-                        const netAfter = net - dAmount;
-                        const vatRate = offer.vatRate ?? 0.2;
-                        const vat = offer.vatEnabled === false ? 0 : netAfter * vatRate;
+                        // Summen ueber die zentrale recomputeOffer() - die eigene Rechnung
+                        // hier hat die (bereits brutto gespeicherten) Positionspreise als
+                        // netto behandelt und nochmals USt aufgeschlagen.
+                        const _R = recomputeOffer({ ...offer, positions: newPositions });
 
                         const num = await getNextAutoNumber();
                         const variant = {
                             ...offer,
                             offerNumber: num,
                             positions: newPositions,
-                            subtotal: net,
-                            netPrice: net,
-                            discountAmount: dAmount,
-                            netAfterDiscount: netAfter,
-                            vatAmount: vat,
-                            totalPrice: netAfter + vat,
+                            subtotal: _R.net,
+                            netPrice: _R.net,
+                            discountAmount: _R.globalDiscount,
+                            netAfterDiscount: _R.netAfter,
+                            vatAmount: _R.vatAmount,
+                            totalPrice: _R.total,
                             status: 'Angebot offen',
                             variantOf: String(offer.offerNumber || ''),
                             notes: `${offer.notes || ''}${offer.notes ? '\n' : ''}Variante mit ${brand}-Klimageräten.`.trim()
@@ -1127,9 +1134,41 @@
                         if (!mat) { showToast('Material nicht gefunden.', 'error'); return; }
                         const bl = Number(mat.bundleLength) || 0;
                         const isPack = ['Rolle', 'Bund', 'Stange'].includes(mat.unit || '') && bl > 0;
-                        mat.purchasePrice = isPack ? Math.round(val * bl * 100) / 100 : val;
-                        await db.put('materials', mat);
-                        showToast(`Einkaufspreis für „${escapeHtml(mat.name)}" gespeichert.`, 'success');
+                        const ekStamm = isPack ? Math.round(val * bl * 100) / 100 : val;
+
+                        // 1. In den Materialstamm - und zwar in ALLE Datensaetze mit
+                        //    gleichem (normalisiertem) Namen. Durch frueher entstandene
+                        //    Duplikate zeigten verschiedene Angebote auf verschiedene
+                        //    Datensaetze desselben Artikels; der EK galt dann nur fuer
+                        //    einen davon und fehlte im naechsten Angebot wieder.
+                        const norm = (v) => String(v || '').toLowerCase()
+                            .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                            .replace(/[^a-z0-9]/g, '');
+                        const ziel = norm(mat.name);
+                        const alleMats = await db.getAll('materials');
+                        let nMat = 0;
+                        for (const mm of alleMats) {
+                            if (norm(mm.name) !== ziel) continue;
+                            const bl2 = Number(mm.bundleLength) || 0;
+                            const isPack2 = ['Rolle', 'Bund', 'Stange'].includes(mm.unit || '') && bl2 > 0;
+                            await db.put('materials', { ...mm, purchasePrice: isPack2 ? Math.round(val * bl2 * 100) / 100 : val });
+                            nMat++;
+                        }
+
+                        // 2. Snapshot in DIESES Angebot: der EK bleibt hier fest, auch wenn
+                        //    der Materialstamm spaeter geaendert wird (historische Angebote
+                        //    duerfen sich nicht rueckwirkend veraendern).
+                        const off = await db.get('offers', offerId);
+                        if (off) {
+                            let nPos = 0;
+                            for (const pp of (off.positions || [])) {
+                                if (String(pp.materialId) === String(matId) || norm(pp.name) === ziel) {
+                                    pp.purchasePriceNet = val; nPos++;
+                                }
+                            }
+                            if (nPos) await db.put('offers', off);
+                        }
+                        showToast(`Einkaufspreis für „${mat.name}" gespeichert${nMat > 1 ? ` (${nMat} Datensätze)` : ''} – gilt auch für neue Angebote.`, 'success');
                         diagModal.remove();
                         app.showOfferDiagnosis(offerId);
                     });
@@ -1613,7 +1652,7 @@
                         await this.calcAiMaterials().catch(() => {});
                         const L = this._lastMaterialList;
                         if (L && (L.positions?.length || L.geraete?.length)) {
-                            const positions = this._stuecklisteZuPositionen(L.geraete, L.positions);
+                            const positions = await this._stuecklisteZuPositionen(L.geraete, L.positions);
                             const anzGeraete = res.rooms.length || 1;
                             const meter = (Number(CALC_STATE.distance) || 5) * anzGeraete;
                             positions.push(...await this._montagePositionen(anzGeraete, meter));
@@ -3681,6 +3720,58 @@
                     }
                 } catch (e) { console.warn('Angebotssummen-Migration fehlgeschlagen (nicht kritisch):', e); }
 
+                // Einmalige Migration: EK-Snapshot in bestehende Angebotspositionen
+                // nachtragen. Bisher wurde der Einkaufspreis bei JEDER Anzeige neu aus
+                // dem Materialstamm gesucht - gab es vom selben Artikel mehrere
+                // Materialdatensaetze (Duplikate aus frueheren Versionen), zeigte ein
+                // Angebot auf einen Datensatz OHNE gepflegten EK und meldete dauerhaft
+                // "EK fehlt", obwohl der Preis am Zwillings-Datensatz laengst gepflegt war.
+                // Der Snapshot macht jedes Angebot davon unabhaengig.
+                try {
+                    const migEk = await getSetting('ekSnapshotV152', '');
+                    if (!migEk) {
+                        const alleMats = await db.getAll('materials');
+                        const dd = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+                        const norm = (v) => String(v || '').toLowerCase()
+                            .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                            .replace(/[^a-z0-9]/g, '');
+                        // Je normalisiertem Namen den Datensatz MIT gepflegtem EK bevorzugen
+                        const besteProName = new Map();
+                        for (const m of alleMats) {
+                            const k = norm(m.name); if (!k) continue;
+                            const vorhanden = besteProName.get(k);
+                            if (!vorhanden || (Number(m.purchasePrice) > 0 && !(Number(vorhanden.purchasePrice) > 0))) {
+                                besteProName.set(k, m);
+                            }
+                        }
+                        const alleOffers = await db.getAll('offers');
+                        let nOffers = 0, nPos = 0;
+                        for (const o of alleOffers) {
+                            let geaendert = false;
+                            for (const pp of (o.positions || [])) {
+                                if (pp.purchasePriceNet != null && pp.purchasePriceNet !== '') continue;   // schon vorhanden
+                                if (typeof isLaborPos === 'function' && isLaborPos(pp)) continue;           // Arbeit hat keinen EK
+                                let m = alleMats.find(x => String(x.id) === String(pp.materialId));
+                                if (!m || !(Number(m.purchasePrice) > 0)) {
+                                    const alt = besteProName.get(norm(pp.name));
+                                    if (alt && Number(alt.purchasePrice) > 0) m = alt;
+                                }
+                                if (!m || typeof ekPerSalesUnit !== 'function') continue;
+                                const r = ekPerSalesUnit(m, dd);
+                                if (!r.known) continue;
+                                pp.purchasePriceNet = Math.round(r.ek * 100) / 100;
+                                geaendert = true; nPos++;
+                            }
+                            if (geaendert) { await db.put('offers', o); nOffers++; }
+                        }
+                        await setSetting('ekSnapshotV152', '1');
+                        if (nPos > 0) {
+                            console.log(`EK-Snapshot-Migration v152: ${nPos} Position(en) in ${nOffers} Angebot(en) ergaenzt.`);
+                            showToast(`${nPos} Einkaufspreise in ${nOffers} Angeboten ergänzt.`, 'success');
+                        }
+                    }
+                } catch (e) { console.warn('EK-Snapshot-Migration fehlgeschlagen (nicht kritisch):', e); }
+
                 // QR-Code einer Anlage gescannt? -> direkt öffnen
                 // Splash SOFORT ausblenden - egal was danach kommt, der Nutzer
                 // sieht die App und bleibt nicht im Ladebildschirm hängen.
@@ -4600,7 +4691,7 @@
             // Wandelt die Schnellrechner-Materialliste in Angebotspositionen um.
             // Wird von der Kuehllast- und von der Direkt-Konfiguration genutzt,
             // damit beide Wege dieselbe Stueckliste erzeugen.
-            _stuecklisteZuPositionen(geraete, positions) {
+            async _stuecklisteZuPositionen(geraete, positions) {
                 const out = [];
                 for (const g of (geraete || [])) {
                     out.push({
@@ -4619,7 +4710,20 @@
                 }
                 const istGeraet = p => p.category === 'Klimageräte' ||
                     ['Innengerät Single-Split','Außengerät Single-Split','Innengerät Multi-Split','Außengerät Multi-Split','Truhengerät','Klimaset'].includes(p.bauart || '');
+                // EK-SNAPSHOT: aktuellen Einkaufspreis je Material einmal ermitteln und
+                // an der Position festhalten, damit er in diesem Angebot dauerhaft
+                // vorhanden ist (auch wenn spaeter der Materialstamm geaendert wird).
+                const _mats = await db.getAll('materials');
+                const _dd = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
                 for (const p of (positions || [])) {
+                    let snap = null;
+                    if (p.materialId != null) {
+                        const mm = _mats.find(x => String(x.id) === String(p.materialId));
+                        if (mm && typeof ekPerSalesUnit === 'function') {
+                            const r = ekPerSalesUnit(mm, _dd);
+                            if (r.known) snap = Math.round(r.ek * 100) / 100;
+                        }
+                    }
                     out.push({
                         listenpreisGeschuetzt: istGeraet(p),
                         materialId: p.materialId || null, name: p.name || '',
@@ -4627,6 +4731,7 @@
                         category: p.category || '', bauart: '',
                         unit: p.einheit || 'Stk', quantity: Number(p.menge) || 0,
                         price: Number(p.preis) || 0, priceIncludesVat: true, discount: 0,
+                        ...(snap != null ? { purchasePriceNet: snap } : {}),
                         notes: p.ausKatalog ? '' : 'Richtwert – Preis prüfen'
                     });
                 }
@@ -5169,14 +5274,22 @@
                 // Endpreis inkl. 20% aus dem Material - materialId ist jetzt IMMER gesetzt
                 // (ensureCatalogMaterial legt bei Bedarf ein neues Material an statt eine
                 // Position ohne Katalog-Referenz zu erzeugen - siehe Problem 2).
-                const mk = (m, qty, unit) => ({
-                    materialId: m.id, name: m.name,
-                    manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
-                    category: m.category || '', bauart: matBauart(m) || '',
-                    unit, quantity: Math.round(qty * 10) / 10,
-                    price: matUnitPrice(m, unit),
-                    priceIncludesVat: true, discount: 0
-                });
+                const dd0 = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+                const mk = (m, qty, unit) => {
+                    // EK-SNAPSHOT: aktuellen Einkaufspreis aus dem Materialstamm mitnehmen.
+                    // Dadurch steht der EK sofort in jedem neuen Angebot zur Verfuegung und
+                    // bleibt dort fest, auch wenn der Materialstamm spaeter geaendert wird.
+                    const r = (typeof ekPerSalesUnit === 'function') ? ekPerSalesUnit(m, dd0) : { known: false };
+                    return {
+                        materialId: m.id, name: m.name,
+                        manufacturer: m.manufacturer || '', articleNumber: m.articleNumber || '',
+                        category: m.category || '', bauart: matBauart(m) || '',
+                        unit, quantity: Math.round(qty * 10) / 10,
+                        price: matUnitPrice(m, unit),
+                        priceIncludesVat: true, discount: 0,
+                        ...(r.known ? { purchasePriceNet: Math.round(r.ek * 100) / 100 } : {})
+                    };
+                };
 
                 // Innengeraete
                 for (const r of M.rows) if (r.ig) pos.push(mk(r.ig, 1, 'Stk'));
