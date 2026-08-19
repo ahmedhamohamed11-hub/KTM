@@ -101,14 +101,27 @@
             (async () => {
                 const materials = await db.getAll('materials');
                 const norm = (typeof normalizeArtName === 'function') ? normalizeArtName : (s => String(s || '').toLowerCase().trim());
-                const groups = new Map();
-                for (const m of materials) {
-                    const key = norm(m.name);
-                    if (!key) continue;
-                    if (!groups.has(key)) groups.set(key, []);
-                    groups.get(key).push(m);
+                // Gleicher Vergleich wie beim automatischen Anlegen: ohne Leerzeichen und
+                // Sonderzeichen, damit "Kondensatschlauch" und "Kondensat Schlauch 16mm"
+                // als Dublette erkannt werden (genau diese Paare sind entstanden).
+                const schluessel = (v) => String(v || '').toLowerCase()
+                    .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                    .replace(/[^a-z0-9]/g, '');
+                const eintraege = materials.map(m => ({ m, k: schluessel(m.name) })).filter(e => e.k);
+                const benutzt = new Set();
+                const dupGroups = [];
+                for (const e of eintraege) {
+                    if (benutzt.has(e.m.id)) continue;
+                    const gruppe = eintraege.filter(o => !benutzt.has(o.m.id)
+                        && (o.k === e.k || o.k.includes(e.k) || e.k.includes(o.k)));
+                    if (gruppe.length > 1) {
+                        gruppe.forEach(o => benutzt.add(o.m.id));
+                        // Eintrag mit gepflegtem Einkaufspreis nach vorne - der sollte
+                        // beim Zusammenfuehren behalten werden.
+                        gruppe.sort((a, b) => (Number(b.m.purchasePrice) || 0) - (Number(a.m.purchasePrice) || 0));
+                        dupGroups.push(gruppe.map(o => o.m));
+                    }
                 }
-                const dupGroups = [...groups.values()].filter(g => g.length > 1);
 
                 contentArea.innerHTML = `
                     <div class="fo-wrap">

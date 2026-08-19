@@ -4346,17 +4346,30 @@
             // recomputeOffer() zuverlaessig zu einer Zeile zusammenfassen.
             _matEnsureCache: null,
             async ensureCatalogMaterial({ name, category, unit, price, bauart }) {
-                const key = String(name || '').trim().toLowerCase();
+                // Vergleich ohne Leerzeichen/Sonderzeichen, damit "Kondensatschlauch" und
+                // "Kondensat Schlauch 16mm" als DASSELBE Material erkannt werden. Ein zu
+                // strenger Vergleich hat hier Duplikate ohne Einkaufspreis angelegt,
+                // waehrend die gepflegten Originale unbenutzt blieben ("EK fehlt").
+                const schluessel = (v) => String(v || '').toLowerCase()
+                    .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                    .replace(/[^a-z0-9]/g, '');
+                const key = schluessel(name);
                 if (!key) return null;
                 if (!this._matEnsureCache) {
-                    this._matEnsureCache = new Map();
+                    this._matEnsureCache = [];
                     for (const m of await db.getAll('materials')) {
-                        const k = String(m.name || '').trim().toLowerCase();
-                        if (k && !this._matEnsureCache.has(k)) this._matEnsureCache.set(k, m);
+                        const k = schluessel(m.name);
+                        if (k) this._matEnsureCache.push({ k, m });
                     }
                 }
-                const vorhanden = this._matEnsureCache.get(key);
-                if (vorhanden) return vorhanden;
+                // 1. exakte Uebereinstimmung, 2. eines enthaelt das andere (dabei das
+                // Material mit gepflegtem Einkaufspreis bevorzugen)
+                const kandidaten = this._matEnsureCache.filter(e => e.k === key)
+                    .concat(this._matEnsureCache.filter(e => e.k !== key && (e.k.includes(key) || key.includes(e.k))));
+                if (kandidaten.length) {
+                    const mitEk = kandidaten.find(e => Number(e.m.purchasePrice) > 0);
+                    return (mitEk || kandidaten[0]).m;
+                }
                 const neu = {
                     manufacturer: '', series: 'Standard', category: category || 'Zubehör',
                     bauart: bauart || 'Zubehör', name: String(name).trim(),
@@ -4365,7 +4378,7 @@
                 };
                 const id = await db.add('materials', neu);
                 neu.id = id;
-                this._matEnsureCache.set(key, neu);
+                this._matEnsureCache.push({ k: key, m: neu });
                 return neu;
             },
 
