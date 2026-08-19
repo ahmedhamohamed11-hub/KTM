@@ -1035,7 +1035,11 @@
                     // passende Material (fokussiert im Einkaufspreis-Feld) bzw. bietet an,
                     // ein neues Material anzulegen, wenn keins verknüpft ist.
                     const missingRow = !known && !labor;
-                    if (missingRow) fehlendeEk.push({ idx, name: it.name || '(ohne Namen)', hatMaterial: !!m });
+                    if (missingRow) fehlendeEk.push({
+                        idx, name: it.name || '(ohne Namen)', hatMaterial: !!m,
+                        menge: qty, einheit: it.unit || (m && m.unit) || 'Stk',
+                        matId: m ? String(m.id) : ''
+                    });
                     // Arbeitszeile MIT verknuepftem Material: ganze Zeile klickbar, oeffnet
                     // direkt die Materialbearbeitung (Kategorie + Preis zusammen aendern -
                     // Kleinmaterial in der Kategorie "Arbeitsleistung" hat sonst kein EK-Feld).
@@ -1080,10 +1084,17 @@
                     ${fehlendeEk.length ? `
                         <div class="diag-fehlt">
                             <div class="diag-fehlt-titel">${fehlendeEk.length} Position${fehlendeEk.length > 1 ? 'en' : ''} ohne Einkaufspreis – nicht im Gewinn enthalten</div>
-                            ${fehlendeEk.map(f => `<button type="button" class="diag-fehlt-btn" data-fix="${f.idx}">
-                                <span>${escapeHtml(f.name)}</span>
-                                <em>${f.hatMaterial ? 'EK oder Rabatt eintragen' : 'Material fehlt – anlegen'}</em>
-                            </button>`).join('')}
+                            ${fehlendeEk.map((f, n) => `<div class="diag-fehlt-zeile">
+                                <div class="diag-fehlt-info">
+                                    <span class="diag-fehlt-nr">${n + 1}.</span>
+                                    <span class="diag-fehlt-name">${escapeHtml(f.name)}</span>
+                                    <span class="diag-fehlt-menge">Menge: ${f.menge} ${escapeHtml(f.einheit)}</span>
+                                </div>
+                                ${f.hatMaterial ? `<div class="diag-fehlt-eingabe">
+                                    <input type="number" step="0.01" min="0" class="diag-fehlt-input" data-idx="${f.idx}" data-mat="${escapeHtml(f.matId)}" placeholder="EK netto je ${escapeHtml(f.einheit)}">
+                                    <button type="button" class="btn btn-sm btn-primary diag-fehlt-save" data-idx="${f.idx}" data-mat="${escapeHtml(f.matId)}">✓</button>
+                                </div>` : `<button type="button" class="diag-fehlt-btn" data-fix="${f.idx}"><em>Material fehlt – anlegen</em></button>`}
+                            </div>`).join('')}
                         </div>` : ''}
                     ${(offer.positions || []).some(p => p.materialId && materials.find(mm => String(mm.id) === String(p.materialId) && Number(mm.purchasePrice) > 0)) ? `
                         <div class="diag-hinweis">
@@ -1213,6 +1224,55 @@
                         });
                     });
                 });
+                // Direkteingabe in der Liste der fehlenden Einkaufspreise: speichert in
+                // ALLE gleichnamigen Materialdatensaetze (Duplikate) UND als Snapshot in
+                // dieses Angebot - danach ist der EK auch in kuenftigen Angeboten da.
+                const speichereEk = async (matId, idx, val) => {
+                    const mat = await db.get('materials', matId);
+                    if (!mat) { showToast('Material nicht gefunden.', 'error'); return false; }
+                    const norm = (v) => String(v || '').toLowerCase()
+                        .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                        .replace(/[^a-z0-9]/g, '');
+                    const ziel = norm(mat.name);
+                    let nMat = 0;
+                    for (const mm of await db.getAll('materials')) {
+                        if (norm(mm.name) !== ziel) continue;
+                        const bl = Number(mm.bundleLength) || 0;
+                        const isPack = ['Rolle', 'Bund', 'Stange'].includes(mm.unit || '') && bl > 0;
+                        await db.put('materials', { ...mm, purchasePrice: isPack ? Math.round(val * bl * 100) / 100 : val });
+                        nMat++;
+                    }
+                    const off = await db.get('offers', offerId);
+                    if (off) {
+                        let n = 0;
+                        for (const pp of (off.positions || [])) {
+                            if (String(pp.materialId) === String(matId) || norm(pp.name) === ziel) { pp.purchasePriceNet = val; n++; }
+                        }
+                        if (n) await db.put('offers', off);
+                    }
+                    showToast(`Einkaufspreis für „${mat.name}" gespeichert${nMat > 1 ? ` (${nMat} Datensätze)` : ''} – gilt ab jetzt auch für neue Angebote.`, 'success');
+                    return true;
+                };
+                diagModal.querySelectorAll('.diag-fehlt-save').forEach(b => {
+                    b.addEventListener('click', async () => {
+                        const inp = diagModal.querySelector(`.diag-fehlt-input[data-idx="${b.dataset.idx}"]`);
+                        const val = parseFloat(String(inp.value).replace(',', '.'));
+                        if (!(val >= 0)) { showToast('Bitte einen gültigen Einkaufspreis eingeben.', 'info'); inp.focus(); return; }
+                        if (await speichereEk(b.dataset.mat, b.dataset.idx, val)) {
+                            diagModal.remove();
+                            app.showOfferDiagnosis(offerId);
+                        }
+                    });
+                });
+                // Enter im Feld = speichern
+                diagModal.querySelectorAll('.diag-fehlt-input').forEach(inp => {
+                    inp.addEventListener('keydown', (e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        diagModal.querySelector(`.diag-fehlt-save[data-idx="${inp.dataset.idx}"]`)?.click();
+                    });
+                });
+
                 diagModal.querySelectorAll('.diag-fehlt-btn[data-fix]').forEach(b => {
                     b.addEventListener('click', () => {
                         app.fixMissingEkFromDiagnosis(offerId, parseInt(b.dataset.fix, 10), diagModal);
