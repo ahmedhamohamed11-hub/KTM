@@ -5769,6 +5769,116 @@
                 app.navigate('angebotDuplikate');
             },
 
+            // Problem 5a/5b: fehlende Einkaufspreise direkt aus der Angebotsliste
+            // heraus sehen und eintragen - ohne den Umweg ueber die Gewinn-Diagnose.
+            async showMissingEkQuick(offerId) {
+                const offer = await db.get('offers', offerId);
+                if (!offer) return;
+                const materials = await db.getAll('materials');
+                const C = (typeof offerProfitCore === 'function') ? offerProfitCore(offer, materials) : null;
+                if (!C) return;
+                const fehlend = C.lines.filter(l => !l.known && !l.labor).map(l => {
+                    const m = materials.find(x => String(x.id) === String(l.it.materialId));
+                    return { it: l.it, qty: l.qty, m };
+                });
+                if (!fehlend.length) { showToast('Bei diesem Angebot fehlt kein Einkaufspreis mehr.', 'success'); return; }
+
+                const modal = showModal(`Fehlende Einkaufspreise – ${escapeHtml(offer.offerNumber || '')}`, `
+                    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">
+                        ${fehlend.length} Position${fehlend.length > 1 ? 'en' : ''} ohne Einkaufspreis. Betrag eintragen und speichern –
+                        du wirst gefragt, ob der Wert nur für dieses Angebot gilt oder als Standard in den Katalog kommt.
+                    </div>
+                    ${fehlend.map((f, i) => `
+                        <div class="mek-row">
+                            <div class="mek-info">
+                                <div class="mek-name">${escapeHtml(f.it.name || '(ohne Namen)')}</div>
+                                <div class="mek-sub">${[f.m?.manufacturer, f.m?.articleNumber].filter(Boolean).map(escapeHtml).join(' · ') || 'kein Katalogeintrag'} · Menge: ${f.qty} ${escapeHtml(f.it.unit || 'Stk')}</div>
+                            </div>
+                            <div class="mek-eingabe">
+                                <input type="number" step="0.01" min="0" id="mek${i}" placeholder="EK netto je ${escapeHtml(f.it.unit || 'Stk')}">
+                                <button type="button" class="btn btn-sm btn-primary" data-mek="${i}">✓</button>
+                            </div>
+                        </div>`).join('')}`,
+                    null, null);
+
+                modal.querySelectorAll('button[data-mek]').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const i = parseInt(btn.dataset.mek, 10);
+                        const f = fehlend[i];
+                        const val = parseFloat(String(modal.querySelector(`#mek${i}`).value).replace(',', '.'));
+                        if (!(val >= 0)) { showToast('Bitte einen gültigen Betrag eingeben.', 'info'); return; }
+
+                        // Problem 5b: bewusst fragen, wie weit der Wert gelten soll.
+                        const alsStandard = f.m ? await showConfirm(
+                            `Einkaufspreis <strong>${formatCurrency(val)}</strong> für „${escapeHtml(f.it.name)}“:<br><br>` +
+                            `<strong>Als Standard</strong> speichert ihn im Katalogeintrag – er gilt dann für alle künftigen Angebote.<br>` +
+                            `<strong>Nur dieses Angebot</strong> lässt den Katalog unverändert.`,
+                            { title: 'Wie weit soll der Wert gelten?', okText: 'Als Standard im Katalog', cancelText: 'Nur dieses Angebot' }) : false;
+
+                        // Immer: Snapshot in dieses Angebot
+                        const off = await db.get('offers', offerId);
+                        const norm = (v) => String(v || '').toLowerCase()
+                            .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                            .replace(/[^a-z0-9]/g, '');
+                        let nPos = 0;
+                        for (const pp of (off.positions || [])) {
+                            if (String(pp.materialId) === String(f.it.materialId) || norm(pp.name) === norm(f.it.name)) {
+                                pp.purchasePriceNet = val; nPos++;
+                            }
+                        }
+                        if (nPos) await db.put('offers', off);
+
+                        if (alsStandard && f.m) {
+                            let nMat = 0;
+                            for (const mm of await db.getAll('materials')) {
+                                if (norm(mm.name) !== norm(f.m.name)) continue;
+                                const bl = Number(mm.bundleLength) || 0;
+                                const isPack = ['Rolle', 'Bund', 'Stange'].includes(mm.unit || '') && bl > 0;
+                                await db.put('materials', { ...mm, purchasePrice: isPack ? Math.round(val * bl * 100) / 100 : val });
+                                nMat++;
+                            }
+                            showToast(`Als Standard gespeichert${nMat > 1 ? ` (${nMat} Datensätze)` : ''} – gilt ab jetzt für alle neuen Angebote.`, 'success');
+
+                            // Problem 5c: optional auch RUECKWIRKEND in bestehende
+                            // Angebote. Bereits angenommene/abgerechnete Angebote werden
+                            // dabei nie angefasst - deren Kalkulation ist abgeschlossen.
+                            const GESCHUETZT = ['Auftrag erhalten', 'Rechnung erstellt', 'Bezahlt'];
+                            const alleOffers = await db.getAll('offers');
+                            const betroffen = [];
+                            for (const oo of alleOffers) {
+                                if (String(oo.id) === String(offerId)) continue;
+                                if (GESCHUETZT.includes(oo.status)) continue;
+                                const treffer = (oo.positions || []).filter(pp =>
+                                    (String(pp.materialId) === String(f.it.materialId) || norm(pp.name) === norm(f.m.name))
+                                    && (pp.purchasePriceNet == null || pp.purchasePriceNet === '' || Math.abs(Number(pp.purchasePriceNet) - val) > 0.005));
+                                if (treffer.length) betroffen.push({ o: oo, treffer });
+                            }
+                            if (betroffen.length) {
+                                const uebernehmen = await showConfirm(
+                                    `In <strong>${betroffen.length}</strong> weiteren offenen Angebot(en) kommt „${escapeHtml(f.m.name)}“ ebenfalls vor:<br><br>` +
+                                    betroffen.slice(0, 12).map(b => `• ${escapeHtml(b.o.offerNumber || b.o.id)}${b.o.status ? ` <em>(${escapeHtml(b.o.status)})</em>` : ''}`).join('<br>') +
+                                    (betroffen.length > 12 ? `<br>… und ${betroffen.length - 12} weitere` : '') +
+                                    `<br><br>Dort ebenfalls auf ${formatCurrency(val)} setzen?<br>` +
+                                    `<em>Angenommene und abgerechnete Angebote bleiben unverändert.</em>`,
+                                    { title: 'Auch in bestehende Angebote übernehmen?', okText: 'Ja, übernehmen', cancelText: 'Nein, nur ab jetzt' });
+                                if (uebernehmen) {
+                                    let n = 0;
+                                    for (const b of betroffen) {
+                                        for (const pp of b.treffer) pp.purchasePriceNet = val;
+                                        await db.put('offers', b.o); n++;
+                                    }
+                                    showToast(`In ${n} weiteren Angebot(en) übernommen.`, 'success');
+                                }
+                            }
+                        } else {
+                            showToast(`Gespeichert – gilt nur für ${offer.offerNumber || 'dieses Angebot'}.`, 'success');
+                        }
+                        modal.remove();
+                        app.navigate('offers');
+                    });
+                });
+            },
+
             // ===== Bauart bei vorhandenen Materialien nachtragen =====
             // Manuell ausloesbar aus dem Schnellrechner. Gleiche Logik wie die
             // Startmigration, aber ohne Flag - laesst sich beliebig oft ausfuehren.
