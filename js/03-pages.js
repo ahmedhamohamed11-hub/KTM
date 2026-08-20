@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v158</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v159</span></div>
                         </div>
                     </div>`;
             })();
@@ -2017,6 +2017,10 @@
                     listFilters.offers.q = inp.value;
                     clearTimeout(inp._t);
                     inp._t = setTimeout(() => { renderOffers(); setTimeout(() => { const el = document.getElementById('offSearch'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 0); }, 250);
+                });
+                document.getElementById('offEkFilter')?.addEventListener('change', (e) => {
+                    listFilters.offers.ek = e.target.value;
+                    renderOffers();
                 });
                 document.getElementById('offStatusFilter').addEventListener('change', (e) => {
                     listFilters.offers.status = e.target.value;

@@ -384,6 +384,92 @@
             })();
         }
 
+        // ===== EK-Uebersicht (Problem 6a/6b) =====
+        // Eine Zeile je Katalogartikel: Listenpreis netto, hinterlegter Standard-EK
+        // bzw. Rabatt, Vorkommen in Angeboten. Stehen fuer denselben Artikel in
+        // verschiedenen Angeboten verschiedene EK-Werte, wird das aufklappbar
+        // ausgewiesen - genau die Ursache fuer abweichende Margen bei sonst
+        // identischen Angeboten.
+        function renderEkUebersicht() {
+            (async () => {
+                const materials = await db.getAll('materials');
+                const offers = await db.getAll('offers');
+                const dd = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+                const norm = (v) => String(v || '').toLowerCase()
+                    .replace(/[äöüß]/g, c => ({ 'ä':'ae','ö':'oe','ü':'ue','ß':'ss' }[c]))
+                    .replace(/[^a-z0-9]/g, '');
+
+                // Verwendungen je Artikel sammeln (ueber Material-ID ODER Name, damit
+                // Katalog-Duplikate zusammen betrachtet werden)
+                const nutzung = new Map();   // normName -> [{offer, pos, ek}]
+                for (const o of offers) {
+                    for (const pp of (o.positions || [])) {
+                        if (typeof isLaborPos === 'function' && isLaborPos(pp)) continue;
+                        const key = norm(pp.name);
+                        if (!key) continue;
+                        if (!nutzung.has(key)) nutzung.set(key, []);
+                        const hatSnap = pp.purchasePriceNet != null && pp.purchasePriceNet !== '';
+                        nutzung.get(key).push({ offer: o, pos: pp, ek: hatSnap ? Number(pp.purchasePriceNet) : null });
+                    }
+                }
+
+                // Artikel: je normalisiertem Namen EIN Eintrag
+                const artikel = new Map();
+                for (const m of materials) {
+                    if (typeof isLaborPos === 'function' && isLaborPos(m)) continue;
+                    const key = norm(m.name);
+                    if (!key || artikel.has(key)) continue;
+                    artikel.set(key, m);
+                }
+
+                const zeilen = [];
+                for (const [key, m] of artikel) {
+                    const verw = nutzung.get(key) || [];
+                    if (!verw.length) continue;   // nur Artikel, die auch verwendet werden
+                    const info = (typeof ekInfo === 'function') ? ekInfo(m, dd) : null;
+                    const werte = [...new Set(verw.map(v => v.ek == null ? 'kein' : v.ek.toFixed(2)))];
+                    zeilen.push({ m, verw, info, widerspruch: werte.length > 1, werte });
+                }
+                zeilen.sort((a, b) => (b.widerspruch - a.widerspruch)
+                    || (a.m.name || '').localeCompare(b.m.name || '', 'de'));
+                window.__ekUebersicht = zeilen;
+                const nWider = zeilen.filter(z => z.widerspruch).length;
+
+                contentArea.innerHTML = `
+                    <div class="fo-wrap">
+                        <div class="fo-hint" style="margin-bottom:14px;">
+                            Alle Artikel, die in Angeboten vorkommen – mit Listenpreis, hinterlegtem Standard-EK
+                            und den tatsächlich verwendeten Einkaufspreisen.
+                            ${nWider ? `<strong style="color:var(--danger);">${nWider} Artikel mit widersprüchlichen EK-Werten.</strong>` : '<strong>Keine Widersprüche – alle Angebote nutzen denselben EK je Artikel.</strong>'}
+                        </div>
+                        ${zeilen.map((z, i) => {
+                            const rabattTxt = !z.info || z.info.quelle === 'keiner' ? '<span style="color:var(--danger);">kein Rabatt/EK hinterlegt</span>'
+                                : z.info.quelle === 'ist' ? `Standard-EK ${formatCurrency(z.info.ekNetto)}`
+                                : `Rabatt ${z.info.rabatt} % → EK ${formatCurrency(z.info.ekNetto)}`;
+                            return `<div class="dup-group ${z.widerspruch ? 'ek-wider' : ''}">
+                                <div class="dup-group-name">${escapeHtml(z.m.name)}
+                                    <span style="font-weight:400;color:var(--text-muted);font-size:12px;">
+                                        ${[z.m.manufacturer, z.m.articleNumber].filter(Boolean).map(escapeHtml).join(' · ')}
+                                    </span></div>
+                                <div class="dup-item"><label><span>Listenpreis netto</span></label><strong>${formatCurrency(Number(z.m.sellingPrice) || 0)}</strong></div>
+                                <div class="dup-item"><label><span>${rabattTxt}</span></label><strong>${z.verw.length}× verwendet</strong></div>
+                                ${z.widerspruch ? `
+                                    <div style="margin-top:8px;font-size:12px;color:var(--danger);font-weight:600;">
+                                        ${z.werte.length} verschiedene Einkaufspreise:
+                                    </div>
+                                    ${z.verw.map(v => `<div class="dup-item">
+                                        <label><span>${escapeHtml(v.offer.offerNumber || '(ohne Nr.)')} <small>${escapeHtml(v.offer.status || '')}</small></span></label>
+                                        <strong style="color:${v.ek == null ? 'var(--danger)' : 'inherit'};">${v.ek == null ? 'kein EK' : formatCurrency(v.ek)}</strong>
+                                    </div>`).join('')}
+                                    <div class="dup-actions">
+                                        <button type="button" class="btn btn-sm btn-primary" onclick="app.harmonizeEk(${i})">Auf einen Wert vereinheitlichen …</button>
+                                    </div>` : ''}
+                            </div>`;
+                        }).join('')}
+                    </div>`;
+            })();
+        }
+
         function renderFinanceOverview() {
             (async () => {
                 const invoices = await db.getAll('invoices');

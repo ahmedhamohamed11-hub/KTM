@@ -4003,7 +4003,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', angebotDuplikate: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', angebotDuplikate: 'list', ekUebersicht: 'list', equipment: 'cards', maintenance: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -4024,6 +4024,7 @@
                     case 'preiskontrolle': renderPreiskontrolle(); break;
                     case 'katalogpreisCheck': renderKatalogpreisCheck(); break;
                     case 'angebotDuplikate': renderAngebotDuplikate(); break;
+                    case 'ekUebersicht': renderEkUebersicht(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
@@ -5877,6 +5878,88 @@
                         app.navigate('offers');
                     });
                 });
+            },
+
+            // Problem 6c: einen EK-Wert als den richtigen markieren, alle anderen
+            // Angebote darauf setzen - mit Vorschau der Margenaenderung und Undo.
+            async harmonizeEk(idx) {
+                const z = (window.__ekUebersicht || [])[idx];
+                if (!z) return;
+                const werte = [...new Set(z.verw.filter(v => v.ek != null).map(v => v.ek))].sort((a, b) => a - b);
+                if (!werte.length) { showToast('Für diesen Artikel ist nirgends ein EK hinterlegt.', 'info'); return; }
+                const GESCHUETZT = ['Auftrag erhalten', 'Rechnung erstellt', 'Bezahlt'];
+
+                const wahl = showModal(`Einkaufspreis vereinheitlichen – ${escapeHtml(z.m.name)}`, `
+                    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">
+                        Welcher Wert ist der richtige? Alle offenen Angebote werden darauf gesetzt.
+                        Angenommene und abgerechnete Angebote bleiben unverändert.
+                    </div>
+                    ${werte.map((w, i) => `<label class="dup-item" style="cursor:pointer;">
+                        <input type="radio" name="ekPick" value="${w}" ${i === 0 ? 'checked' : ''}>
+                        <span style="flex:1;">${formatCurrency(w)} <small>(${z.verw.filter(v => v.ek === w).length}× verwendet)</small></span>
+                    </label>`).join('')}
+                    <div class="form-group" style="margin-top:10px;">
+                        <label>… oder eigener Wert (€ netto)</label>
+                        <input type="number" step="0.01" min="0" id="ekEigen" placeholder="leer lassen = obige Auswahl">
+                    </div>`,
+                    async (ov) => {
+                        const eigen = parseFloat(String(ov.querySelector('#ekEigen').value).replace(',', '.'));
+                        const ziel = (eigen >= 0 && isFinite(eigen)) ? eigen
+                                   : parseFloat(ov.querySelector('input[name="ekPick"]:checked').value);
+                        ov.remove();
+
+                        // Vorschau: welche Angebote aendern sich, und wie die Marge
+                        const materials = await db.getAll('materials');
+                        const vorschau = [];
+                        for (const v of z.verw) {
+                            if (GESCHUETZT.includes(v.offer.status)) continue;
+                            if (v.ek != null && Math.abs(v.ek - ziel) < 0.005) continue;
+                            const vorher = offerProfitCore(v.offer, materials);
+                            const probe = JSON.parse(JSON.stringify(v.offer));
+                            for (const pp of (probe.positions || [])) {
+                                if (String(pp.name).toLowerCase() === String(v.pos.name).toLowerCase()) pp.purchasePriceNet = ziel;
+                            }
+                            const nachher = offerProfitCore(probe, materials);
+                            vorschau.push({ offer: v.offer, mVor: vorher.margin, mNach: nachher.margin,
+                                            gVor: vorher.profit, gNach: nachher.profit });
+                        }
+                        if (!vorschau.length) { showToast('Nichts zu ändern – alle offenen Angebote haben diesen Wert bereits.', 'info'); return; }
+
+                        const ok = await showConfirm(
+                            `Einkaufspreis auf <strong>${formatCurrency(ziel)}</strong> setzen. Das ändert:<br><br>` +
+                            vorschau.slice(0, 12).map(p =>
+                                `• ${escapeHtml(p.offer.offerNumber || p.offer.id)}: Marge ${p.mVor.toFixed(1)} % → <strong>${p.mNach.toFixed(1)} %</strong> ` +
+                                `(${formatCurrency(p.gVor)} → ${formatCurrency(p.gNach)})`).join('<br>') +
+                            (vorschau.length > 12 ? `<br>… und ${vorschau.length - 12} weitere` : ''),
+                            { title: `${vorschau.length} Angebot(e) ändern`, okText: 'Jetzt vereinheitlichen' });
+                        if (!ok) return;
+
+                        // Undo-Sicherung der betroffenen Angebote VOR der Aenderung
+                        const sicherung = vorschau.map(p => JSON.parse(JSON.stringify(p.offer)));
+
+                        for (const p of vorschau) {
+                            const oo = await db.get('offers', p.offer.id);
+                            if (!oo) continue;
+                            for (const pp of (oo.positions || [])) {
+                                if (String(pp.name).toLowerCase() === String(z.m.name).toLowerCase()) pp.purchasePriceNet = ziel;
+                            }
+                            await db.put('offers', oo);
+                        }
+                        // Standard im Katalog gleich mitziehen, sonst kommt der Widerspruch
+                        // beim naechsten Angebot sofort wieder
+                        const nm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        for (const mm of await db.getAll('materials')) {
+                            if (nm(mm.name) !== nm(z.m.name)) continue;
+                            await db.put('materials', { ...mm, purchasePrice: ziel });
+                        }
+
+                        showUndoToast(`${vorschau.length} Angebot(e) auf ${formatCurrency(ziel)} vereinheitlicht.`, async () => {
+                            for (const alt of sicherung) await db.put('offers', alt);
+                            showToast('Änderung rückgängig gemacht.', 'info');
+                            app.navigate('ekUebersicht');
+                        });
+                        app.navigate('ekUebersicht');
+                    });
             },
 
             // ===== Bauart bei vorhandenen Materialien nachtragen =====

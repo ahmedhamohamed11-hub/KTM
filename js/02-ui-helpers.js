@@ -3,7 +3,7 @@
         const PAGE_TITLES = {
             dashboard: 'Dashboard', customers: 'Kunden', projects: 'Projekte',
             calendar: 'Kalender', materials: 'Materialien', offers: 'Angebote',
-            orders: 'Bestellungen', invoices: 'Rechnungen', finanzuebersicht: 'Finanzen – Übersicht', katalogDuplikate: 'Katalog-Dubletten', preiskontrolle: 'Preis-/Rabattkontrolle', katalogpreisCheck: 'Katalogpreise prüfen', angebotDuplikate: 'Doppelte Angebote', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien',
+            orders: 'Bestellungen', invoices: 'Rechnungen', finanzuebersicht: 'Finanzen – Übersicht', katalogDuplikate: 'Katalog-Dubletten', preiskontrolle: 'Preis-/Rabattkontrolle', katalogpreisCheck: 'Katalogpreise prüfen', angebotDuplikate: 'Doppelte Angebote', ekUebersicht: 'EK-Übersicht', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien',
             calc: 'Schnellrechner', equipment: 'Anlagen', maintenance: 'Wartung', katalog: 'Katalog'
         };
         function setPageTitle(page) {
@@ -49,7 +49,7 @@
         const listFilters = {
             customers: { q: '' },
             materials: { q: '' },
-            offers: { q: '', status: '' },
+            offers: { q: '', status: '', ek: '' },
             orders: { q: '', status: '' },
             invoices: { q: '', status: '' }
         };

@@ -1749,3 +1749,6 @@
 .mek-eingabe { display:flex; gap:6px; align-items:center; }
 .mek-eingabe input { width:140px; padding:6px 9px; font-size:13px;
     border:1px solid var(--border); border-radius:7px; background:var(--bg-primary); }
+
+/* EK-Übersicht: Artikel mit widersprüchlichen Werten hervorheben */
+.ek-wider { border-color: rgba(200,60,60,.45); background: rgba(200,60,60,.06); }
