@@ -316,6 +316,74 @@
             })();
         }
 
+        // ===== Doppelte Angebote finden (Problem 7d) =====
+        // Erkennt Angebote, die inhaltlich identisch sind: gleicher Kunde/Projekt,
+        // gleiches Datum, gleicher Gesamtbetrag und gleiche Positionen (Material +
+        // Menge). Die Angebotsnummer wird bewusst NICHT verglichen - genau die
+        // unterscheidet sich ja bei den Duplikaten (A-2026-0199 / A-2026-0200).
+        function renderAngebotDuplikate() {
+            (async () => {
+                const offers = await db.getAll('offers');
+                const customers = await db.getAll('customers');
+                const materials = await db.getAll('materials');
+                const projects = await db.getAll('projects');
+                const custById = new Map(customers.map(c => [String(c.id), c]));
+                const projById = new Map(projects.map(p => [String(p.id), p]));
+
+                const fingerprint = (o) => {
+                    const R = (typeof recomputeOffer === 'function') ? recomputeOffer(o) : null;
+                    const summe = R ? R.total.toFixed(2) : String(o.totalPrice || 0);
+                    const pos = (o.positions || [])
+                        .map(p => `${p.materialId || p.name}:${Number(p.quantity) || 0}`)
+                        .sort().join('|');
+                    return [String(o.customerId || ''), String(o.projectId || ''),
+                            String(o.createdAt || '').slice(0, 10), summe, pos].join('#');
+                };
+
+                const gruppen = new Map();
+                for (const o of offers) {
+                    const fp = fingerprint(o);
+                    if (!gruppen.has(fp)) gruppen.set(fp, []);
+                    gruppen.get(fp).push(o);
+                }
+                const dubletten = [...gruppen.values()].filter(g => g.length > 1)
+                    .map(g => g.slice().sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || ''))));
+                window.__angebotDubletten = dubletten;
+
+                contentArea.innerHTML = `
+                    <div class="fo-wrap">
+                        <div class="fo-hint" style="margin-bottom:14px;">
+                            Angebote mit gleichem Kunden, Datum, Gesamtbetrag und identischen Positionen.
+                            Die Angebotsnummer wird nicht verglichen – genau die unterscheidet sich bei Duplikaten.
+                            ${dubletten.length ? `<strong style="color:var(--danger);">${dubletten.length} Gruppe${dubletten.length > 1 ? 'n' : ''} gefunden.</strong>` : '<strong>Keine doppelten Angebote gefunden.</strong>'}
+                        </div>
+                        ${dubletten.map((g, gi) => {
+                            const c = custById.get(String(g[0].customerId));
+                            const pr = projById.get(String(g[0].projectId));
+                            const R = (typeof recomputeOffer === 'function') ? recomputeOffer(g[0]) : null;
+                            return `<div class="dup-group">
+                                <div class="dup-group-name">${escapeHtml(c ? `${c.firstName || ''} ${c.lastName || ''}`.trim() : 'Ohne Kunde')}
+                                    <span style="font-weight:400;color:var(--text-muted);font-size:12px;">
+                                        ${escapeHtml(pr?.title || '')} · ${formatCurrency(R ? R.total : 0)} · ${g.length} identische Angebote
+                                    </span></div>
+                                ${g.map((o, oi) => `
+                                    <div class="dup-item">
+                                        <label>
+                                            <input type="radio" name="offKeep${gi}" value="${escapeHtml(String(o.id))}" ${oi === 0 ? 'checked' : ''}>
+                                            <span><strong>${escapeHtml(o.offerNumber || '(ohne Nummer)')}</strong>
+                                            <small>${o.createdAt ? formatDate(o.createdAt) : ''} · ${escapeHtml(o.status || '')} · ${(o.positions || []).length} Positionen</small></span>
+                                        </label>
+                                        ${['Auftrag erhalten', 'Rechnung erstellt', 'Bezahlt'].includes(o.status) ? '<span style="color:var(--danger);font-size:11px;font-weight:600;">geschützt</span>' : ''}
+                                    </div>`).join('')}
+                                <div class="dup-actions">
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="app.deleteDuplicateOffers(${gi})">Ausgewähltes behalten, andere löschen</button>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>`;
+            })();
+        }
+
         function renderFinanceOverview() {
             (async () => {
                 const invoices = await db.getAll('invoices');

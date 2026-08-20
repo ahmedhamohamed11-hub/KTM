@@ -260,8 +260,12 @@ async put(storeName, data) {
 
     try {
 
+        // WICHTIG: sbTable() - der lokale Store-Name ist nicht immer der Tabellenname
+        // in Supabase (projectMaterials -> project_materials, refrigerantLog ->
+        // refrigerant_log). Ohne die Umrechnung lief die Loeschung gegen eine nicht
+        // existierende Tabelle und wurde nie zu den anderen Geraeten uebertragen.
         const { error } = await sb
-            .from(storeName)
+            .from(sbTable(storeName))
             .delete()
             .eq(storeName === 'settings' ? 'key' : 'id', id);
 
@@ -421,16 +425,37 @@ await db.putLocalOnly(table, merged);
                             localData._remote = true;
                             await db.putLocalOnly(t, localData);
                         }
-                        // HINWEIS (Datenverlust-Fix): Früher wurden hier lokale
-                        // Datensätze gelöscht, die auf dem Server fehlten. Das war die
-                        // Ursache für verlorene Materialien/Anlagen: Kam der Server-Pull
-                        // leer zurück (RLS, fehlende Spalte, Netzfehler), wurden frisch
-                        // angelegte Datensätze fälschlich als "remote gelöscht" behandelt
-                        // und lokal entfernt. Echte Löschungen laufen zuverlässig über
-                        // die explizite Lösch-Warteschlange (deletePendingQueue) auf
-                        // allen Geräten. Automatisches lokales Löschen entfällt daher –
-                        // lokale Daten bleiben immer erhalten, bis sie bewusst gelöscht
-                        // werden.
+                        // ABGLEICH von Loeschungen anderer Geraete - mit strengen
+                        // Schutzvorkehrungen. Ohne diesen Schritt bleibt ein am Laptop
+                        // geloeschtes Angebot am Handy fuer immer stehen, weil Realtime-
+                        // Ereignisse nur ankommen, solange die App geoeffnet ist.
+                        //
+                        // Frueher hat genau diese Stelle Daten vernichtet: kam der Pull
+                        // leer oder unvollstaendig zurueck (RLS, Netzfehler), galten
+                        // lokale Datensaetze faelschlich als geloescht. Deshalb jetzt:
+                        //   1. nur bei fehlerfreiem Pull (steht bereits in dieser
+                        //      if-Bedingung),
+                        //   2. NIE bei leerer Serverantwort, solange lokal Daten liegen -
+                        //      das ist praktisch immer ein Zugriffs-/Netzproblem,
+                        //   3. nur Datensaetze mit _synced === true, die also nachweislich
+                        //      schon einmal auf dem Server waren. Lokal neu angelegte,
+                        //      noch nicht hochgeladene Daten bleiben immer erhalten.
+                        if (t !== 'settings') {
+                            const lokal = await db.getAll(t);
+                            const nurLokalNeu = lokal.filter(r => !r._synced).length;
+                            const darfAufraeumen = data.length > 0 || lokal.length === nurLokalNeu;
+                            if (darfAufraeumen) {
+                                for (const r of lokal) {
+                                    const rid = String(r.id ?? '');
+                                    if (!rid || remoteIds.has(rid)) continue;
+                                    if (!r._synced) continue;   // noch nie hochgeladen -> behalten
+                                    await db.deleteLocalOnly(t, r.id);
+                                    console.log(`Sync: "${t}" ${rid} wurde auf einem anderen Gerät gelöscht – lokal entfernt.`);
+                                }
+                            } else if (lokal.length) {
+                                console.warn(`Sync: "${t}" kam leer vom Server, lokal liegen ${lokal.length} Datensätze – Aufräumen übersprungen (vermutlich Zugriffs- oder Netzproblem).`);
+                            }
+                        }
                     } else if (error) {
                         console.warn(`Sync-Fehler bei Tabelle "${t}":`, error.message);
                         failedTables.push({ table: t, message: error.message });
@@ -1447,9 +1472,19 @@ async function getNextAutoNumber() {
     const year = new Date().getFullYear();
     const counterKey = `offerCounter_${year}`;
     let counter = parseInt(await getSetting(counterKey, '0')) || 0;
-    counter += 1;
+    // Kollisionsfest: der reine Zaehler reicht nicht, wenn zwei Geraete offline
+    // gearbeitet haben oder ein Sync den Zaehler noch nicht nachgezogen hat.
+    // Deshalb zusaetzlich gegen die tatsaechlich vorhandenen Angebotsnummern
+    // pruefen und notfalls hochzaehlen, bis die Nummer wirklich frei ist.
+    const vorhanden = new Set((await db.getAll('offers')).map(o => o.offerNumber).filter(Boolean));
+    let nummer;
+    let schutz = 0;
+    do {
+        counter += 1; schutz += 1;
+        nummer = `A-${year}-${String(counter).padStart(4, '0')}`;
+    } while (vorhanden.has(nummer) && schutz < 10000);
     await setSetting(counterKey, String(counter));
-    return `A-${year}-${String(counter).padStart(4, '0')}`;
+    return nummer;
 }
 
 async function isOfferNumberUnique(number, excludeId = null) {

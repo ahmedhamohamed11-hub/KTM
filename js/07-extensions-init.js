@@ -4003,7 +4003,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', angebotDuplikate: 'list', equipment: 'cards', maintenance: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -4023,6 +4023,7 @@
                     case 'katalogDuplikate': renderKatalogDuplikate(); break;
                     case 'preiskontrolle': renderPreiskontrolle(); break;
                     case 'katalogpreisCheck': renderKatalogpreisCheck(); break;
+                    case 'angebotDuplikate': renderAngebotDuplikate(); break;
                     case 'fields': renderFields(); break;
                     case 'settings': renderSettings(); break;
                     case 'backup': renderBackup(); break;
@@ -5742,6 +5743,30 @@
                 }
                 showToast(`${n} Materialien korrigiert.`, 'success');
                 app.navigate('katalogpreisCheck');
+            },
+
+            // Duplikat-Angebote loeschen. Angenommene/abgerechnete Angebote werden
+            // NIE geloescht, egal was ausgewaehlt ist - an denen haengen Rechnungen.
+            async deleteDuplicateOffers(groupIndex) {
+                const gruppe = (window.__angebotDubletten || [])[groupIndex];
+                if (!gruppe) return;
+                const keep = document.querySelector(`input[name="offKeep${groupIndex}"]:checked`);
+                if (!keep) { showToast('Bitte ein Angebot zum Behalten auswählen.', 'error'); return; }
+                const GESCHUETZT = ['Auftrag erhalten', 'Rechnung erstellt', 'Bezahlt'];
+                const zuLoeschen = gruppe.filter(o => String(o.id) !== String(keep.value)
+                                                   && !GESCHUETZT.includes(o.status));
+                const uebersprungen = gruppe.filter(o => String(o.id) !== String(keep.value)
+                                                      && GESCHUETZT.includes(o.status));
+                if (!zuLoeschen.length) { showToast('Nichts zu löschen (die anderen sind geschützt).', 'info'); return; }
+                const ok = await showConfirm(
+                    `<strong>${zuLoeschen.length}</strong> Angebot(e) löschen?<br><br>` +
+                    zuLoeschen.map(o => `• ${escapeHtml(o.offerNumber || o.id)}`).join('<br>') +
+                    (uebersprungen.length ? `<br><br><em>${uebersprungen.length} bleibt/bleiben erhalten (bereits angenommen oder abgerechnet).</em>` : ''),
+                    { title: 'Doppelte Angebote löschen', okText: 'Löschen' });
+                if (!ok) return;
+                for (const o of zuLoeschen) await db.delete('offers', o.id);
+                showToast(`${zuLoeschen.length} doppelte(s) Angebot(e) gelöscht.`, 'success');
+                app.navigate('angebotDuplikate');
             },
 
             // ===== Bauart bei vorhandenen Materialien nachtragen =====
