@@ -1752,3 +1752,9 @@
 
 /* EK-Übersicht: Artikel mit widersprüchlichen Werten hervorheben */
 .ek-wider { border-color: rgba(200,60,60,.45); background: rgba(200,60,60,.06); }
+
+/* Verschieben-Knopf an der Produktkarte */
+.mat-move { position:absolute; top:8px; right:38px; width:26px; height:26px;
+    border:1px solid var(--border); border-radius:7px; background:var(--bg-secondary);
+    color:var(--text-muted); font-size:13px; line-height:1; cursor:pointer; z-index:2; }
+.mat-move:hover { color:var(--accent); border-color:var(--accent); }

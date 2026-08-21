@@ -320,16 +320,14 @@
                 // ===== Mehrstufige Materialauswahl (Kategorie → Marke → Serie → Modell) =====
                 const stepBox = modal.querySelector('#pmStepPicker');
                 if (stepBox) {
-                    // Kategorien nach Bauart (mit sinnvoller Reihenfolge + Icon)
-                    const catOrder = ['Innengerät Single-Split', 'Außengerät Single-Split', 'Innengerät Multi-Split', 'Außengerät Multi-Split', 'Innengerät VRF', 'Außengerät VRF', 'Wärmepumpe', 'Kanalgerät', 'Deckenkassette', 'Konsolengerät', 'Unterdeckengerät', 'Truhengerät', 'Klimaset', 'Zubehör'];
-                    const catIcon = { 'Innengerät Single-Split': '🌡️', 'Außengerät Single-Split': '🔲', 'Innengerät Multi-Split': '🌡️', 'Außengerät Multi-Split': '🔲', 'Truhengerät': '📦', 'Zubehör': '🔧' };
+                    // GLEICHE Sortierung wie in der Materialliste: erste Ebene ist die
+                    // KATEGORIE (oberster Ordner), alphabetisch. Vorher gruppierte dieser
+                    // Picker nach BAUART mit einer eigenen festen Reihenfolge - dadurch
+                    // sah die Auswahl im Projekt voellig anders aus als die Materialliste.
                     const state = { cat: null, brand: null, series: null };
 
-                    const catOf = m => m.bauart || m.category || 'Sonstiges';
-                    const cats = [...new Set(materials.map(catOf))].sort((a, b) => {
-                        const ia = catOrder.indexOf(a), ib = catOrder.indexOf(b);
-                        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
-                    });
+                    const catOf = m => String(m.category || 'Ohne Kategorie').split('/')[0];
+                    const cats = [...new Set(materials.map(catOf))].sort((a, b) => a.localeCompare(b, 'de'));
 
                     const render = () => {
                         // aktueller Pfad als Chips + jeweilige Optionen
@@ -343,10 +341,10 @@
 
                         if (!state.cat) {
                             html += `<div class="sp-label">1. Kategorie wählen</div><div class="sp-grid">`;
-                            html += cats.map(c => `<button type="button" class="sp-btn" data-cat="${escapeHtml(c)}">${catIcon[c] || '•'} ${escapeHtml(c)}</button>`).join('');
+                            html += cats.map(c => `<button type="button" class="sp-btn" data-cat="${escapeHtml(c)}">${typeof matCatIcon === 'function' ? matCatIcon(c) : '•'} ${escapeHtml(c)}</button>`).join('');
                             html += `</div>`;
                         } else if (!state.brand) {
-                            const brands = [...new Set(materials.filter(m => catOf(m) === state.cat).map(m => m.manufacturer).filter(Boolean))].sort();
+                            const brands = [...new Set(materials.filter(m => catOf(m) === state.cat).map(m => m.manufacturer).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
                             html += `<div class="sp-label">2. Marke wählen</div><div class="sp-grid">`;
                             html += brands.map(b => `<button type="button" class="sp-btn" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</button>`).join('');
                             if (brands.length === 0) html += `<div class="sp-empty">Keine Marken in dieser Kategorie.</div>`;
@@ -359,8 +357,10 @@
                                 html += seriesList.map(s => `<button type="button" class="sp-btn" data-series="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('');
                                 html += `</div>`;
                             } else {
+                                // Sortierung wie in der Materialliste: erst Leistung, dann Name
                                 const models = inBrand.filter(m => !state.series || m.series === state.series)
-                                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                                    .sort((a, b) => (parseFloat(String(a.size).replace(',', '.')) || 0) - (parseFloat(String(b.size).replace(',', '.')) || 0)
+                                        || (a.name || '').localeCompare(b.name || ''));
                                 html += `<div class="sp-label">${seriesList.length > 1 ? '4.' : '3.'} Modell wählen</div><div class="sp-models">`;
                                 html += models.map(m => {
                                     const ek = Number(m.purchasePrice) > 0 ? ` · EK ${formatCurrency(m.purchasePrice)}` : '';
@@ -1896,6 +1896,47 @@
                 const F = listFilters.materials; F.cat = ''; F.hersteller = ''; F.serie = ''; F.level = 'cats';
                 renderMaterials();
             },
+            // Ein Material in eine andere Kategorie verschieben - per Auswahl statt
+            // Drag & Drop. Auf dem Handy laesst sich schlecht ziehen, und wenn man tief
+            // in einer Kategorie steht, ist gar kein Zielordner sichtbar. Der Artikel
+            // bleibt derselbe Datensatz: Preise, Einkaufspreis, Bestand, Bilder und die
+            // Verknuepfung zu bestehenden Angeboten bleiben unangetastet.
+            async moveMaterialToCategory(matId) {
+                const mat = await db.get('materials', matId);
+                if (!mat) return;
+                const alle = await db.getAll('materials');
+                const pfade = [...new Set(alle.map(m => m.category || 'Ohne Kategorie').filter(Boolean))]
+                    .sort((a, b) => a.localeCompare(b, 'de'));
+                const aktuell = mat.category || 'Ohne Kategorie';
+                const modal = showModal(`Verschieben – ${escapeHtml(mat.name)}`, `
+                    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">
+                        Aktuell in <strong>${escapeHtml(aktuell)}</strong>. Preise, Einkaufspreis, Bestand
+                        und bestehende Angebote bleiben unverändert.
+                    </div>
+                    <div class="form-group">
+                        <label>Neue Kategorie</label>
+                        <select id="mvCat">
+                            ${pfade.map(pth => `<option value="${escapeHtml(pth)}" ${pth === aktuell ? 'selected' : ''}>${escapeHtml(pth)}</option>`).join('')}
+                            <option value="__neu__">+ neue Kategorie eintippen …</option>
+                        </select>
+                        <input type="text" id="mvNeu" placeholder="z. B. Elektroinstallation/Sicherungen" style="display:none;margin-top:6px;">
+                    </div>`,
+                    async (ov) => {
+                        const sel = ov.querySelector('#mvCat').value;
+                        const ziel = sel === '__neu__' ? ov.querySelector('#mvNeu').value.trim() : sel;
+                        if (!ziel) { showToast('Bitte eine Kategorie angeben.', 'error'); return; }
+                        if (ziel === aktuell) { ov.remove(); return; }
+                        await app._moveMaterialsToCategory([String(matId)], ziel);
+                        ov.remove();
+                    });
+                modal.querySelector('#mvCat')?.addEventListener('change', (e) => {
+                    const neu = e.target.value === '__neu__';
+                    const feld = modal.querySelector('#mvNeu');
+                    feld.style.display = neu ? '' : 'none';
+                    if (neu) feld.focus();
+                });
+            },
+
             async _moveMaterialsToCategory(ids, targetPath) {
                 if (!ids.length) return;
                 for (const id of ids) {

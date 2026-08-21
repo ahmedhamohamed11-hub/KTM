@@ -485,6 +485,18 @@
                     eingenommenRe += sum;
                     if (sum > 0) bezahlteRechnungen++;
                 }
+                // UMSATZ = was tatsaechlich in Rechnung gestellt wurde (ohne stornierte),
+                // unabhaengig davon ob der Kunde schon gezahlt hat. Das ist die Zahl fuer
+                // "was habe ich gemacht" - die Einnahmen daneben zeigen, was davon schon
+                // auf dem Konto ist. Zusaetzlich das laufende Jahr getrennt ausgewiesen.
+                const jahr = new Date().getFullYear();
+                let umsatzGesamt = 0, umsatzJahr = 0, anzRechnungen = 0;
+                for (const iv of invoices) {
+                    if (iv.status === 'Storniert') continue;
+                    const betrag = Number(iv.totalPrice) || 0;
+                    umsatzGesamt += betrag; anzRechnungen++;
+                    if (String(iv.date || '').slice(0, 4) === String(jahr)) umsatzJahr += betrag;
+                }
                 // Noch offen: Restbetrag ueber alle Rechnungen, die nicht storniert sind
                 const nochOffen = invoices.filter(iv => iv.status !== 'Storniert')
                     .reduce((s, iv) => s + (typeof invoiceOpen === 'function' ? Math.max(0, invoiceOpen(iv)) : 0), 0);
@@ -546,7 +558,8 @@
                 contentArea.innerHTML = `
                     <div class="fo-wrap">
                         <div class="fo-grid">
-                            <div class="fo-card"><span>Tatsächlich eingenommen</span><b>${formatCurrency(einnahmenGesamt)}</b><small>${bezahlteRechnungen} bezahlte/angezahlte Rechnung${bezahlteRechnungen === 1 ? '' : 'en'}</small></div>
+                            <div class="fo-card"><span>Umsatz (fakturiert)</span><b>${formatCurrency(umsatzGesamt)}</b><small>${anzRechnungen} Rechnung${anzRechnungen === 1 ? '' : 'en'} · ${formatCurrency(umsatzJahr)} in ${jahr}</small></div>
+                            <div class="fo-card"><span>Davon eingenommen</span><b>${formatCurrency(einnahmenGesamt)}</b><small>${bezahlteRechnungen} bezahlte/angezahlte Rechnung${bezahlteRechnungen === 1 ? '' : 'en'}</small></div>
                             <div class="fo-card fo-card--click" onclick="app.openPurchaseBreakdown()"><span>Tatsächlich eingekauft</span><b>${formatCurrency(ausgabenGesamt)}</b><small>${rechnungenMitEk} Rechnung${rechnungenMitEk === 1 ? '' : 'en'} mit belegtem Einkauf${rechnungenOhneAngebot > 0 ? ` · ${rechnungenOhneAngebot} ohne Angebot` : ''} · antippen zum Bearbeiten ›</small></div>
                             <div class="fo-card"><span>Noch offen beim Kunden</span><b>${formatCurrency(nochOffen)}</b><small>über alle Rechnungen</small></div>
                             <div class="fo-card fo-card--gewinn"><span>Bleibt als Gewinn</span><b style="color:${gewinn >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(gewinn)}</b><small>eingenommen − eingekauft${posSaldo !== 0 ? ` ${posSaldo >= 0 ? '+' : '−'} ${formatCurrency(Math.abs(posSaldo))} eigene Posten` : ''}, real (kein Angebotswert)</small></div>

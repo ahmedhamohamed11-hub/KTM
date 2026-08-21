@@ -742,7 +742,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v160</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v161</span></div>
                         </div>
                     </div>`;
             })();
@@ -1763,7 +1763,7 @@
                             ? `<div class="mat-perm">${formatCurrency(matUnitPrice(m, 'm'))} / m inkl. · Bund ${_bl} m</div>` : '';
                         const imgs = Array.isArray(m.images) && m.images.length ? m.images : (m.image ? [m.image] : []);
                         return `<div class="mat-card mat-product" draggable="true" ondragstart="app.matProductDragStart(event, ${idJS(m.id)})" onclick="app.openMaterialDetail(${idJS(m.id)})">
-                            <button class="mat-fav ${m.favorite ? 'on' : ''}" onclick="event.stopPropagation(); app.toggleFavorite(${idJS(m.id)})" title="Favorit">${m.favorite ? '★' : '☆'}</button>
+                            <button class="mat-fav ${m.favorite ? 'on' : ''}" onclick="event.stopPropagation(); app.toggleFavorite(${idJS(m.id)})" title="Favorit">${m.favorite ? '★' : '☆'}</button><button class="mat-move" onclick="event.stopPropagation(); app.moveMaterialToCategory(${idJS(m.id)})" title="In andere Kategorie verschieben">⇄</button>
                             <div class="mat-product-img">${imgs.length ? `<img src="${imgs[0]}">` : `<span>${matCatIcon(m.category)}</span>`}${imgs.length > 1 ? `<span class="mat-img-count">📷 ${imgs.length}</span>` : ''}</div>
                             <div class="mat-card-body">
                                 <div class="mat-card-title">${escapeHtml(m.name)}</div>
@@ -1807,7 +1807,7 @@
                         return `<div class="mat-card mat-product ${selectMode ? 'mat-select-mode' : ''} ${isSel ? 'mat-selected' : ''}"
                                 draggable="${selectMode ? 'false' : 'true'}" ondragstart="app.matProductDragStart(event, ${idJS(m.id)})"
                                 onclick="${clickAction}">
-                            ${selectMode ? `<div class="mat-select-cb ${isSel ? 'on' : ''}">${isSel ? '✓' : ''}</div>` : `<button class="mat-fav ${m.favorite ? 'on' : ''}" onclick="event.stopPropagation(); app.toggleFavorite(${idJS(m.id)})" title="Favorit">${m.favorite ? '★' : '☆'}</button>`}
+                            ${selectMode ? `<div class="mat-select-cb ${isSel ? 'on' : ''}">${isSel ? '✓' : ''}</div>` : `<button class="mat-fav ${m.favorite ? 'on' : ''}" onclick="event.stopPropagation(); app.toggleFavorite(${idJS(m.id)})" title="Favorit">${m.favorite ? '★' : '☆'}</button><button class="mat-move" onclick="event.stopPropagation(); app.moveMaterialToCategory(${idJS(m.id)})" title="In andere Kategorie verschieben">⇄</button>`}
                             <div class="mat-product-img">${imgs.length ? `<img src="${imgs[0]}">` : `<span>${matCatIcon(m.category)}</span>`}${imgs.length > 1 ? `<span class="mat-img-count">📷 ${imgs.length}</span>` : ''}</div>
                             <div class="mat-card-body">
                                 <div class="mat-card-title">${escapeHtml(m.name)}</div>
