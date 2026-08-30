@@ -1,0 +1,7 @@
+
+# Zugangsdaten – niemals ins Repo
+.env
+.env.*
+*.pem
+*.key
+node_modules/
