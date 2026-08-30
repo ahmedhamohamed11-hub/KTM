@@ -80,7 +80,10 @@
 function toSnake(o) {
     const r = {};
     for (const k in o) {
-        if (['_synced', '_remote', 'rooms', 'images', 'offers'].includes(k)) continue;
+        // _pushedAt fehlte hier: das lokale Meta-Feld ging an Supabase, die Spalte
+        // existiert dort nicht, und die Selbstheilung musste sie bei JEDEM Push
+        // erneut entfernen - ein unnoetiger zusaetzlicher Server-Roundtrip pro Satz.
+        if (['_synced', '_remote', '_pushedAt', 'rooms', 'images', 'offers'].includes(k)) continue;
         r[FIELD_MAP[k] || k] = o[k];
     }
     return r;
@@ -99,6 +102,14 @@ function toSnake(o) {
                 el.style.color = status === 'online' ? 'var(--success)' : (status === 'syncing' ? 'var(--warning)' : 'var(--text-muted)');
             }
         }
+
+        // EINE Liste aller lokalen Stores - Grundlage fuer Anlegen, Backup und
+        // Wiederherstellung. Frueher stand diese Aufzaehlung an mehreren Stellen
+        // getrennt im Code; genau dadurch verlor der Restore vier Bereiche.
+        const ALL_STORES = ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','settings','events','equipment','refrigerantLog','maintenance','catalogPages'];
+        // Stores, die mit Supabase synchronisiert werden (catalogPages bleibt lokal:
+        // reine Bilddaten, die den Sync unnoetig aufblaehen wuerden).
+        const SYNC_STORES = ALL_STORES.filter(s => s !== 'catalogPages');
 
         // ============================================================
         // ============ DATENBANK-MANAGER (KOMPLETT KORRIGIERT) =======
@@ -121,12 +132,39 @@ function toSnake(o) {
                         done(reject, new Error('Datenbank antwortet nicht (Zeitüberschreitung).'));
                     }, 6000);
 
-                    const req = indexedDB.open('KTM_DB', 9);
+                    const req = indexedDB.open('KTM_DB', 10);
                     req.onupgradeneeded = (e) => {
                         const db = e.target.result;
-                        ['customers', 'projects', 'rooms', 'images', 'materials', 'offers', 'orders', 'projectMaterials', 'invoices', 'settings', 'events', 'equipment', 'refrigerantLog', 'maintenance', 'catalogPages'].forEach(s => {
+                        const tx = e.target.transaction;
+                        ALL_STORES.forEach(s => {
                             if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'settings' ? 'key' : 'id', autoIncrement: s !== 'settings' });
                         });
+                        // Echte Indizes statt Volltabellen-Scan: getByIndex() hat bisher
+                        // IMMER die komplette Tabelle geladen und in JavaScript gefiltert -
+                        // allein projectMaterials wird an 15 Stellen so abgefragt. Bei
+                        // wachsendem Datenbestand wird das spuerbar langsam.
+                        const INDIZES = {
+                            rooms:            ['projectId'],
+                            images:           ['projectId'],
+                            offers:           ['projectId', 'customerId'],
+                            orders:           ['projectId'],
+                            events:           ['projectId'],
+                            projectMaterials: ['projectId', 'materialId'],
+                            invoices:         ['projectId', 'offerId', 'customerId'],
+                            projects:         ['customerId'],
+                            equipment:        ['customerId'],
+                            maintenance:      ['equipmentId'],
+                            refrigerantLog:   ['equipmentId'],
+                        };
+                        for (const [store, felder] of Object.entries(INDIZES)) {
+                            if (!db.objectStoreNames.contains(store)) continue;
+                            const os = tx.objectStore(store);
+                            for (const f of felder) {
+                                if (!os.indexNames.contains(f)) {
+                                    try { os.createIndex(f, f, { unique: false }); } catch (err) { console.warn('Index', store, f, err); }
+                                }
+                            }
+                        }
                     };
                     req.onsuccess = (e) => { this.db = e.target.result; done(resolve); };
                     req.onerror = (e) => {
@@ -192,15 +230,44 @@ function toSnake(o) {
                 return new Promise((resolve, reject) => {
                     if (value === undefined || value === null) { resolve([]); return; }
                     const tx = this.db.transaction(storeName, 'readonly');
-                    const request = tx.objectStore(storeName).getAll();
-                    request.onsuccess = () => {
-                        // String-Vergleich statt strikter Typgleichheit: verhindert, dass
-                        // Datensätze wegen number-vs-string ID-Typen (Alt-Daten vs. neue
-                        // UUID-Strings) fälschlich nicht gefunden werden.
-                        const results = request.result.filter(item => item[indexName] !== undefined && item[indexName] !== null && String(item[indexName]) === String(value));
-                        resolve(results);
+                    const store = tx.objectStore(storeName);
+                    // Wenn ein echter Index existiert, wird er genutzt. Wichtig: IDs
+                    // koennen als Zahl (Alt-Daten) ODER als UUID-String vorliegen -
+                    // deshalb wird zusaetzlich mit dem jeweils anderen Typ gesucht und
+                    // das Ergebnis zusammengefuehrt. Findet der Index nichts, greift
+                    // sicherheitshalber der bisherige Weg (voller Scan mit
+                    // String-Vergleich), damit garantiert kein Datensatz verloren geht.
+                    const scanFallback = () => {
+                        const req = store.getAll();
+                        req.onsuccess = () => resolve(req.result.filter(item =>
+                            item[indexName] !== undefined && item[indexName] !== null
+                            && String(item[indexName]) === String(value)));
+                        req.onerror = () => reject(req.error);
                     };
-                    request.onerror = () => reject(request.error);
+                    if (!store.indexNames.contains(indexName)) { scanFallback(); return; }
+                    try {
+                        const idx = store.index(indexName);
+                        const alsZahl = /^\d+$/.test(String(value)) ? Number(value) : null;
+                        const treffer = new Map();
+                        let offen = 1;
+                        const fertig = () => {
+                            if (--offen > 0) return;
+                            const list = [...treffer.values()];
+                            if (list.length === 0) { scanFallback(); return; }
+                            resolve(list);
+                        };
+                        const sammle = (req) => {
+                            req.onsuccess = () => {
+                                for (const r of (req.result || [])) treffer.set(r.id ?? r.key ?? JSON.stringify(r), r);
+                                fertig();
+                            };
+                            req.onerror = () => { fertig(); };
+                        };
+                        sammle(idx.getAll(String(value)));
+                        if (alsZahl !== null) { offen++; sammle(idx.getAll(alsZahl)); }
+                    } catch (e) {
+                        scanFallback();
+                    }
                 });
             }
 
@@ -229,7 +296,9 @@ function toSnake(o) {
 
                 const result = await this.addLocalOnly(storeName, data);
 
-                backgroundSyncPush(); // queued automatisch nach, falls gerade ein Push läuft
+                // .catch(): bewusst nicht awaiten (der Push laeuft im Hintergrund),
+                // aber eine abgelehnte Promise darf nicht unbehandelt bleiben.
+                backgroundSyncPush().catch(e => console.warn('Hintergrund-Sync:', e));
 
                 return storeName === 'settings' ? result : data.id;
             }
@@ -240,7 +309,7 @@ async put(storeName, data) {
 
     const result = await this.putLocalOnly(storeName, data);
 
-    backgroundSyncPush(); // queued automatisch nach, falls gerade ein Push läuft
+    backgroundSyncPush().catch(e => console.warn('Hintergrund-Sync:', e));
 
     return result;
 }
@@ -295,38 +364,36 @@ async put(storeName, data) {
     };
 }
 
+            // KRITISCHER FIX: Export und Import liefen frueher ueber zwei getrennte,
+            // handgepflegte Listen. Der Import LEERTE 15 Stores, stellte aber nur 11
+            // wieder her - equipment, maintenance, refrigerantLog und catalogPages
+            // wurden bei jeder Wiederherstellung unwiederbringlich geloescht (der
+            // Export hatte sie nie mitgesichert). Beide Wege nutzen jetzt DIESELBE
+            // Liste ALL_STORES, damit das nicht wieder auseinanderlaufen kann.
             async exportAllData() {
-                return {
-                    customers: await this.getAll('customers'),
-                    projects: await this.getAll('projects'),
-                    rooms: await this.getAll('rooms'),
-                    images: await this.getAll('images'),
-                    materials: await this.getAll('materials'),
-                    offers: await this.getAll('offers'),
-                    events: await this.getAll('events'),
-                    orders: await this.getAll('orders'),
-                    projectMaterials: await this.getAll('projectMaterials'),
-                    invoices: await this.getAll('invoices'),
-                    settings: await this.getAll('settings'),
-                    exportDate: new Date().toISOString(),
-                    version: '2.0'
-                };
+                const out = { exportDate: new Date().toISOString(), version: '2.1' };
+                for (const s of ALL_STORES) out[s] = await this.getAll(s);
+                return out;
             }
 
             async importAllData(data) {
-                for(const s of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','settings','events','equipment','refrigerantLog','maintenance','catalogPages']) await this.clear(s);
-                for (const c of data.customers || []) await this.addLocalOnly('customers', c);
-                for (const p of data.projects || []) await this.addLocalOnly('projects', p);
-                for (const r of data.rooms || []) await this.addLocalOnly('rooms', r);
-                for (const i of data.images || []) await this.addLocalOnly('images', i);
-                for (const m of data.materials || []) await this.addLocalOnly('materials', m);
-                for (const o of data.offers || []) await this.addLocalOnly('offers', o);
-                for (const ev of data.events || []) await this.addLocalOnly('events', ev);
-                for (const o of data.orders || []) await this.addLocalOnly('orders', o);
-                for (const pm of data.projectMaterials || []) await this.addLocalOnly('projectMaterials', pm);
-                for (const iv of data.invoices || []) await this.addLocalOnly('invoices', iv);
-                for (const s of data.settings || []) await this.putLocalOnly('settings', s);
-                backgroundSyncPush();
+                // Nur Stores anfassen, die im Backup ueberhaupt vorkommen. Ein
+                // aelteres Backup (Version 2.0) enthaelt z.B. keine Anlagen - deren
+                // vorhandene Daten duerfen dann NICHT geleert werden.
+                const vorhanden = ALL_STORES.filter(s => Array.isArray(data[s]));
+                for (const s of vorhanden) await this.clear(s);
+                for (const s of vorhanden) {
+                    for (const rec of data[s]) {
+                        if (s === 'settings') await this.putLocalOnly(s, rec);
+                        else await this.addLocalOnly(s, rec);
+                    }
+                }
+                const fehlend = ALL_STORES.filter(s => !Array.isArray(data[s]));
+                if (fehlend.length) {
+                    console.warn('Backup enthielt diese Bereiche nicht (bestehende Daten bleiben erhalten):', fehlend.join(', '));
+                }
+                backgroundSyncPush().catch(e => console.warn('Sync nach Import:', e));
+                return { wiederhergestellt: vorhanden, uebersprungen: fehlend };
             }
         }
 
@@ -347,7 +414,15 @@ async function handleRemoteChange(payload) {
 
 
             if (eventType === 'DELETE') {
-                await db.deleteLocalOnly(table, oldRec.key || oldRec.id);
+                // Ohne REPLICA IDENTITY FULL liefert Supabase im DELETE-Ereignis nur
+                // den Primaerschluessel - fehlt auch der, koennen wir nichts loeschen
+                // und muessen das sichtbar machen statt still nichts zu tun.
+                const delId = oldRec?.key ?? oldRec?.id;
+                if (delId === undefined || delId === null) {
+                    console.warn('DELETE-Ereignis ohne Schlüssel - lokal nichts entfernt:', table, oldRec);
+                    return;
+                }
+                await db.deleteLocalOnly(table, delId);
             } else {
                const localData = toCamel(newRec);
 
@@ -406,7 +481,7 @@ await db.putLocalOnly(table, merged);
                 await backgroundSyncPush();
 
                 const failedTables = [];
-                for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','equipment','refrigerantLog','maintenance','settings']) {
+                for (const t of SYNC_STORES) {
                     const { data, error } = await sb.from(sbTable(t)).select('*');
                     if (!error && data) {
                         const remoteIds = new Set(data.map(r => String(t === 'settings' ? r.key : r.id)));
@@ -502,7 +577,7 @@ async function getPendingDeletes() {
 async function addPendingDelete(table, id) {
     if (id === undefined || id === null) return;
     const list = await getPendingDeletes();
-    if (list.some(item => item.table === table && item.id === id)) return;
+    if (list.some(item => item.table === table && String(item.id) === String(id))) return;
     list.push({ table, id });
     await db.putLocalOnly('settings', { key: PENDING_DELETES_KEY, value: JSON.stringify(list) });
 }
@@ -560,7 +635,7 @@ async function backgroundSyncPushInner() {
         // einen späteren Push versehentlich wieder auftauchen).
         await flushPendingDeletes();
 
-        for (const t of ['customers','projects','rooms','images','materials','offers','orders','projectMaterials','invoices','events','equipment','refrigerantLog','maintenance','settings']) {
+        for (const t of SYNC_STORES) {
 
             const unsynced = (await db.getAll(t)).filter(r => {
                 if (r._synced) return false;
@@ -669,6 +744,10 @@ async function backgroundSyncPushInner() {
         }
 }
 
+        // Richtwerte Kuehllast je Raumtyp. Frueher mitten in der Funktion hartcodiert -
+        // hier zentral, damit sie auffindbar und anpassbar sind.
+        const KUEHLLAST_WATT_PRO_QM = { standard: 80, dachgeschoss: 120, keller: 60 };
+
         function calculateCoolingCapacity(rooms) {
             if (!rooms || rooms.length === 0) return { totalKW: 0, recommendation: null, details: [] };
 
@@ -679,13 +758,10 @@ async function backgroundSyncPushInner() {
                 const area = (room.length || 0) * (room.width || 0);
                 const volume = area * (room.height || 2.5);
 
-                let wattsPerSqm = 80;
-                if (room.name && (room.name.toLowerCase().includes('dach') || room.name.toLowerCase().includes('wintergarten'))) {
-                    wattsPerSqm = 120;
-                }
-                if (room.name && room.name.toLowerCase().includes('keller')) {
-                    wattsPerSqm = 60;
-                }
+                const rn = (room.name || '').toLowerCase();
+                let wattsPerSqm = KUEHLLAST_WATT_PRO_QM.standard;
+                if (rn.includes('dach') || rn.includes('wintergarten')) wattsPerSqm = KUEHLLAST_WATT_PRO_QM.dachgeschoss;
+                if (rn.includes('keller')) wattsPerSqm = KUEHLLAST_WATT_PRO_QM.keller;
 
                 const roomWatts = area * wattsPerSqm;
                 totalWatts += roomWatts;
@@ -715,10 +791,13 @@ async function backgroundSyncPushInner() {
 
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
+            if (!container) { console.warn('Toast:', message); return; }
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
             const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-            toast.innerHTML = `${icons[type] || ''} ${(message)}`;
+            // textContent statt innerHTML: Meldungen enthalten Material- und
+            // Kundennamen. Ein "<" darin hat die Meldung frueher zerlegt.
+            toast.textContent = `${icons[type] || ''} ${message ?? ''}`;
             container.appendChild(toast);
             setTimeout(() => {
                 toast.style.opacity = '0';
@@ -730,12 +809,13 @@ async function backgroundSyncPushInner() {
         // Toast mit "Rückgängig"-Knopf – ruft onUndo, wenn innerhalb von 6 Sek. geklickt
         function showUndoToast(message, onUndo) {
             const container = document.getElementById('toastContainer');
+            if (!container) { console.warn('Toast:', message); return; }
             const toast = document.createElement('div');
             toast.className = 'toast toast-info toast-undo';
             const btn = document.createElement('button');
             btn.className = 'toast-undo-btn';
             btn.textContent = 'Rückgängig';
-            toast.innerHTML = `↩️ ${message} `;
+            toast.textContent = `↩️ ${message ?? ''} `;   // kein HTML - siehe showToast
             toast.appendChild(btn);
             container.appendChild(toast);
             let done = false;
@@ -766,6 +846,7 @@ async function backgroundSyncPushInner() {
 
         function showModal(title, contentHtml, onSave, onCancel, opts = {}) {
             const container = document.getElementById('modalContainer');
+            if (!container) { console.error('modalContainer fehlt - Dialog kann nicht angezeigt werden.'); return null; }
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             overlay.innerHTML = `
@@ -813,6 +894,7 @@ async function backgroundSyncPushInner() {
         function showConfirm(message, opts = {}) {
             return new Promise((resolve) => {
                 const container = document.getElementById('modalContainer');
+                if (!container) { console.error('modalContainer fehlt.'); resolve(false); return; }
                 const overlay = document.createElement('div');
                 overlay.className = 'modal-overlay';
                 const danger = opts.danger !== false;
@@ -982,16 +1064,23 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
                 const qty = group.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
                 const totalNet = group.reduce((s, p) =>
                     s + (Number(p.price) || 0) * (Number(p.quantity) || 0) * (1 - (Number(p.discount) || 0) / 100), 0);
+                // Der Stueckpreis wird NICHT auf 2 Stellen gerundet: bei 7 m und
+                // 16,0457 EUR/m ergaebe 16,05 x 7 = 112,35 statt 112,32 - die
+                // Zeilensumme wuerde sich durch das blosse Zusammenfassen aendern.
+                // Der volle Stueckpreis bleibt erhalten, gerundet wird erst in der
+                // Anzeige. Zusaetzlich wird die urspruengliche Zeilensumme als
+                // _lineTotal mitgefuehrt, damit sie exakt nachvollziehbar bleibt.
                 const price = qty > 0 ? totalNet / qty : 0;
                 const desc = [...new Set(group.flatMap(p =>
                     String(p.description || '').split(',').map(s => s.trim()).filter(Boolean)))].join(', ');
                 out.push({
                     ...group[0],
                     quantity: Math.round(qty * 100) / 100,
-                    price: Math.round(price * 100) / 100,
+                    price,                       // ungerundet - siehe Begruendung oben
                     discount: 0,
                     description: desc,
-                    _merged: group.length
+                    _merged: group.length,
+                    _lineTotal: Math.round(totalNet * 100) / 100
                 });
             }
             return [...out, ...einzeln];
@@ -1136,7 +1225,17 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const leer = { ekNetto: 0, ekBrutto: 0, quelle: 'keiner', rabatt: null, anteil: null, listenpreis: 0 };
             if (!m) return leer;
             const list = Number(m.sellingPrice) || 0;
-            const norm = d => { d = Number(d) || 0; return d > 1 ? d : d * 100; };   // immer in Prozent
+            // Rabatte werden ueberall als PROZENTZAHL erfasst (Eingabefelder, Katalog,
+            // Haendlerrabatt-Einstellungen) - also 42 fuer 42 %. Die frueher hier
+            // eingebaute "Rettung" (d <= 1 als Anteil deuten und mal 100 nehmen) hat
+            // einen echten Rabatt von 1 % in 100 % verwandelt -> Einkaufspreis 0 EUR
+            // und Marge 100 %. Ein Rabatt von 0,5 % wurde zu 50 %. Deshalb: Werte
+            // immer als Prozent nehmen und nur auf einen sinnvollen Bereich begrenzen.
+            const norm = d => {
+                const v = Number(d);
+                if (!isFinite(v) || v <= 0) return 0;
+                return Math.min(v, 100);     // ueber 100 % Rabatt gibt es nicht
+            };
 
             // 1. tatsaechlicher EK hat Vorrang
             const ist = Number(m.purchasePrice) || 0;
@@ -1214,7 +1313,12 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         // ===== EINE Gewinnberechnung fuer Angebotsliste UND Gewinn-Diagnose =====
         // Vorher gab es zwei getrennte Implementierungen, die sich um ~90 EUR
         // unterschieden. Diese Funktion ist ab jetzt die einzige Quelle.
-        function offerProfitCore(offer, materials) {
+        function offerProfitCore(offer, materials, dealerDiscounts) {
+            // dealerDiscounts wird durchgereicht. Ohne den Parameter fiel
+            // ekPerSalesUnit() auf window.__ktmDealerDiscounts zurueck - war dieser
+            // Cache beim ersten Rendern noch nicht geladen, fehlten die Markenrabatte
+            // stillschweigend und Positionen erschienen sporadisch als "EK fehlt".
+            const dd = dealerDiscounts || window.__ktmDealerDiscounts || null;
             const R = recomputeOffer(offer);
             const nettoAnteil = R.total > 0 ? (R.netAfter / R.total) : (1 / 1.2);
             // Vereinbarter Preis = was der Kunde zahlt (brutto) -> auf netto bringen
@@ -1252,12 +1356,11 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
                         const m = materials.find(mm => String(mm.id) === String(it.materialId));
                         if (!m) { known = false; }
                         else {
-                            const r = ekPerSalesUnit(m);
+                            const r = ekPerSalesUnit(m, dd);
                             known = r.known; ekUnit = r.ek; quelle = r.quelle;
                             if (known) cost = ekUnit * qty;
                         }
                     }
-                    const m = materials.find(mm => String(mm.id) === String(it.materialId));
                     if (!known) missing++;
                     if (quelle === 'ist') ekIst += cost;
                     else if (quelle === 'kalk') { ekKalk += cost; kalkPos++; }

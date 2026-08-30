@@ -6314,13 +6314,6 @@
                 );
             },
 
-            viewImage(dataUrl) {
-                const win = window.open('', '_blank');
-                if (!win) { showToast('Popup wurde blockiert. Bitte Popups für diese Seite erlauben.', 'error'); return; }
-                win.document.write(`<img src="${dataUrl}" style="max-width:100%;max-height:100vh;display:block;margin:auto;">`);
-                win.document.title = 'Bildvorschau';
-            },
-
             // opts.prefill: Felder für ein NEUES Material vorbelegen (z.B. aus einer
             //   Angebotsposition ohne Katalog-Treffer).
             // opts.focusField: Element-ID, die nach dem Öffnen fokussiert/markiert wird

@@ -1535,6 +1535,8 @@
 
 
 /* Stückliste: Auswahl, Menge, Rabatt, Position hinzufügen */
+/* Bewusste Ueberschreibung der Definition weiter oben (Z. ~1493): seit dem Umbau
+   der Stuecklisten-Vorschau hat die Zeile eine zusaetzliche Spalte (Checkbox). */
 .sl-row { grid-template-columns:auto 1fr 104px 88px; }
 .sl-take { width:20px; height:20px; accent-color:var(--accent); margin-top:2px; }
 .sl-row--off { opacity:.42; }
@@ -1736,6 +1738,9 @@
 .diag-fehlt-eingabe { display:flex; gap:6px; align-items:center; }
 .diag-fehlt-input { width:130px; padding:5px 8px; font-size:13px;
     border:1px solid var(--border); border-radius:7px; background:var(--bg-primary); }
+/* Bewusste Ueberschreibung der Definition weiter oben: seit v153 ist der Knopf
+   nur noch der schmale "Material anlegen"-Fall neben dem Eingabefeld, nicht mehr
+   die volle Zeile. */
 .diag-fehlt-btn { border:1px solid var(--border); background:var(--bg-secondary);
     border-radius:7px; padding:5px 9px; cursor:pointer; }
 
