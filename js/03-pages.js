@@ -607,7 +607,19 @@
                                 ${D.brand ? 'für ' + escapeHtml(D.brand) : ''} bildbar.
                             </div>
                         </div>`;
-                    })();
+                    })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
 
                     contentArea.innerHTML = `<div class="calc-wrap">
                         <div class="calc-mode-tabs">
@@ -742,10 +754,22 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v162</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v163</span></div>
                         </div>
                     </div>`;
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         function renderDashboard() {
@@ -990,7 +1014,19 @@
                     console.error('Dashboard-Render-Fehler:', e);
                     contentArea.innerHTML = `<div style="padding:20px;color:var(--danger);">Fehler beim Laden des Dashboards: ${escapeHtml(e.message)}</div>`;
                 }
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ============================================================
@@ -1054,7 +1090,19 @@
                     clearTimeout(inp._t);
                     inp._t = setTimeout(() => { renderCustomers(); setTimeout(() => { const el = document.getElementById('custSearch'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 0); }, 250);
                 });
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ============================================================
@@ -1504,7 +1552,19 @@
                         }
                     }, 60);
                 }
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ============================================================
@@ -1891,7 +1951,19 @@
                 document.getElementById('matBulkClear')?.addEventListener('click', () => { F.selected = new Set(); renderMaterials(); });
                 document.getElementById('matBulkDelete')?.addEventListener('click', () => app.matBulkDelete());
                 document.getElementById('matBulkMove')?.addEventListener('click', () => app.matBulkMove());
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         function renderOffers() {
@@ -1920,7 +1992,7 @@
                     const salesGross     = R ? R.gross   : 0;   // Summe VK vor Positionsrabatt
                     const salesNet       = R ? R.net     : 0;   // nach Positionsrabatt
                     // EINE gemeinsame Rechnung mit der Gewinn-Diagnose
-                    const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
+                    const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials, dealerDiscounts) : null;
                     if (!C) return { profit: 0, margin: 0, hasData: false, lines: [], missingCount: 0, complete: true };
                     return {
                         profit: C.profit, margin: C.margin,
@@ -2026,7 +2098,19 @@
                     listFilters.offers.status = e.target.value;
                     renderOffers();
                 });
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ============================================================
@@ -2100,7 +2184,19 @@
                     listFilters.orders.status = e.target.value;
                     renderOrders();
                 });
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ============================================================
@@ -2263,7 +2359,19 @@
                     refreshAvatar();
                     showToast('Firmendaten gespeichert.', 'success');
                 });
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ============================================================

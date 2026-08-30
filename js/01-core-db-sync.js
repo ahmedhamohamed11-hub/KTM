@@ -481,6 +481,7 @@ await db.putLocalOnly(table, merged);
                 await backgroundSyncPush();
 
                 const failedTables = [];
+                let konflikte = 0;   // lokale Fassungen, die Vorrang behalten haben
                 for (const t of SYNC_STORES) {
                     const { data, error } = await sb.from(sbTable(t)).select('*');
                     if (!error && data) {
@@ -495,6 +496,28 @@ await db.putLocalOnly(table, merged);
                             // geloescht - nicht nur bei Aenderungen an genau diesem Feld.
                             const key = remoteData.id ?? remoteData.key;
                             const existing = key != null ? await db.get(t, key) : null;
+
+                            // KRITISCH (Audit-Fund): Hier fehlte jeder Zeitstempel-Vergleich.
+                            // Der Realtime-Pfad (handleRemoteChange) prueft laengst, ob die
+                            // lokale Fassung neuer ist - dieser Voll-Sync tat es NICHT und
+                            // setzte anschliessend auch noch _synced = true. Schlug der
+                            // vorausgehende Push fuer diese Tabelle fehl (Netz, fehlende
+                            // Spalte, RLS), wurde die noch ungepushte lokale Aenderung von
+                            // der AELTEREN Serverversion ueberschrieben und als
+                            // "synchronisiert" markiert - die Aenderung war still und
+                            // endgueltig verloren.
+                            const lokalNeuer = existing && existing.updatedAt && remoteData.updatedAt
+                                && new Date(existing.updatedAt) > new Date(remoteData.updatedAt);
+                            const lokalUngepusht = existing && existing._synced === false;
+
+                            if (lokalNeuer || lokalUngepusht) {
+                                // Lokale Fassung behalten und weiterhin als ungepusht
+                                // markieren, damit der naechste Push sie hochlaedt.
+                                console.warn(`Sync: lokale Fassung von "${t}" ${key} ist neuer bzw. noch nicht gepusht – Server-Version NICHT uebernommen.`);
+                                konflikte++;
+                                continue;
+                            }
+
                             const localData = existing ? { ...existing, ...remoteData } : remoteData;
                             localData._synced = true; localData._pushedAt = localData._pushedAt || new Date().toISOString();
                             localData._remote = true;
@@ -545,6 +568,11 @@ await db.putLocalOnly(table, merged);
                     showToast(`Sync unvollständig (${failedTables.length} Tabelle${failedTables.length > 1 ? 'n' : ''}). Details in der Konsole (F12).`, 'error');
                 } else {
                     updateSyncStatus('online', '🟢 Online');
+                }
+                if (konflikte > 0) {
+                    // Nicht verschweigen: der Nutzer soll wissen, dass etwas noch aussteht.
+                    console.warn(`${konflikte} Datensatz/Datensätze behielten ihre lokale Fassung und werden beim nächsten Push hochgeladen.`);
+                    backgroundSyncPush().catch(e => console.warn('Nach-Push:', e));
                 }
                 softRefreshCurrentPage();
             } catch(e) {

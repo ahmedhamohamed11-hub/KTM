@@ -959,7 +959,7 @@
                 // Angebotsberechnung, damit die Mischung Material/Arbeit stimmt.
                 // Dieselbe Funktion wie die Angebotsliste - beide koennen nicht mehr
                 // auseinanderlaufen.
-                const C = (typeof offerProfitCore === 'function') ? offerProfitCore(offer, materials) : null;
+                const C = (typeof offerProfitCore === 'function') ? offerProfitCore(offer, materials, dealerDiscounts) : null;
                 const salesEffective = C ? C.salesEffective : salesAfter;
                 const kundeZahlt     = C ? C.kundeZahlt     : (R ? R.total : 0);
 
@@ -985,7 +985,7 @@
                     // Aufschluesselung je Einheit: Listenpreis netto -> Rabatt -> EK netto
                     // -> EK brutto, und der Verkaufspreis brutto aus der Position.
                     let EKI = { listenpreis: 0, rabatt: null, anteil: null, ekNetto: 0, quelle: 'keiner' };
-                    const vkBruttoUnit = it.priceIncludesVat ? (Number(it.price) || 0) : unitNet * 1.2;
+                    const vkBruttoUnit = it.priceIncludesVat ? (Number(it.price) || 0) : unitNet * (1 + MAT_VAT);
                     if (labor) {
                         laborSales += lineSales;
                         note = 'Arbeit (kein Materialeinkauf)';
@@ -1063,7 +1063,7 @@
                                 <span>Liste netto</span><b>${formatCurrency(EKI.listenpreis)}</b>
                                 <span>Rabatt</span><b>${EKI.rabatt != null ? EKI.rabatt + ' %' : '–'}</b>
                                 <span>EK netto</span><b>${EKI.ekNetto > 0 ? formatCurrency(EKI.ekNetto) : '–'}</b>
-                                <span>EK brutto</span><b>${EKI.ekNetto > 0 ? formatCurrency(EKI.ekNetto * 1.2) : '–'}</b>
+                                <span>EK brutto</span><b>${EKI.ekNetto > 0 ? formatCurrency(EKI.ekNetto * EK_VAT) : '–'}</b>
                                 <span>VK brutto</span><b>${formatCurrency(vkBruttoUnit)}</b>
                             </div>` : ''}
                         </td>
@@ -1111,6 +1111,12 @@
                 const profit       = C ? C.profit       : (salesEffective - materialCost - sonstige);
                 const margin       = C ? C.margin       : (salesEffective > 0 ? (profit / salesEffective) * 100 : 0);
                 const profitNurIst = C ? C.profitNurIst : (salesEffective - ekIst - sonstige);
+                // Brutto-Differenz echt rechnen statt "profit * 1,2": der Verkauf kann
+                // Arbeitsleistung mit abweichendem (oder ganz ohne) Steuersatz enthalten,
+                // der Einkauf laeuft dagegen immer mit 20 %.
+                const vkBrutto = C ? C.kundeZahlt : (salesEffective * 1.2);
+                const ekBrutto = (materialCost + sonstige) * (typeof EK_VAT === 'number' ? EK_VAT : 1.2);
+                const bruttoDifferenz = vkBrutto - ekBrutto;
                 const marginNurIst = C ? C.marginNurIst : (salesEffective > 0 ? (profitNurIst / salesEffective) * 100 : 0);
                 const complete = missing === 0;
 
@@ -1138,7 +1144,7 @@
                         </div>` : ''}
                     <div class="diag-kurz">
                         <div><span>Kunde zahlt</span><b>${formatCurrency(kundeZahlt)}</b><small>netto ${formatCurrency(salesEffective)}</small></div>
-                        <div><span>Mein Einkauf</span><b>${formatCurrency(materialCost * 1.2)}</b><small>${formatCurrency(materialCost)} + USt.${ekKalk > 0 ? ` · davon ${formatCurrency(ekKalk)} kalkuliert` : ''}</small></div>
+                        <div><span>Mein Einkauf</span><b>${formatCurrency(materialCost * EK_VAT)}</b><small>${formatCurrency(materialCost)} + USt.${ekKalk > 0 ? ` · davon ${formatCurrency(ekKalk)} kalkuliert` : ''}</small></div>
                         <div class="diag-kurz--gewinn"><span>Bleibt mir</span><b>${formatCurrency(profit)}</b><small>${margin.toFixed(1)} % Marge</small></div>
                     </div>
                     <div class="diag-summary">
@@ -1153,7 +1159,7 @@
                         <div class="diag-row"><span>− Sonstige Kosten (tatsächlich)</span><strong>${formatCurrency(sonstige)}</strong></div>
                         <div class="diag-row diag-total"><span>= Gewinn</span><strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(profit)}</strong></div>
                         <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Marge (tatsächlich)</span><strong style="font-weight:600;">${margin.toFixed(1)} %</strong></div>
-                        <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Brutto-Differenz (VK brutto − EK brutto)</span><strong style="font-weight:600;">${formatCurrency(profit * 1.2)}</strong></div>
+                        <div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Brutto-Differenz (VK brutto − EK brutto)</span><strong style="font-weight:600;">${formatCurrency(bruttoDifferenz)}</strong></div>
                         <div style="font-size:11px;color:var(--text-muted);line-height:1.45;margin-top:6px;">Die Brutto-Differenz ist um die Umsatzsteuer höher als der Gewinn. Die 20 % aus dem Verkauf führst du ab, die 20 % aus dem Einkauf bekommst du als Vorsteuer zurück – beides hebt sich auf. Was dir bleibt, ist der Gewinn netto.</div>
                         ${ekKalk > 0 ? `<div class="diag-row" style="font-size:12px;color:var(--text-muted);"><span>Nur mit belegten Einkäufen (Rest als Ertrag)</span><strong style="font-weight:600;">${formatCurrency(profitNurIst)} · ${marginNurIst.toFixed(1)} %</strong></div>` : ''}
                         <div class="diag-row"><span>Gewinnmarge</span><strong class="${complete ? (margin < 10 ? 'mg-red' : margin < 20 ? 'mg-yellow' : 'mg-green') : 'mg-yellow'}" style="padding:2px 8px;border-radius:12px;">${margin.toFixed(1)} %</strong></div>
@@ -2105,9 +2111,9 @@
                                     <div class="ek-line"><span>Rabatt</span><b>${EKI.rabatt != null ? EKI.rabatt + ' %' : '– kein Rabatt hinterlegt'}</b></div>
                                     <div class="ek-line"><span>EK-Anteil (100 − Rabatt)</span><b>${EKI.anteil != null ? EKI.anteil + ' %' : '–'}</b></div>
                                     <div class="ek-line"><span>EK netto kalkuliert</span><b>${EKI.quelle === 'kalk' ? formatCurrency(EKI.ekNetto) : (EKI.listenpreis > 0 && EKI.anteil != null ? formatCurrency(EKI.listenpreis * EKI.anteil / 100) : '–')}</b></div>
-                                    <div class="ek-line"><span>EK brutto kalkuliert</span><b>${EKI.quelle === 'kalk' ? formatCurrency(EKI.ekBrutto) : (EKI.listenpreis > 0 && EKI.anteil != null ? formatCurrency(EKI.listenpreis * EKI.anteil / 100 * 1.2) : '–')}</b></div>
+                                    <div class="ek-line"><span>EK brutto kalkuliert</span><b>${EKI.quelle === 'kalk' ? formatCurrency(EKI.ekBrutto) : (EKI.listenpreis > 0 && EKI.anteil != null ? formatCurrency(EKI.listenpreis * EKI.anteil / 100 * EK_VAT) : '–')}</b></div>
                                     <div class="ek-line ek-line--ist"><span>Tatsächlicher EK netto</span><b>${istNetto > 0 ? formatCurrency(istNetto) : '– nicht eingetragen'}</b></div>
-                                    <div class="ek-line ek-line--ist"><span>Tatsächlicher EK brutto</span><b>${istNetto > 0 ? formatCurrency(istNetto * 1.2) : '–'}</b></div>
+                                    <div class="ek-line ek-line--ist"><span>Tatsächlicher EK brutto</span><b>${istNetto > 0 ? formatCurrency(istNetto * EK_VAT) : '–'}</b></div>
                                     <div class="ek-hint">${istNetto > 0 ? 'Der tatsächliche EK hat Vorrang und wird für die Gewinnrechnung verwendet.' : 'Ohne tatsächlichen EK dient der kalkulierte Wert nur der Vorkalkulation und zählt nicht als echter Einkauf.'}</div>
                                 <div style="display:none;">
                                     <div class="survey-chip" style="border-color:var(--accent);"><span>VK-Preis</span><strong style="color:var(--accent);">${formatCurrency(m.sellingPrice || 0)}</strong></div>
@@ -3998,7 +4004,7 @@
                     });
                 });
 
-                document.getElementById('syncBtn').addEventListener('click', async () => {
+                document.getElementById('syncBtn')?.addEventListener('click', async () => {
                     if (!navigator.onLine) {
                         showToast('Keine Internetverbindung.', 'error');
                         return;
@@ -4036,7 +4042,7 @@
                     }
                 });
 
-                document.getElementById('sidebar').classList.remove('open');
+                document.getElementById('sidebar')?.classList.remove('open');
                 document.getElementById('sidebarOverlay')?.classList.remove('show');
                 setPageTitle(page);
                 updateBottomNav(page);
@@ -4163,17 +4169,17 @@
                 window.addEventListener('resize', checkWidth);
                 menuToggle.addEventListener('click', () => {
                     const open = sidebar.classList.toggle('open');
-                    document.getElementById('sidebarOverlay').classList.toggle('show', open);
+                    document.getElementById('sidebarOverlay')?.classList.toggle('show', open);
                 });
-                document.getElementById('sidebarOverlay').addEventListener('click', () => {
+                document.getElementById('sidebarOverlay')?.addEventListener('click', () => {
                     sidebar.classList.remove('open');
-                    document.getElementById('sidebarOverlay').classList.remove('show');
+                    document.getElementById('sidebarOverlay')?.classList.remove('show');
                 });
                 document.addEventListener('click', (e) => {
                     const bottomMenu = document.getElementById('bottomNavMenu');
                     if (window.innerWidth <= 1024 && !sidebar.contains(e.target) && e.target !== menuToggle && !menuToggle.contains(e.target) && !(bottomMenu && (e.target === bottomMenu || bottomMenu.contains(e.target)))) {
                         sidebar.classList.remove('open');
-                        document.getElementById('sidebarOverlay').classList.remove('show');
+                        document.getElementById('sidebarOverlay')?.classList.remove('show');
                     }
                 });
             },
@@ -4215,18 +4221,18 @@
 
                 const modal = showModal(id ? 'Anlage bearbeiten' : 'Neue Anlage', body, async (overlay) => {
                     const data = {
-                        manufacturer: document.getElementById('eqManu').value.trim(),
-                        model: document.getElementById('eqModel').value.trim(),
-                        serialNumber: document.getElementById('eqSerial').value.trim(),
-                        year: document.getElementById('eqYear').value.trim(),
-                        customerId: document.getElementById('eqCust').value || null,
-                        location: document.getElementById('eqLoc').value.trim(),
-                        refrigerant: document.getElementById('eqRef').value || null,
-                        fillKg: parseFloat(document.getElementById('eqFill').value) || null,
-                        power: parseFloat(document.getElementById('eqPower').value) || null,
-                        lastLeakCheck: document.getElementById('eqLeak').value || null,
-                        warrantyUntil: document.getElementById('eqWarranty').value || null,
-                        notes: document.getElementById('eqNotes').value.trim()
+                        manufacturer: document.getElementById('eqManu')?.value.trim(),
+                        model: document.getElementById('eqModel')?.value.trim(),
+                        serialNumber: document.getElementById('eqSerial')?.value.trim(),
+                        year: document.getElementById('eqYear')?.value.trim(),
+                        customerId: document.getElementById('eqCust')?.value || null,
+                        location: document.getElementById('eqLoc')?.value.trim(),
+                        refrigerant: document.getElementById('eqRef')?.value || null,
+                        fillKg: parseFloat(document.getElementById('eqFill')?.value) || null,
+                        power: parseFloat(document.getElementById('eqPower')?.value) || null,
+                        lastLeakCheck: document.getElementById('eqLeak')?.value || null,
+                        warrantyUntil: document.getElementById('eqWarranty')?.value || null,
+                        notes: document.getElementById('eqNotes')?.value.trim()
                     };
                     if (!data.manufacturer && !data.model) { showToast('Bitte Hersteller oder Modell angeben.', 'error'); return; }
                     if (id) { data.id = id; data.createdAt = e.createdAt; await db.put('equipment', data); }
@@ -4314,8 +4320,8 @@
             },
 
             async addRefrigerantEntry(equipmentId) {
-                const type = document.getElementById('rlType').value;
-                const amount = parseFloat(document.getElementById('rlAmount').value);
+                const type = document.getElementById('rlType')?.value;
+                const amount = parseFloat(document.getElementById('rlAmount')?.value);
                 if (!(amount > 0)) { showToast('Bitte eine Menge größer 0 eingeben.', 'error'); return; }
                 const eq = await db.get('equipment', equipmentId);
                 const entry = {
@@ -4323,9 +4329,9 @@
                     type,
                     amountKg: amount,
                     refrigerant: eq?.refrigerant || '',
-                    date: document.getElementById('rlDate').value || new Date().toISOString().slice(0, 10),
-                    technician: document.getElementById('rlTech').value.trim(),
-                    reason: document.getElementById('rlReason').value.trim()
+                    date: document.getElementById('rlDate')?.value || new Date().toISOString().slice(0, 10),
+                    technician: document.getElementById('rlTech')?.value.trim(),
+                    reason: document.getElementById('rlReason')?.value.trim()
                 };
                 await db.add('refrigerantLog', entry);
 
@@ -4449,12 +4455,12 @@
 
                 showModal(id ? 'Wartungsplan bearbeiten' : 'Neuer Wartungsplan', body, async (overlay) => {
                     const data = {
-                        equipmentId: document.getElementById('mntEq').value || null,
-                        customerId: document.getElementById('mntCust').value || null,
-                        interval: document.getElementById('mntInt').value,
-                        nextDue: document.getElementById('mntNext').value || null,
-                        checklist: document.getElementById('mntCheck').value.trim(),
-                        notes: document.getElementById('mntNotes').value.trim()
+                        equipmentId: document.getElementById('mntEq')?.value || null,
+                        customerId: document.getElementById('mntCust')?.value || null,
+                        interval: document.getElementById('mntInt')?.value,
+                        nextDue: document.getElementById('mntNext')?.value || null,
+                        checklist: document.getElementById('mntCheck')?.value.trim(),
+                        notes: document.getElementById('mntNotes')?.value.trim()
                     };
                     if (!data.equipmentId && !data.customerId) { showToast('Bitte Anlage oder Kunde wählen.', 'error'); return; }
                     if (id) { data.id = id; data.createdAt = m.createdAt; await db.put('maintenance', data); }
@@ -5523,7 +5529,7 @@
                 const info = overlay.querySelector('#qpInfo');
                 const upd = () => {
                     const v = parseFloat(inp.value) || 0;
-                    const brutto = m.priceIncludesVat ? v : v * 1.2;
+                    const brutto = m.priceIncludesVat ? v : v * (1 + MAT_VAT);
                     info.innerHTML = `Endpreis für den Kunden: <strong>${formatCurrency(brutto)}</strong>`
                         + (isPack ? ` · <strong>${formatCurrency(brutto / bl)}</strong> je Meter` : '');
                 };
@@ -5776,7 +5782,11 @@
                 const offer = await db.get('offers', offerId);
                 if (!offer) return;
                 const materials = await db.getAll('materials');
-                const C = (typeof offerProfitCore === 'function') ? offerProfitCore(offer, materials) : null;
+                // Haendlerrabatte MUESSEN geladen und uebergeben werden - sonst faellt
+                // ekPerSalesUnit auf einen evtl. leeren Cache zurueck und meldet
+                // Positionen faelschlich als "EK fehlt".
+                const dd = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+                const C = (typeof offerProfitCore === 'function') ? offerProfitCore(offer, materials, dd) : null;
                 if (!C) return;
                 const fehlend = C.lines.filter(l => !l.known && !l.labor).map(l => {
                     const m = materials.find(x => String(x.id) === String(l.it.materialId));
@@ -5910,16 +5920,17 @@
 
                         // Vorschau: welche Angebote aendern sich, und wie die Marge
                         const materials = await db.getAll('materials');
+                        const ddH = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
                         const vorschau = [];
                         for (const v of z.verw) {
                             if (GESCHUETZT.includes(v.offer.status)) continue;
                             if (v.ek != null && Math.abs(v.ek - ziel) < 0.005) continue;
-                            const vorher = offerProfitCore(v.offer, materials);
+                            const vorher = offerProfitCore(v.offer, materials, ddH);
                             const probe = JSON.parse(JSON.stringify(v.offer));
                             for (const pp of (probe.positions || [])) {
                                 if (String(pp.name).toLowerCase() === String(v.pos.name).toLowerCase()) pp.purchasePriceNet = ziel;
                             }
-                            const nachher = offerProfitCore(probe, materials);
+                            const nachher = offerProfitCore(probe, materials, ddH);
                             vorschau.push({ offer: v.offer, mVor: vorher.margin, mNach: nachher.margin,
                                             gVor: vorher.profit, gNach: nachher.profit });
                         }
@@ -6106,7 +6117,7 @@
                         const v = parseFloat(inp.value);
                         if (v > 0) newMap[inp.dataset.brand] = v;
                     });
-                    const nb = document.getElementById('ddNewBrand').value.trim();
+                    const nb = document.getElementById('ddNewBrand')?.value.trim();
                     if (nb && !(nb in newMap)) newMap[nb] = 0;
                     await setSetting('dealerDiscounts', JSON.stringify(newMap));
                     window.__ktmDealerDiscounts = newMap;
@@ -6432,7 +6443,6 @@
                             const alt = Number(mat.sellingPrice);
                             const neu = data.sellingPrice;
                             const wirktBrutto = Math.abs(neu - alt * 1.2) < 0.02;
-                            const wirktSchonNetto = Math.abs(neu - alt / 1.2) < 0.02 && alt > neu;
                             if (wirktBrutto) {
                                 const weiter = await showConfirm(
                                     `<strong>${formatCurrency(neu)}</strong> entspricht genau dem bisherigen Listenpreis <strong>${formatCurrency(alt)}</strong> × 1,20 – das sieht nach einem bereits inkl. USt. berechneten Endpreis aus, kein Netto-Listenpreis.<br><br>Wirklich als neuen Listenpreis NETTO speichern? Sonst würde die App später nochmals 20 % aufschlagen.`,
@@ -7815,6 +7825,20 @@
                 app.showSplashError(err && err.message ? err.message : 'Unbekannter Fehler beim Start der Anwendung.');
             });
         };
+
+        // Globales Auffangnetz: bis hierher blieben abgelehnte Promises voellig
+        // stumm - die Seite tat einfach nichts. Jetzt landet jeder Fehler in der
+        // Konsole UND als sichtbarer Hinweis.
+        window.addEventListener('unhandledrejection', (e) => {
+            const msg = e?.reason?.message || String(e?.reason || 'Unbekannter Fehler');
+            console.error('Unbehandelter Fehler:', e?.reason);
+            if (typeof showToast === 'function') showToast(`Fehler: ${msg.slice(0, 140)}`, 'error');
+        });
+        window.addEventListener('error', (e) => {
+            if (!e || !e.error) return;   // Ressourcen-Fehler ignorieren (nur Laerm)
+            console.error('Unbehandelter Fehler:', e.error);
+            if (typeof showToast === 'function') showToast(`Fehler: ${String(e.error.message || e.error).slice(0, 140)}`, 'error');
+        });
 
         if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
             window.addEventListener('load', () => {

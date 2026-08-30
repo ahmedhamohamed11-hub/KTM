@@ -147,7 +147,19 @@
                             </div>`).join('')}
                     </div>`;
                 window.__dupGroups = dupGroups;
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ===== Problem 4c/4d: Preis-/Rabattkontrolle =====
@@ -204,7 +216,19 @@
                         </table>
                         </div>
                     </div>`;
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ===== Katalogpreise pruefen (Reparatur bereits verdoppelt gespeicherter
@@ -313,7 +337,19 @@
                             <div class="dup-item"><label><span>Listenpreis netto</span></label><strong>${formatCurrency(Number(m.sellingPrice) || 0)}</strong></div>
                         </div>`).join('')}` : ''}
                     </div>`;
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ===== Doppelte Angebote finden (Problem 7d) =====
@@ -381,7 +417,19 @@
                             </div>`;
                         }).join('')}
                     </div>`;
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         // ===== EK-Uebersicht (Problem 6a/6b) =====
@@ -467,7 +515,19 @@
                             </div>`;
                         }).join('')}
                     </div>`;
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         function renderFinanceOverview() {
@@ -512,6 +572,7 @@
                 const customers = await db.getAll('customers');
                 const custById = new Map(customers.map(c => [String(c.id), c]));
                 const offerById = new Map(offers.map(o => [String(o.id), o]));
+                const ddF = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
                 let eingekauft = 0, rechnungenMitEk = 0, rechnungenOhneAngebot = 0;
                 const kaufZeilen = [];
                 for (const iv of invoices) {
@@ -519,7 +580,7 @@
                     if (iv.offerId == null) { rechnungenOhneAngebot++; continue; }
                     const o = offerById.get(String(iv.offerId));
                     if (!o) continue;
-                    const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials) : null;
+                    const C = (typeof offerProfitCore === 'function') ? offerProfitCore(o, materials, ddF) : null;
                     if (!C) continue;
                     const hatOverride = iv.ekOverride != null && iv.ekOverride !== '';
                     const wert = hatOverride ? Number(iv.ekOverride) : C.ekIst;
@@ -595,7 +656,19 @@
                             }).join('') : '<div class="empty-note">Noch keine eigenen Posten – z. B. Werkzeugkauf, Material, Rücklage für Steuern.</div>'}
                         </div>
                     </div>`;
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         function renderInvoices() {
@@ -673,7 +746,19 @@
                     listFilters.invoices.status = e.target.value;
                     renderInvoices();
                 });
-            })();
+            })().catch(e => {
+                // Ohne diesen Fang blieb die Seite bei einem Fehler einfach leer -
+                // ohne jede Meldung, weil abgelehnte Promises hier niemand auffing.
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span><br>
+                        <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="app.navigate(app.currentPage, app.currentProjectId)">Erneut versuchen</button>
+                    </div>`;
+                }
+                if (typeof showToast === 'function') showToast('Ansicht konnte nicht geladen werden.', 'error');
+            });
         }
 
         const invoiceExtensions = {
@@ -812,7 +897,13 @@
                     date: toLocalDateString(new Date()), amount: open, note: 'Vollständig ausbezahlt'
                 }];
                 inv.status = invoiceStatus(inv);
-                await db.put('invoices', inv);
+                try {
+                    await db.put('invoices', inv);
+                } catch (e) {
+                    console.error('Rechnung konnte nicht gespeichert werden:', e);
+                    showToast('Speichern fehlgeschlagen – bitte erneut versuchen.', 'error');
+                    return;
+                }
                 if (inv.projectId) {
                     const p = await db.get('projects', inv.projectId);
                     if (p && !['Archiviert', 'Archiv'].includes(p.status)) { p.status = 'Bezahlt'; await db.put('projects', p); }
