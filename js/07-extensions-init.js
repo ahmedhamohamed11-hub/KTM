@@ -4048,7 +4048,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', angebotDuplikate: 'list', ekUebersicht: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', schnellangebot: 'list', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', angebotDuplikate: 'list', ekUebersicht: 'list', equipment: 'cards', maintenance: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -4065,6 +4065,7 @@
                     case 'katalog': this.renderKatalog(param); break;
                     case 'invoices': renderInvoices(); break;
                     case 'finanzuebersicht': renderFinanceOverview(); break;
+                    case 'schnellangebot': renderSchnellAngebot(); break;
                     case 'katalogDuplikate': renderKatalogDuplikate(); break;
                     case 'preiskontrolle': renderPreiskontrolle(); break;
                     case 'katalogpreisCheck': renderKatalogpreisCheck(); break;
@@ -5971,6 +5972,225 @@
                         });
                         app.navigate('ekUebersicht');
                     });
+            },
+
+            // ---------- Schnell-Angebot ----------
+            bindSchnellAngebot() {
+                const S = window.SA_STATE;
+                const MWST = (typeof MAT_VAT === 'number') ? MAT_VAT : 0.20;
+                const q = (sel) => document.querySelector(sel);
+
+                q('#saKunde')?.addEventListener('change', (e) => {
+                    S.customerId = e.target.value;
+                    const frei = q('#saKundeFrei');
+                    if (frei) frei.style.display = S.customerId ? 'none' : '';
+                });
+                q('#saKundeFrei')?.addEventListener('input', (e) => { S.kundeFrei = e.target.value; });
+                q('#saTitel')?.addEventListener('input', (e) => { S.titel = e.target.value; });
+                q('#saBrutto')?.addEventListener('change', (e) => { S.bruttoAnzeige = e.target.checked; renderSchnellAngebot(); });
+                q('#saRabatt')?.addEventListener('change', (e) => { S.rabatt = parseFloat(e.target.value) || 0; renderSchnellAngebot(); });
+                q('#saPlus')?.addEventListener('click', () => { S.zeilen.push(saLeereZeile()); renderSchnellAngebot(); });
+
+                q('#saLeeren')?.addEventListener('click', async () => {
+                    if (!await showConfirm('Alle Zeilen und Angaben verwerfen?', { title: 'Leeren', okText: 'Leeren' })) return;
+                    S.customerId = ''; S.kundeFrei = ''; S.titel = ''; S.rabatt = 0; S.zeilen = [saLeereZeile()];
+                    renderSchnellAngebot();
+                });
+
+                document.querySelectorAll('.sa-in').forEach(inp => {
+                    inp.addEventListener('change', (e) => {
+                        const i = parseInt(e.target.dataset.i, 10);
+                        const f = e.target.dataset.f;
+                        const z = S.zeilen[i];
+                        if (!z) return;
+                        if (f === 'name' || f === 'einheit') {
+                            z[f] = e.target.value;
+                        } else if (f === 'vk') {
+                            // Eingabefeld zeigt je nach Schalter brutto oder netto -
+                            // intern wird IMMER netto gefuehrt.
+                            const eingabe = parseFloat(String(e.target.value).replace(',', '.')) || 0;
+                            z.vkNetto = S.bruttoAnzeige ? Math.round((eingabe / (1 + MWST)) * 100) / 100 : eingabe;
+                            z.aufschlag = saAufschlagAusVk(z);
+                        } else if (f === 'aufschlag') {
+                            z.aufschlag = parseFloat(String(e.target.value).replace(',', '.')) || 0;
+                            z.vkNetto = saVkAusAufschlag(z);
+                        } else if (f === 'ekNetto') {
+                            z.ekNetto = parseFloat(String(e.target.value).replace(',', '.')) || 0;
+                            // Aufschlag beibehalten -> VK zieht mit
+                            z.vkNetto = saVkAusAufschlag(z);
+                        } else {
+                            z[f] = parseFloat(String(e.target.value).replace(',', '.')) || 0;
+                        }
+                        renderSchnellAngebot();
+                    });
+                });
+
+                document.querySelectorAll('[data-del]').forEach(b => {
+                    b.addEventListener('click', () => {
+                        S.zeilen.splice(parseInt(b.dataset.del, 10), 1);
+                        if (!S.zeilen.length) S.zeilen.push(saLeereZeile());
+                        renderSchnellAngebot();
+                    });
+                });
+
+                document.querySelectorAll('[data-pick]').forEach(b => {
+                    b.addEventListener('click', () => app.saMaterialWaehlen(parseInt(b.dataset.pick, 10)));
+                });
+                document.querySelectorAll('[data-save]').forEach(b => {
+                    b.addEventListener('click', () => app.saAlsMaterialSpeichern(parseInt(b.dataset.save, 10)));
+                });
+                q('#saErstellen')?.addEventListener('click', () => app.saAngebotErstellen());
+            },
+
+            // Material aus dem Katalog in eine Zeile uebernehmen - inkl. Einkaufspreis
+            // aus dem Materialstamm (tatsaechlicher EK -> Artikel- -> Markenrabatt).
+            async saMaterialWaehlen(index) {
+                const S = window.SA_STATE;
+                const materials = await db.getAll('materials');
+                const dd = (typeof getDealerDiscounts === 'function') ? await getDealerDiscounts() : {};
+                const liste = materials.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de'));
+
+                const modal = showModal('Material wählen', `
+                    <div class="form-group">
+                        <input type="text" id="saSuche" placeholder="Suchen …" autocomplete="off">
+                    </div>
+                    <div id="saTreffer" class="fo-list" style="max-height:52vh;overflow:auto;"></div>`, null, null);
+
+                const zeichnen = (filter) => {
+                    const f = String(filter || '').toLowerCase();
+                    const treffer = liste.filter(m => !f
+                        || (m.name || '').toLowerCase().includes(f)
+                        || (m.articleNumber || '').toLowerCase().includes(f)
+                        || (m.manufacturer || '').toLowerCase().includes(f)).slice(0, 60);
+                    modal.querySelector('#saTreffer').innerHTML = treffer.length
+                        ? treffer.map(m => `<div class="fo-row" data-mid="${escapeHtml(String(m.id))}">
+                            <div class="fo-row-main">
+                                <div class="fo-row-title">${escapeHtml(m.name)}</div>
+                                <div class="fo-row-sub">${[m.manufacturer, m.articleNumber, m.size].filter(Boolean).map(escapeHtml).join(' · ')}</div>
+                            </div>
+                            <div class="fo-row-amount">${formatCurrency(matBrutto(m))}</div>
+                        </div>`).join('')
+                        : '<div class="empty-note">Nichts gefunden.</div>';
+                    modal.querySelectorAll('[data-mid]').forEach(r => {
+                        r.addEventListener('click', () => {
+                            const m = materials.find(x => String(x.id) === r.dataset.mid);
+                            if (!m) return;
+                            const z = S.zeilen[index];
+                            const r2 = (typeof ekPerSalesUnit === 'function') ? ekPerSalesUnit(m, dd) : { known: false };
+                            z.name = m.name;
+                            z.einheit = m.unit || 'Stk';
+                            z.materialId = m.id;
+                            z.neu = false;
+                            z.vkNetto = (typeof matNetto === 'function') ? matNetto(m) : (Number(m.sellingPrice) || 0);
+                            z.ekNetto = r2.known ? Math.round(r2.ek * 100) / 100 : 0;
+                            z.aufschlag = saAufschlagAusVk(z);
+                            modal.remove();
+                            renderSchnellAngebot();
+                        });
+                    });
+                };
+                zeichnen('');
+                modal.querySelector('#saSuche')?.addEventListener('input', (e) => zeichnen(e.target.value));
+                modal.querySelector('#saSuche')?.focus();
+            },
+
+            // Freie Zeile in den Materialstamm uebernehmen - der Vorschlag kommt auch
+            // automatisch beim Erstellen des Angebots.
+            async saAlsMaterialSpeichern(index, stillWennAbgelehnt = false) {
+                const S = window.SA_STATE;
+                const z = S.zeilen[index];
+                if (!z || !z.name || z.materialId) return false;
+                const ok = await showConfirm(
+                    `„${escapeHtml(z.name)}" ist noch nicht im Materialstamm.<br><br>` +
+                    `Als neues Material speichern? Listenpreis netto <strong>${formatCurrency(z.vkNetto)}</strong>` +
+                    (z.ekNetto > 0 ? `, Einkauf netto <strong>${formatCurrency(z.ekNetto)}</strong>` : '') + '.',
+                    { title: 'Als Material speichern?', okText: 'Speichern', cancelText: stillWennAbgelehnt ? 'Nein, nur dieses Angebot' : 'Abbrechen' });
+                if (!ok) return false;
+                const id = await db.add('materials', {
+                    manufacturer: '', series: 'Eigene', category: 'Zubehör', bauart: 'Zubehör',
+                    name: z.name, articleNumber: '', size: '',
+                    sellingPrice: Math.round((Number(z.vkNetto) || 0) * 100) / 100,
+                    purchasePrice: Math.round((Number(z.ekNetto) || 0) * 100) / 100,
+                    unit: z.einheit || 'Stk', stock: 0,
+                    notes: 'Aus Schnell-Angebot angelegt'
+                });
+                z.materialId = id;
+                showToast(`„${z.name}" im Materialstamm angelegt.`, 'success');
+                return true;
+            },
+
+            // Aus der Tabelle ein echtes Angebot machen. Der Kunde sieht spaeter NUR
+            // den Verkaufspreis - Einkauf und Aufschlag bleiben interne Kalkulation,
+            // wandern aber als purchasePriceNet-Snapshot mit, damit die Gewinn-
+            // Diagnose sofort stimmt.
+            async saAngebotErstellen() {
+                const S = window.SA_STATE;
+                const zeilen = S.zeilen.filter(z => z.name && (Number(z.menge) || 0) > 0);
+                if (!zeilen.length) { showToast('Bitte mindestens eine Position mit Name und Menge erfassen.', 'error'); return; }
+
+                // Neue Artikel anbieten, bevor das Angebot entsteht
+                for (let i = 0; i < S.zeilen.length; i++) {
+                    const z = S.zeilen[i];
+                    if (z.name && !z.materialId && (Number(z.menge) || 0) > 0) {
+                        await app.saAlsMaterialSpeichern(i, true);
+                    }
+                }
+
+                let customerId = S.customerId || null;
+                let kundenName = S.kundeFrei.trim();
+                if (!customerId && kundenName) {
+                    const teile = kundenName.split(' ');
+                    customerId = await db.add('customers', {
+                        firstName: teile.slice(0, -1).join(' ') || teile[0],
+                        lastName: teile.length > 1 ? teile[teile.length - 1] : '',
+                        createdAt: new Date().toISOString()
+                    });
+                }
+                if (!customerId) { showToast('Bitte einen Kunden wählen oder einen Namen eintippen.', 'error'); return; }
+
+                const cust = await db.get('customers', customerId);
+                const projektId = await db.add('projects', {
+                    title: S.titel || 'Angebot',
+                    customerId, status: 'Angebot offen', source: 'Schnell-Angebot',
+                    createdAt: new Date().toISOString()
+                });
+
+                const MWST = (typeof MAT_VAT === 'number') ? MAT_VAT : 0.20;
+                const positionen = zeilen.map(z => ({
+                    materialId: z.materialId || null,
+                    name: z.name,
+                    description: z.beschreibung || '',
+                    unit: z.einheit || 'Stk',
+                    quantity: Number(z.menge) || 0,
+                    // Positionspreise sind Endpreise inkl. USt. - wie ueberall in der App
+                    price: Math.round((Number(z.vkNetto) || 0) * (1 + MWST) * 100) / 100,
+                    priceIncludesVat: true,
+                    discount: 0,
+                    category: 'Zubehör',
+                    ...(Number(z.ekNetto) > 0 ? { purchasePriceNet: Math.round(Number(z.ekNetto) * 100) / 100 } : {})
+                }));
+
+                const entwurf = {
+                    offerNumber: await getNextAutoNumber(),
+                    projectId: projektId, customerId,
+                    positions: positionen,
+                    vatEnabled: true, vatRate: MWST,
+                    discountEnabled: (Number(S.rabatt) || 0) > 0,
+                    discountRate: Number(S.rabatt) || 0,
+                    status: 'Angebot offen',
+                    createdAt: new Date().toISOString(),
+                    notes: ''
+                };
+                const R = recomputeOffer(entwurf);
+                Object.assign(entwurf, {
+                    subtotal: R.net, netAfterDiscount: R.netAfter,
+                    discountAmount: R.globalDiscount, vatAmount: R.vatAmount, totalPrice: R.total
+                });
+                const offerId = await db.add('offers', entwurf);
+
+                showToast(`Angebot ${entwurf.offerNumber} für ${cust ? `${cust.firstName || ''} ${cust.lastName || ''}`.trim() : 'Kunde'} erstellt – ${formatCurrency(R.total)}.`, 'success');
+                S.zeilen = [saLeereZeile()]; S.titel = ''; S.rabatt = 0;
+                app.navigate('offers');
             },
 
             // ===== Bauart bei vorhandenen Materialien nachtragen =====

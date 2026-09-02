@@ -530,6 +530,151 @@
             });
         }
 
+        // ===== Schnell-Angebot: Tabelle wie in einer Tabellenkalkulation =====
+        // Zeilen frei eintippen ODER aus dem Materialstamm uebernehmen. Einkaufspreis
+        // und Aufschlag sind NUR fuer die interne Kalkulation - im fertigen Angebot
+        // und im PDF sieht der Kunde ausschliesslich den Verkaufspreis.
+        // Der Zustand liegt in SA_STATE, damit ein Neuzeichnen nichts verwirft.
+        const SA_STATE = window.SA_STATE || (window.SA_STATE = {
+            customerId: '', kundeFrei: '', titel: '', bruttoAnzeige: true,
+            rabatt: 0, zeilen: []
+        });
+
+        function saLeereZeile() {
+            return { name: '', beschreibung: '', menge: 1, einheit: 'Stk',
+                     ekNetto: 0, aufschlag: 100, vkNetto: 0, materialId: null, neu: false };
+        }
+
+        // Aufschlag <-> Verkaufspreis haengen zusammen: wird eins geaendert, folgt
+        // das andere. vkNetto = ekNetto * (1 + aufschlag/100)
+        function saVkAusAufschlag(z) {
+            const ek = Number(z.ekNetto) || 0;
+            return Math.round(ek * (1 + (Number(z.aufschlag) || 0) / 100) * 100) / 100;
+        }
+        function saAufschlagAusVk(z) {
+            const ek = Number(z.ekNetto) || 0;
+            if (ek <= 0) return 0;
+            return Math.round((((Number(z.vkNetto) || 0) / ek) - 1) * 1000) / 10;
+        }
+
+        function saSummen() {
+            const MWST = (typeof MAT_VAT === 'number') ? MAT_VAT : 0.20;
+            let ek = 0, vk = 0;
+            for (const z of SA_STATE.zeilen) {
+                const m = Number(z.menge) || 0;
+                ek += (Number(z.ekNetto) || 0) * m;
+                vk += (Number(z.vkNetto) || 0) * m;
+            }
+            const rab = vk * ((Number(SA_STATE.rabatt) || 0) / 100);
+            const vkNachRabatt = vk - rab;
+            return {
+                ekNetto: ek, vkNetto: vk, rabattBetrag: rab, vkNachRabatt,
+                ust: vkNachRabatt * MWST,
+                brutto: vkNachRabatt * (1 + MWST),
+                gewinn: vkNachRabatt - ek,
+                marge: vkNachRabatt > 0 ? ((vkNachRabatt - ek) / vkNachRabatt) * 100 : 0
+            };
+        }
+
+        function renderSchnellAngebot() {
+            (async () => {
+                const customers = await db.getAll('customers');
+                if (!SA_STATE.zeilen.length) SA_STATE.zeilen = [saLeereZeile()];
+                const S = saSummen();
+                const brutto = SA_STATE.bruttoAnzeige;
+                const MWST = (typeof MAT_VAT === 'number') ? MAT_VAT : 0.20;
+                const zeig = (nettoWert) => brutto ? nettoWert * (1 + MWST) : nettoWert;
+
+                contentArea.innerHTML = `
+                    <div class="sa-wrap">
+                        <div class="sa-kopf">
+                            <div class="form-group">
+                                <label>Kunde</label>
+                                <select id="saKunde">
+                                    <option value="">– neuer Kunde / freier Name –</option>
+                                    ${customers.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || '', 'de'))
+                                        .map(c => `<option value="${escapeHtml(String(c.id))}" ${String(SA_STATE.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml(`${c.firstName || ''} ${c.lastName || ''}`.trim() || '(ohne Namen)')}</option>`).join('')}
+                                </select>
+                                <input type="text" id="saKundeFrei" placeholder="Name eintippen" value="${escapeHtml(SA_STATE.kundeFrei)}" style="margin-top:6px;${SA_STATE.customerId ? 'display:none;' : ''}">
+                            </div>
+                            <div class="form-group">
+                                <label>Bezeichnung</label>
+                                <input type="text" id="saTitel" placeholder="z. B. Multi-Split 3-fach" value="${escapeHtml(SA_STATE.titel)}">
+                            </div>
+                        </div>
+
+                        <div class="sa-schalter">
+                            <label><input type="checkbox" id="saBrutto" ${brutto ? 'checked' : ''}> Preise inkl. 20 % USt. anzeigen</label>
+                            <label>Rabatt <input type="number" id="saRabatt" step="0.1" min="0" max="100" value="${SA_STATE.rabatt}"> %</label>
+                        </div>
+
+                        <div class="sa-scroll">
+                        <table class="sa-tab">
+                            <thead><tr>
+                                <th style="min-width:180px;">Position</th>
+                                <th style="width:70px;">Menge</th>
+                                <th style="width:70px;">Einheit</th>
+                                <th style="width:105px;">EK netto</th>
+                                <th style="width:85px;">Aufschlag</th>
+                                <th style="width:115px;">VK ${brutto ? 'brutto' : 'netto'}</th>
+                                <th style="width:105px;">Gesamt</th>
+                                <th style="width:40px;"></th>
+                            </tr></thead>
+                            <tbody>
+                            ${SA_STATE.zeilen.map((z, i) => `
+                                <tr>
+                                    <td>
+                                        <input type="text" class="sa-in" data-f="name" data-i="${i}" value="${escapeHtml(z.name)}" placeholder="Artikel eintippen oder wählen" list="saMatListe">
+                                        <div class="sa-zeile-sub">
+                                            <button type="button" class="sa-mini" data-pick="${i}">aus Material wählen</button>
+                                            ${z.materialId ? '<span class="sa-tag">aus Katalog</span>' : (z.name ? `<button type="button" class="sa-mini sa-mini--neu" data-save="${i}">als Material speichern</button>` : '')}
+                                        </div>
+                                    </td>
+                                    <td><input type="number" class="sa-in" data-f="menge" data-i="${i}" step="0.1" min="0" value="${z.menge}"></td>
+                                    <td><input type="text" class="sa-in" data-f="einheit" data-i="${i}" value="${escapeHtml(z.einheit)}"></td>
+                                    <td><input type="number" class="sa-in" data-f="ekNetto" data-i="${i}" step="0.01" min="0" value="${z.ekNetto}"></td>
+                                    <td><input type="number" class="sa-in" data-f="aufschlag" data-i="${i}" step="1" value="${z.aufschlag}"></td>
+                                    <td><input type="number" class="sa-in" data-f="vk" data-i="${i}" step="0.01" min="0" value="${(Math.round(zeig(Number(z.vkNetto) || 0) * 100) / 100)}"></td>
+                                    <td class="sa-summe">${formatCurrency(zeig((Number(z.vkNetto) || 0) * (Number(z.menge) || 0)))}</td>
+                                    <td><button type="button" class="sa-del" data-del="${i}" title="Zeile löschen">✕</button></td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                        </div>
+                        <datalist id="saMatListe"></datalist>
+
+                        <button type="button" class="btn btn-sm" id="saPlus" style="margin-top:10px;">+ Zeile</button>
+
+                        <div class="sa-summen">
+                            <div class="sa-sum-zeile"><span>Zwischensumme ${brutto ? 'inkl. USt.' : 'netto'}</span><strong>${formatCurrency(zeig(S.vkNetto))}</strong></div>
+                            ${S.rabattBetrag > 0 ? `<div class="sa-sum-zeile"><span>Rabatt ${SA_STATE.rabatt} %</span><strong>− ${formatCurrency(zeig(S.rabattBetrag))}</strong></div>` : ''}
+                            <div class="sa-sum-zeile sa-sum-gesamt"><span>Gesamtbetrag</span><strong>${formatCurrency(S.brutto)}</strong></div>
+                            <div class="sa-kalk">
+                                <span>Nur für dich – steht nicht im Angebot:</span>
+                                <div><span>Einkauf netto</span><strong>${formatCurrency(S.ekNetto)}</strong></div>
+                                <div><span>Gewinn netto</span><strong style="color:${S.gewinn >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(S.gewinn)}</strong></div>
+                                <div><span>Marge</span><strong>${S.marge.toFixed(1)} %</strong></div>
+                            </div>
+                        </div>
+
+                        <div class="sa-aktionen">
+                            <button type="button" class="btn" id="saLeeren">Alles leeren</button>
+                            <button type="button" class="btn btn-primary" id="saErstellen">Angebot erstellen</button>
+                        </div>
+                    </div>`;
+
+                app.bindSchnellAngebot();
+            })().catch(e => {
+                console.error('Fehler beim Aufbau der Ansicht:', e);
+                if (typeof contentArea !== 'undefined' && contentArea) {
+                    contentArea.innerHTML = `<div class="empty-note" style="padding:30px;">
+                        <strong>Diese Ansicht konnte nicht geladen werden.</strong><br>
+                        <span style="font-size:12px;color:var(--text-muted);">${(e && e.message) ? String(e.message).slice(0, 200) : 'Unbekannter Fehler'}</span>
+                    </div>`;
+                }
+            });
+        }
+
         function renderFinanceOverview() {
             (async () => {
                 const invoices = await db.getAll('invoices');

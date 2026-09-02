@@ -754,7 +754,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v163</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v164</span></div>
                         </div>
                     </div>`;
             })().catch(e => {
@@ -1728,7 +1728,10 @@
                     let cardsHtml = cats.map(c => folderCard(c, (prefix + c), groups[c])).join('');
                     if (level === 'subcats' && directCount > 0) {
                         const directList = scopePool.filter(m => (m.category || 'Ohne Kategorie') === F.cat);
-                        cardsHtml += `<div class="mat-card mat-cat" onclick="app.matOpenCatPath('${escapeHtml(F.cat).replace(/'/g, "\\'")}')">
+                        // forceExact=true: sonst sieht matOpenCatPath, dass es
+                        // Unterordner gibt, und springt wieder auf DIESE Ansicht zurueck -
+                        // die Karte liess sich dadurch gar nicht oeffnen.
+                        cardsHtml += `<div class="mat-card mat-cat" onclick="app.matOpenCatPath('${escapeHtml(F.cat).replace(/'/g, "\\'")}', true)">
                             <div class="mat-cat-ico">📄</div>
                             <div class="mat-card-body"><div class="mat-card-title">Direkt in „${escapeHtml(F.cat.split('/').pop())}"</div><div class="mat-card-sub">${directList.length} Produkt${directList.length !== 1 ? 'e' : ''} ohne Unterordner</div></div>
                             <div class="mat-card-arrow">›</div>

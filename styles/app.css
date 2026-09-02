@@ -1763,3 +1763,39 @@
     border:1px solid var(--border); border-radius:7px; background:var(--bg-secondary);
     color:var(--text-muted); font-size:13px; line-height:1; cursor:pointer; z-index:2; }
 .mat-move:hover { color:var(--accent); border-color:var(--accent); }
+
+/* ===== Schnell-Angebot ===== */
+.sa-wrap { max-width: 1100px; }
+.sa-kopf { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sa-schalter { display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+    margin: 12px 0; font-size: 13px; }
+.sa-schalter input[type="number"] { width: 70px; padding: 4px 7px; margin: 0 4px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); }
+.sa-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.sa-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sa-tab th { background: var(--bg-tertiary); padding: 8px 6px; text-align: left;
+    font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.sa-tab td { padding: 6px; border-top: 1px solid var(--border); vertical-align: top; }
+.sa-tab input { width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg-primary); }
+.sa-summe { text-align: right; font-weight: 600; white-space: nowrap; padding-top: 13px !important; }
+.sa-zeile-sub { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+.sa-mini { border: none; background: none; color: var(--accent); font-size: 11px;
+    cursor: pointer; padding: 0; text-decoration: underline; }
+.sa-mini--neu { color: var(--warning, #b8860b); }
+.sa-tag { font-size: 10.5px; color: var(--text-muted); background: var(--bg-tertiary);
+    padding: 1px 6px; border-radius: 4px; }
+.sa-del { border: none; background: none; color: var(--text-muted); cursor: pointer;
+    font-size: 15px; padding: 6px; }
+.sa-del:hover { color: var(--danger); }
+.sa-summen { margin-top: 16px; padding: 14px; border-radius: var(--radius);
+    background: var(--bg-tertiary); max-width: 420px; margin-left: auto; }
+.sa-sum-zeile { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.sa-sum-gesamt { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 9px;
+    font-size: 16px; font-weight: 700; }
+.sa-kalk { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border);
+    font-size: 12px; color: var(--text-muted); }
+.sa-kalk > span { display: block; margin-bottom: 5px; font-style: italic; }
+.sa-kalk > div { display: flex; justify-content: space-between; padding: 2px 0; }
+.sa-aktionen { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+@media (max-width: 720px) { .sa-kopf { grid-template-columns: 1fr; } .sa-summen { max-width: 100%; } }
