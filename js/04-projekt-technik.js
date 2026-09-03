@@ -341,11 +341,81 @@
         // ============================================================
         // ============ PDF-SUITE (professionelles Design) ============
         // ============================================================
-        const PDF_TEAL = [18, 128, 143];
-        const PDF_TEAL_DARK = [10, 95, 107];
-        const PDF_INK = [23, 49, 60];
-        const PDF_GRAY = [96, 116, 126];
-        const PDF_LIGHT = [237, 243, 245];
+        // Die PDF-Farben sind in den Einstellungen waehlbar. WICHTIG: die Arrays
+        // werden immer IN PLACE ueberschrieben (pdfFarbenSetzen), nie neu zugewiesen.
+        // Ueberall im Code steht ...PDF_TEAL bzw. PDF_TABLE_STYLES haelt direkte
+        // Referenzen - eine Neuzuweisung wuerde die nicht erreichen und das PDF
+        // bliebe teilweise tuerkis.
+        const PDF_TEAL = [18, 128, 143];        // Hauptfarbe (Band, Linien, Tabellenkopf)
+        const PDF_TEAL_DARK = [10, 95, 107];    // Akzentstreifen unter dem Band
+        const PDF_INK = [23, 49, 60];           // Fliesstext
+        const PDF_GRAY = [96, 116, 126];        // Nebentext, Footer
+        const PDF_LIGHT = [237, 243, 245];      // Info-Boxen
+        const PDF_SOFT = [240, 247, 249];       // Flaechen-Tint (Raumskizze)
+        const PDF_ONBAND = [224, 240, 243];     // Text auf dem farbigen Band
+        const PDF_ORN = [78, 158, 170];         // Ornament im Band (Fallback ohne Transparenz)
+        const PDF_WM = [228, 239, 241];         // Wasserzeichen (Fallback ohne Transparenz)
+        const PDF_LINE = [214, 226, 230];       // Tabellen-Gitter
+        const PDF_ZEBRA = [246, 250, 251];      // jede zweite Tabellenzeile
+
+        const PDF_PALETTEN = {
+            eis:      { name: 'Eis-Türkis',    haupt: [18, 128, 143] },
+            nacht:    { name: 'Nachtblau',     haupt: [30, 74, 122] },
+            graphit:  { name: 'Graphit',       haupt: [58, 66, 74] },
+            kupfer:   { name: 'Kupfer',        haupt: [166, 92, 46] },
+            tanne:    { name: 'Tannengrün',    haupt: [30, 94, 74] },
+            bordeaux: { name: 'Bordeaux',      haupt: [126, 40, 58] },
+            aubergine:{ name: 'Aubergine',     haupt: [86, 54, 104] },
+            sand:     { name: 'Sand-Anthrazit',haupt: [122, 100, 72] }
+        };
+
+        function pdfMix(a, b, t) {
+            return [0, 1, 2].map(i => Math.max(0, Math.min(255, Math.round(a[i] * (1 - t) + b[i] * t))));
+        }
+        function pdfHexZuRgb(hex) {
+            const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+            if (!m) return null;
+            const n = parseInt(m[1], 16);
+            return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+        }
+        function pdfRgbZuHex(rgb) {
+            return '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+        }
+
+        // Alle Nebentoene werden aus der Hauptfarbe abgeleitet, damit auch eine
+        // frei gewaehlte Farbe stimmig aussieht und nichts tuerkis stehen bleibt.
+        function pdfFarbenSetzen(haupt) {
+            const weiss = [255, 255, 255];
+            const setze = (ziel, wert) => { ziel[0] = wert[0]; ziel[1] = wert[1]; ziel[2] = wert[2]; };
+            setze(PDF_TEAL, haupt);
+            setze(PDF_TEAL_DARK, pdfMix(haupt, [0, 0, 0], 0.25));
+            setze(PDF_INK, pdfMix(haupt, [12, 20, 26], 0.80));
+            setze(PDF_GRAY, pdfMix(PDF_INK, weiss, 0.38));
+            setze(PDF_LIGHT, pdfMix(haupt, weiss, 0.90));
+            setze(PDF_SOFT, pdfMix(haupt, weiss, 0.93));
+            setze(PDF_ONBAND, pdfMix(haupt, weiss, 0.85));
+            setze(PDF_ORN, pdfMix(haupt, weiss, 0.28));
+            setze(PDF_WM, pdfMix(haupt, weiss, 0.90));
+            setze(PDF_LINE, pdfMix(haupt, weiss, 0.82));
+            setze(PDF_ZEBRA, pdfMix(haupt, weiss, 0.96));
+        }
+
+        // Wird vor jedem PDF aufgerufen (aus pdfCompany), damit eine geaenderte
+        // Farbe sofort wirkt - auch ohne App-Neustart.
+        async function pdfFarbenLaden() {
+            try {
+                const wahl = await getSetting('pdfFarbe', 'eis');
+                const eigen = (wahl === 'eigen') ? pdfHexZuRgb(await getSetting('pdfFarbeHex', '')) : null;
+                pdfFarbenSetzen(eigen || (PDF_PALETTEN[wahl] || PDF_PALETTEN.eis).haupt);
+            } catch (e) {
+                pdfFarbenSetzen(PDF_PALETTEN.eis.haupt);
+            }
+        }
+        window.PDF_PALETTEN = PDF_PALETTEN;
+        window.pdfMix = pdfMix;
+        window.pdfHexZuRgb = pdfHexZuRgb;
+        window.pdfRgbZuHex = pdfRgbZuHex;
+        window.pdfFarbenLaden = pdfFarbenLaden;
 
         function pdfSnowflake(doc, cx, cy, r, color, lineW) {
             doc.setDrawColor(...color);
@@ -394,7 +464,7 @@
                 } catch (e) { /* Fallback unten */ }
                 if (!done) {
                     // Fallback ohne Transparenz: sehr helle Farbe, stört nie
-                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 58, [228, 239, 241], 1.3);
+                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 58, PDF_WM, 1.3);
                 }
             } catch (e) { /* Wasserzeichen ist optional */ }
         }
@@ -407,6 +477,7 @@
         }
 
         async function pdfCompany() {
+            await pdfFarbenLaden();   // gewaehlte Farbpalette in die PDF_*-Arrays laden
             return {
                 name: await getSetting('companyName', ''),
                 logo: await getSetting('companyLogo', ''),
@@ -470,8 +541,8 @@
                 } catch (e) { /* Fallback */ }
                 if (!bandDone) {
                     // gedeckte, hellere Teal-Töne statt Transparenz
-                    pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, [78, 158, 170], 0.7);
-                    pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, [78, 158, 170], 0.45);
+                    pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, PDF_ORN, 0.7);
+                    pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, PDF_ORN, 0.45);
                 }
             } catch (e) { /* optional */ }
 
@@ -481,7 +552,7 @@
             doc.text(title, mx, bandY + 10.5);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(8.5);
-            doc.setTextColor(224, 240, 243);
+            doc.setTextColor(...PDF_ONBAND);
             let my = bandY + 16.5;
             (metaLines || []).slice(0, 2).forEach(l => { doc.text(l, mx, my); my += 4.2; });
 
@@ -554,7 +625,7 @@
                 const h = Math.max(r.width * scale, 14);
                 if (cx + w > x + maxW) { cx = x; cy += rowH + pad; rowH = 0; }
                 // Raum-Rechteck
-                doc.setFillColor(240, 247, 249);
+                doc.setFillColor(...PDF_SOFT);
                 doc.setDrawColor(...PDF_TEAL);
                 doc.setLineWidth(0.5);
                 doc.roundedRect(cx, cy, w, h, 1.5, 1.5, 'FD');
@@ -594,7 +665,7 @@
         }
 
         const PDF_TABLE_STYLES = {
-            styles: { font: 'helvetica', fontSize: 8.6, cellPadding: 2.8, textColor: PDF_INK, lineColor: [214, 226, 230], lineWidth: 0.15 },
+            styles: { font: 'helvetica', fontSize: 8.6, cellPadding: 2.8, textColor: PDF_INK, lineColor: PDF_LINE, lineWidth: 0.15 },
             headStyles: { fillColor: PDF_TEAL, textColor: 255, fontStyle: 'bold', fontSize: 8.3 },
-            alternateRowStyles: { fillColor: [246, 250, 251] }
+            alternateRowStyles: { fillColor: PDF_ZEBRA }
         };
