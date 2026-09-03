@@ -31,11 +31,11 @@
             { key: 'kuehlstellen', label: 'Kühlstellen', fertig: true },
             { key: 'kaeltelast', label: 'Kältelast', fertig: true },
             { key: 'anlage', label: 'Anlage', fertig: true },
-            { key: 'komponenten', label: 'Komponenten', fertig: false },
+            { key: 'komponenten', label: 'Komponenten', fertig: true },
             { key: 'rohrleitungen', label: 'Rohrleitungen', fertig: true },
-            { key: 'verbund', label: 'Verbund', fertig: false },
+            { key: 'verbund', label: 'Verbund', fertig: true },
             { key: 'material', label: 'Material', fertig: false },
-            { key: 'pruefung', label: 'Prüfung', fertig: false },
+            { key: 'pruefung', label: 'Prüfung', fertig: true },
             { key: 'angebot', label: 'Angebot', fertig: false }
         ];
 
@@ -179,7 +179,19 @@
                 else if (tab === 'kaeltelast') tabHtml = renderKaelteTabKaeltelast(project);
                 else if (tab === 'anlage') tabHtml = renderKaelteTabAnlage(project);
                 else if (tab === 'rohrleitungen') tabHtml = renderKaelteTabRohr(project);
+                else if (tab === 'komponenten') tabHtml = renderKaelteTabKomponenten(project);
+                else if (tab === 'verbund') tabHtml = renderKaelteTabVerbund(project);
+                else if (tab === 'pruefung') tabHtml = renderKaelteTabPruefung(project);
                 else tabHtml = renderKaelteTabPlatzhalter(KAELTE_STEPS.find(s => s.key === tab));
+
+                // "Weiter"-Leiste: fuehrt durch die Schritte, ohne dass oben
+                // in der Leiste gesucht werden muss.
+                const stepIdx = KAELTE_STEPS.findIndex(s => s.key === tab);
+                const vor = KAELTE_STEPS[stepIdx - 1], nach = KAELTE_STEPS[stepIdx + 1];
+                tabHtml += `<div class="kaelte-weiter">
+                    ${vor ? `<button class="btn btn-outline" onclick="app.kaelteSetTab(${idJS(projectId)}, '${vor.key}')">← ${escapeHtml(vor.label)}</button>` : '<span></span>'}
+                    ${nach ? `<button class="btn btn-primary" onclick="app.kaelteSetTab(${idJS(projectId)}, '${nach.key}')">Weiter: ${escapeHtml(nach.label)} →</button>` : '<span></span>'}
+                </div>`;
 
                 contentArea.innerHTML = `
                     <div class="toolbar">
@@ -214,6 +226,29 @@
                             if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; }
                             p.kaelte.auslegung[el.dataset.feld] = n;
                         }
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
+                // Verbund: Sauggruppen-Zuordnung und Gleichzeitigkeitsfaktor
+                contentArea.querySelectorAll('.vb-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        const ks = (p.kaelte.kuehlstellen || []).find(x => x.id === el.dataset.ks);
+                        if (!ks) return;
+                        ks.sauggruppe = el.value;
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+                contentArea.querySelectorAll('.vb-gz').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const n = parseFloat(el.value.replace(',', '.'));
+                        if (!Number.isFinite(n) || n <= 0 || n > 1) { showToast('Gleichzeitigkeitsfaktor muss zwischen 0 und 1 liegen.', 'error'); return; }
+                        const p = await db.get('projects', projectId);
+                        p.kaelte.gleichzeitigkeit = p.kaelte.gleichzeitigkeit || {};
+                        p.kaelte.gleichzeitigkeit[el.dataset.gruppe] = n;
                         await db.put('projects', p);
                         renderKaelteDetail(projectId);
                     });
@@ -605,6 +640,152 @@
             return `<div class="kl-hinweis kl-pruefen" style="margin-bottom:12px;">🔴 Mindestgeschwindigkeit für den Öltransport wird bei Steigleitungen strenger geprüft. Teillastbetrieb ist damit noch NICHT abgedeckt – bei geregelten Anlagen gesondert prüfen.</div>${bloecke}`;
         }
 
+
+        // ---- Komponenten: EINGABEMASKE, kein Herstellerkatalog.
+        // Bewusste Entscheidung: echte Verdichter-, Verdampfer- und Ventil-
+        // daten kann diese App nicht erfinden. Der Techniker traegt sein
+        // Geraet mit den Daten aus dem Datenblatt ein, das Programm prueft
+        // die Leistung gegen den berechneten Betriebspunkt und uebernimmt
+        // die Position spaeter in Material und Angebot.
+        const KOMPONENTEN_VORLAGE = {
+            einzel:  ['Verflüssigungssatz', 'Verdampfer', 'Expansionsventil', 'Magnetventil', 'Filtertrockner', 'Schauglas', 'Druckschalter', 'Temperaturfühler', 'Regelung'],
+            verbund: ['Verdichter', 'Verflüssiger', 'Flüssigkeitssammler', 'Ölabscheider', 'Ölmanagement', 'Verdampfer', 'Expansionsventil', 'Magnetventil', 'Filtertrockner', 'Schauglas', 'Druckschalter', 'Sicherheitsventil', 'Regelung'],
+            hdmd:    ['Verdichter MT', 'Verdichter LT', 'Parallelverdichter', 'Gaskühler', 'Hochdruckventil', 'Flashgas-Ventil', 'Mitteldrucksammler', 'Verdampfer', 'Expansionsventil', 'Ölmanagement', 'Drucksensorik', 'Sicherheitsventil', 'Regelung'],
+            custom:  ['Verdichter', 'Verflüssiger/Gaskühler', 'Verdampfer', 'Expansionsventil', 'Sammler', 'Regelung']
+        };
+
+        function renderKaelteTabKomponenten(project) {
+            const art = project.kaelte.anlagenart || 'einzel';
+            const vorlage = KOMPONENTEN_VORLAGE[art] || KOMPONENTEN_VORLAGE.custom;
+            const liste = project.kaelte.komponenten || [];
+            const a = kaelteAuslegung(project);
+            const bedarfKW = a.summeAuslegung / 1000;
+
+            const zeilen = liste.map((k, i) => {
+                const leistung = Number(k.leistungKW) || 0;
+                let bewertung = '';
+                if (leistung > 0 && bedarfKW > 0 && /verdichter|verflüssigungssatz|verdampfer|aggregat/i.test(k.typ || '')) {
+                    if (leistung < bedarfKW * 0.98) bewertung = `<div class="kl-hinweis kl-fehler">✕ ${leistung.toFixed(2).replace('.', ',')} kW liegen unter dem berechneten Bedarf von ${bedarfKW.toFixed(2).replace('.', ',')} kW.</div>`;
+                    else if (leistung > bedarfKW * 1.6) bewertung = `<div class="kl-hinweis kl-warnung">⚠ ${leistung.toFixed(2).replace('.', ',')} kW sind mehr als 60 % über dem Bedarf – Taktbetrieb und schlechte Teillast prüfen.</div>`;
+                    else bewertung = `<div class="kl-hinweis kl-info">✓ Leistung passt zum berechneten Bedarf (${bedarfKW.toFixed(2).replace('.', ',')} kW).</div>`;
+                }
+                return `<tr>
+                        <td><strong>${escapeHtml(k.typ || '–')}</strong><br><span style="font-size:11px;color:var(--text-muted);">${escapeHtml(k.hersteller || '')} ${escapeHtml(k.modell || '')}</span></td>
+                        <td>${escapeHtml(k.artikelnummer || '–')}</td>
+                        <td class="kl-w">${k.leistungKW ? Number(k.leistungKW).toFixed(2).replace('.', ',') + ' kW' : '–'}</td>
+                        <td class="kl-w">${k.menge || 1}</td>
+                        <td class="kl-w">${k.ekPreis ? formatCurrency(Number(k.ekPreis)) : '–'}</td>
+                        <td class="kl-w">${k.vkPreis ? formatCurrency(Number(k.vkPreis)) : '–'}</td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <button class="btn btn-sm btn-outline" onclick="app.openKomponenteModal(${idJS(project.id)}, ${i})">${icon('edit')}</button>
+                            <button class="btn btn-sm btn-danger" onclick="app.deleteKomponente(${idJS(project.id)}, ${i})">${icon('trash')}</button>
+                        </td>
+                    </tr>${bewertung ? `<tr><td colspan="7" style="padding-top:0;">${bewertung}</td></tr>` : ''}`;
+            }).join('');
+
+            return `
+                <div class="kl-hinweis kl-pruefen">🔴 Hier werden keine Herstellerprodukte vorgeschlagen. Diese App hat keinen geprüften Verdichter-, Verdampfer- oder Ventilkatalog – erfundene Typenbezeichnungen oder Leistungsdaten wären gefährlich. Trage dein Gerät aus dem Datenblatt ein, dann prüft das Programm die Leistung gegen den berechneten Betriebspunkt.</div>
+                <div class="form-card">
+                    <div class="detail-section-head" style="margin-top:0;">
+                        <h4>Komponenten (${liste.length}) · Bedarf ${bedarfKW.toFixed(2).replace('.', ',')} kW</h4>
+                        <button class="btn btn-sm btn-primary" onclick="app.openKomponenteModal(${idJS(project.id)})">${icon('plus')} Komponente</button>
+                    </div>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px;">Übliche Komponenten für <strong>${escapeHtml((KAELTE_ANLAGENARTEN.find(x => x.key === art) || {}).label || art)}</strong>: ${vorlage.map(escapeHtml).join(' · ')}</div>
+                    ${liste.length === 0 ? '<div class="empty-note" style="padding:14px;">Noch keine Komponente eingetragen.</div>' : `
+                        <div class="table-container"><table>
+                            <thead><tr><th>Typ / Gerät</th><th>Art.-Nr.</th><th>Leistung</th><th>Menge</th><th>EK</th><th>VK</th><th></th></tr></thead>
+                            <tbody>${zeilen}</tbody>
+                        </table></div>`}
+                </div>`;
+        }
+
+        // ---- Verbund: Sauggruppen und Gleichzeitigkeitsfaktoren.
+        function renderKaelteTabVerbund(project) {
+            const art = project.kaelte.anlagenart || 'einzel';
+            const a = kaelteAuslegung(project);
+            if (art === 'einzel') {
+                return `<div class="empty-state"><div style="font-size:40px;">ℹ</div>
+                    <p>Die Anlagenart ist <strong>Einzelanlage</strong> – da gibt es keine Sauggruppen.<br>
+                    Für Verbundbetrieb im Schritt „Projekt" die Anlagenart umstellen; die Kühlstellen bleiben erhalten.</p></div>`;
+            }
+            if (a.anzahlRechenbar === 0) return '<div class="empty-note" style="padding:14px;">Noch keine berechenbare Kühlstelle.</div>';
+
+            const gruppen = {};
+            a.ergebnisse.forEach(e => {
+                if (!e.ergebnis.moeglich) return;
+                const tv = e.werte.verdampfungstemperatur ? e.werte.verdampfungstemperatur.wert : 0;
+                const g = e.ks.sauggruppe || (tv < -15 ? 'LT' : 'MT');
+                (gruppen[g] = gruppen[g] || []).push(e);
+            });
+
+            const gz = project.kaelte.gleichzeitigkeit || {};
+            const bloecke = Object.entries(gruppen).map(([name, mitglieder]) => {
+                const summe = mitglieder.reduce((s, e) => s + e.ergebnis.auslegung, 0);
+                const faktor = gz[name] != null ? Number(gz[name]) : 1.0;
+                const tvMin = Math.min(...mitglieder.map(e => e.werte.verdampfungstemperatur.wert));
+                return `
+                    <div class="form-card">
+                        <div class="form-card-title">Sauggruppe ${escapeHtml(name)} · ${mitglieder.length} Verbraucher</div>
+                        <table class="kl-ergebnis"><tbody>
+                            ${mitglieder.map(e => `<tr><td>${escapeHtml(e.ks.bezeichnung)} <span style="color:var(--text-muted);font-size:11px;">(t₀ ${e.werte.verdampfungstemperatur.wert} °C)</span>
+                                <select class="vb-in" data-ks="${e.ks.id}" data-feld="sauggruppe" style="margin-left:8px;padding:2px 5px;font-size:11px;width:auto;display:inline-block;">
+                                    ${['MT', 'LT'].concat(Object.keys(gruppen).filter(x => x !== 'MT' && x !== 'LT')).map(x => `<option value="${escapeHtml(x)}" ${(e.ks.sauggruppe || (e.werte.verdampfungstemperatur.wert < -15 ? 'LT' : 'MT')) === x ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('')}
+                                </select></td>
+                                <td class="kl-w">${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW</td></tr>`).join('')}
+                            <tr class="kl-sum"><td>Summe der Einzellasten</td><td class="kl-w">${(summe / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
+                            <tr><td>Gleichzeitigkeitsfaktor<br><small style="color:var(--text-muted);">1,00 = keine Reduktion</small></td>
+                                <td class="kl-w"><input type="text" inputmode="decimal" class="vb-gz" data-gruppe="${escapeHtml(name)}" value="${faktor}" style="width:75px;text-align:right;padding:4px 6px;"></td></tr>
+                            <tr class="kl-total"><td>Auslegungsleistung Gruppe<br><small>maßgebende Verdampfung ${tvMin} °C</small></td><td class="kl-w">${(summe * faktor / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
+                        </tbody></table>
+                    </div>`;
+            }).join('');
+
+            return `
+                <div class="kl-hinweis kl-pruefen">🔴 Der Gleichzeitigkeitsfaktor steht bewusst auf 1,00 (volle Summe). Einen kleineren Wert darf nur setzen, wer das Lastprofil der Anlage kennt – ein geschätzter Faktor unterdimensioniert die Anlage. Diese App schlägt hier absichtlich keinen Wert vor.</div>
+                ${bloecke}`;
+        }
+
+        // ---- Technische Prüfung: sammelt alles Offene an einer Stelle.
+        function renderKaelteTabPruefung(project) {
+            const A = kaelteAuslegungsdaten(project);
+            const a = kaelteAuslegung(project);
+            const punkte = [];
+
+            punkte.push({ art: a.anzahlGesamt > 0 ? 'ok' : 'fehler', text: a.anzahlGesamt > 0 ? `${a.anzahlGesamt} Kühlstelle(n) erfasst, davon ${a.anzahlRechenbar} berechenbar.` : 'Keine Kühlstelle erfasst.' });
+            if (a.anzahlGesamt !== a.anzahlRechenbar) punkte.push({ art: 'fehler', text: `${a.anzahlGesamt - a.anzahlRechenbar} Kühlstelle(n) sind nicht berechenbar – Raummaße, Raumtemperatur oder U-Wert fehlen.` });
+
+            // Alle Schaetzungen sichtbar machen - nichts verstecken.
+            const schaetzungen = [];
+            a.ergebnisse.forEach(e => {
+                Object.entries(e.werte).forEach(([k, w]) => {
+                    if (w.status === 'schaetzung') schaetzungen.push(`${e.ks.bezeichnung}: ${k} = ${w.wert} (${w.herkunft})`);
+                });
+                (e.meldungen || []).forEach(m => { if (m.art === 'fehler' || m.art === 'warnung') punkte.push({ art: m.art, text: `${e.ks.bezeichnung}: ${m.text}` }); });
+            });
+
+            const komp = project.kaelte.komponenten || [];
+            punkte.push({ art: komp.length ? 'ok' : 'warnung', text: komp.length ? `${komp.length} Komponente(n) eingetragen.` : 'Keine Komponenten eingetragen – ohne Herstellerdaten ist die Auslegung nicht abgeschlossen.' });
+            const ohneQuelle = komp.filter(k => !k.quelle && !k.artikelnummer).length;
+            if (ohneQuelle) punkte.push({ art: 'warnung', text: `${ohneQuelle} Komponente(n) ohne Artikelnummer oder Quelle.` });
+
+            const mitRohr = a.ergebnisse.filter(e => e.ks.rohr && Object.values(e.ks.rohr).some(r => Number(r.laenge) > 0)).length;
+            punkte.push({ art: mitRohr ? 'ok' : 'warnung', text: mitRohr ? `Rohrleitungen für ${mitRohr} Kühlstelle(n) dimensioniert.` : 'Noch keine Rohrleitung dimensioniert.' });
+
+            if (KAELTEMITTEL[A.kaeltemittel] && KAELTEMITTEL[A.kaeltemittel].blend) punkte.push({ art: 'warnung', text: `${A.kaeltemittel} ist ein Gemisch – Stoffdaten aus Gemischmodell, Temperaturgleit nicht berücksichtigt.` });
+
+            const ikon = { ok: '✓', warnung: '⚠', fehler: '✕' };
+            return `
+                <div class="form-card">
+                    <div class="form-card-title">Technische Prüfung</div>
+                    ${punkte.map(p => `<div class="kl-hinweis kl-${p.art === 'ok' ? 'info' : p.art}">${ikon[p.art]} ${escapeHtml(p.text)}</div>`).join('')}
+                </div>
+                <div class="form-card">
+                    <div class="form-card-title">Verwendete Richtwert-Schätzungen (${schaetzungen.length})</div>
+                    ${schaetzungen.length ? `<ul style="font-size:12px;line-height:1.6;margin:0;padding-left:18px;">${schaetzungen.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div class="empty-note" style="padding:10px;">Keine – alle Werte sind eingegeben oder berechnet.</div>'}
+                </div>
+                <div class="kl-hinweis kl-pruefen">🔴 Diese Auslegung ist eine Vorauslegung. Das Programm kann und darf nicht bestätigen, dass die Anlage normgerecht ist. Vor Bestellung und Ausführung ist eine fachliche Prüfung anhand der gültigen Vorschriften und der Herstellerdatenblätter erforderlich.</div>`;
+        }
+
         function renderKaelteTabPlatzhalter(step) {
             return `
                 <div class="empty-state">
@@ -745,6 +926,72 @@
                     },
                     null, { wide: true }
                 );
+            },
+
+            async openKomponenteModal(projectId, index = null) {
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                const liste = project.kaelte.komponenten || (project.kaelte.komponenten = []);
+                const k = (index != null && liste[index]) ? liste[index] : {};
+                const art = project.kaelte.anlagenart || 'einzel';
+                const vorlage = KOMPONENTEN_VORLAGE[art] || KOMPONENTEN_VORLAGE.custom;
+                showModal(
+                    index != null ? 'Komponente bearbeiten' : 'Komponente hinzufügen',
+                    `
+                        <div class="form-group"><label>Typ / Bauteil *</label>
+                            <input list="kompTypen" id="koTyp" value="${escapeHtml(k.typ || '')}" placeholder="z. B. Verdichter">
+                            <datalist id="kompTypen">${vorlage.map(v => `<option value="${escapeHtml(v)}">`).join('')}</datalist>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Hersteller</label><input type="text" id="koHersteller" value="${escapeHtml(k.hersteller || '')}"></div>
+                            <div class="form-group"><label>Modell</label><input type="text" id="koModell" value="${escapeHtml(k.modell || '')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Artikelnummer</label><input type="text" id="koArt" value="${escapeHtml(k.artikelnummer || '')}"></div>
+                            <div class="form-group"><label>Leistung im Betriebspunkt (kW)</label><input type="text" inputmode="decimal" id="koLeistung" value="${k.leistungKW ?? ''}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Menge</label><input type="text" inputmode="decimal" id="koMenge" value="${k.menge ?? 1}"></div>
+                            <div class="form-group"><label>Einheit</label><input type="text" id="koEinheit" value="${escapeHtml(k.einheit || 'Stk')}"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Einkaufspreis netto (€)</label><input type="text" inputmode="decimal" id="koEk" value="${k.ekPreis ?? ''}"></div>
+                            <div class="form-group"><label>Verkaufspreis (€)</label><input type="text" inputmode="decimal" id="koVk" value="${k.vkPreis ?? ''}"></div>
+                        </div>
+                        <div class="form-group"><label>Quelle / Datenblatt <small>– woher stammen die Leistungsdaten?</small></label><input type="text" id="koQuelle" value="${escapeHtml(k.quelle || '')}" placeholder="z. B. Datenblatt Rev. 03/2026"></div>
+                        <div class="form-group"><label>Notiz</label><textarea id="koNotiz" rows="2">${escapeHtml(k.notiz || '')}</textarea></div>
+                    `,
+                    async (overlay) => {
+                        const zahl = id => { const v = overlay.querySelector(id).value.trim(); if (v === '') return null; const n = parseFloat(v.replace(',', '.')); return Number.isFinite(n) ? n : null; };
+                        const typ = overlay.querySelector('#koTyp').value.trim();
+                        if (!typ) { showToast('Typ ist erforderlich.', 'error'); return; }
+                        const neu = {
+                            typ, hersteller: overlay.querySelector('#koHersteller').value.trim(),
+                            modell: overlay.querySelector('#koModell').value.trim(),
+                            artikelnummer: overlay.querySelector('#koArt').value.trim(),
+                            leistungKW: zahl('#koLeistung'), menge: zahl('#koMenge') ?? 1,
+                            einheit: overlay.querySelector('#koEinheit').value.trim() || 'Stk',
+                            ekPreis: zahl('#koEk'), vkPreis: zahl('#koVk'),
+                            quelle: overlay.querySelector('#koQuelle').value.trim(),
+                            notiz: overlay.querySelector('#koNotiz').value.trim()
+                        };
+                        if (index != null) liste[index] = neu; else liste.push(neu);
+                        await db.put('projects', project);
+                        overlay.remove();
+                        showToast('Komponente gespeichert.', 'success');
+                        renderKaelteDetail(projectId);
+                    }
+                );
+            },
+
+            async deleteKomponente(projectId, index) {
+                if (!await showConfirm('Diese Komponente wirklich löschen?')) return;
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                (project.kaelte.komponenten || []).splice(index, 1);
+                await db.put('projects', project);
+                showToast('Komponente gelöscht.', 'info');
+                renderKaelteDetail(projectId);
             },
 
             async deleteKuehlstelle(projectId, kuehlstelleId) {
