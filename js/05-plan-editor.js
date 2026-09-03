@@ -519,7 +519,7 @@
             const ty = py => y + (py - minY + pad) * scale;
 
             for (const rc of roomRects) {
-                doc.setFillColor(240, 247, 249); doc.setDrawColor(...PDF_TEAL); doc.setLineWidth(0.4);
+                doc.setFillColor(...PDF_SOFT); doc.setDrawColor(...PDF_TEAL); doc.setLineWidth(0.4);
                 doc.roundedRect(tx(rc.x), ty(rc.y), rc.w * scale, rc.h * scale, 1, 1, 'FD');
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(6.6); doc.setTextColor(...PDF_INK);
                 doc.text(String(rc.room.name || 'Raum'), tx(rc.x + rc.w / 2), ty(rc.y) + 4, { align: 'center', maxWidth: rc.w * scale - 2 });
