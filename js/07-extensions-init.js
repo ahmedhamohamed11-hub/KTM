@@ -4076,7 +4076,7 @@
                 updateBottomNav(page);
 
                 // Kurzer Lade-Platzhalter (Skeleton), damit keine leere Fläche blinkt
-                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', schnellangebot: 'list', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', angebotDuplikate: 'list', ekUebersicht: 'list', equipment: 'cards', maintenance: 'list' }[page];
+                const skeletonKind = { dashboard: 'cards', customers: 'list', projects: 'list', materials: 'list', offers: 'list', invoices: 'list', orders: 'list', finanzuebersicht: 'cards', schnellangebot: 'list', katalogDuplikate: 'list', preiskontrolle: 'list', katalogpreisCheck: 'list', angebotDuplikate: 'list', ekUebersicht: 'list', equipment: 'cards', maintenance: 'list', kaelte: 'list' }[page];
                 if (skeletonKind && typeof showLoadingSkeleton === 'function') showLoadingSkeleton(skeletonKind);
 
                 switch (page) {
@@ -4091,6 +4091,7 @@
                     case 'equipment': renderEquipment(this.currentProjectId); break;
                     case 'maintenance': renderMaintenance(); break;
                     case 'katalog': this.renderKatalog(param); break;
+                    case 'kaelte': renderKaelte(param); break;
                     case 'invoices': renderInvoices(); break;
                     case 'finanzuebersicht': renderFinanceOverview(); break;
                     case 'schnellangebot': renderSchnellAngebot(); break;
