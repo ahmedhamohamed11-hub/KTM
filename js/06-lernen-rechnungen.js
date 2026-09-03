@@ -535,10 +535,55 @@
         // und Aufschlag sind NUR fuer die interne Kalkulation - im fertigen Angebot
         // und im PDF sieht der Kunde ausschliesslich den Verkaufspreis.
         // Der Zustand liegt in SA_STATE, damit ein Neuzeichnen nichts verwirft.
-        const SA_STATE = window.SA_STATE || (window.SA_STATE = {
-            customerId: '', kundeFrei: '', titel: '', bruttoAnzeige: true,
-            rabatt: 0, zeilen: []
-        });
+        const SA_LEER = { customerId: '', kundeFrei: '', titel: '', bruttoAnzeige: true, rabatt: 0, zeilen: [] };
+        const SA_ENTWURF_KEY = 'schnellangebotEntwurf';
+
+        const SA_STATE = window.SA_STATE || (window.SA_STATE = { ...SA_LEER, zeilen: [] });
+
+        // Entwurf ueberlebt App-Wechsel und Neustart. Ohne das war jede Eingabe weg,
+        // sobald das Handy die App in den Hintergrund schob - bei zwoelf getippten
+        // Positionen aergerlich. Gespeichert wird in den Settings (synchronisiert
+        // damit auch aufs zweite Geraet), verzoegert um nicht bei jedem Tastendruck
+        // zu schreiben.
+        let saSpeicherTimer = null;
+        async function saEntwurfSpeichern() {
+            clearTimeout(saSpeicherTimer);
+            saSpeicherTimer = setTimeout(async () => {
+                try {
+                    const leer = !SA_STATE.zeilen.some(z => z.name)
+                        && !SA_STATE.titel && !SA_STATE.kundeFrei && !SA_STATE.customerId;
+                    if (leer) { await setSetting(SA_ENTWURF_KEY, ''); return; }
+                    await setSetting(SA_ENTWURF_KEY, JSON.stringify({
+                        ...SA_STATE, gespeichertAm: new Date().toISOString()
+                    }));
+                } catch (e) { console.warn('Entwurf konnte nicht gespeichert werden:', e); }
+            }, 600);
+        }
+
+        async function saEntwurfLaden() {
+            if (window.__saEntwurfGeladen) return;      // nur einmal je Sitzung
+            window.__saEntwurfGeladen = true;
+            try {
+                const roh = await getSetting(SA_ENTWURF_KEY, '');
+                if (!roh) return;
+                const d = JSON.parse(roh);
+                if (!d || !Array.isArray(d.zeilen)) return;
+                Object.assign(SA_STATE, {
+                    customerId: d.customerId || '', kundeFrei: d.kundeFrei || '',
+                    titel: d.titel || '', bruttoAnzeige: d.bruttoAnzeige !== false,
+                    rabatt: Number(d.rabatt) || 0, zeilen: d.zeilen
+                });
+                SA_STATE.gespeichertAm = d.gespeichertAm || null;
+            } catch (e) { console.warn('Entwurf konnte nicht geladen werden:', e); }
+        }
+
+        async function saEntwurfVerwerfen() {
+            Object.assign(SA_STATE, SA_LEER, { zeilen: [saLeereZeile()] });
+            SA_STATE.gespeichertAm = null;
+            try { await setSetting(SA_ENTWURF_KEY, ''); } catch (e) { console.warn(e); }
+        }
+        window.saEntwurfSpeichern = saEntwurfSpeichern;
+        window.saEntwurfVerwerfen = saEntwurfVerwerfen;
 
         function saLeereZeile() {
             return { name: '', beschreibung: '', menge: 1, einheit: 'Stk',
@@ -578,6 +623,7 @@
 
         function renderSchnellAngebot() {
             (async () => {
+                await saEntwurfLaden();
                 const customers = await db.getAll('customers');
                 if (!SA_STATE.zeilen.length) SA_STATE.zeilen = [saLeereZeile()];
                 const S = saSummen();
@@ -585,8 +631,13 @@
                 const MWST = (typeof MAT_VAT === 'number') ? MAT_VAT : 0.20;
                 const zeig = (nettoWert) => brutto ? nettoWert * (1 + MWST) : nettoWert;
 
+                const hatInhalt = SA_STATE.zeilen.some(z => z.name);
                 contentArea.innerHTML = `
                     <div class="sa-wrap">
+                        ${SA_STATE.gespeichertAm && hatInhalt ? `<div class="sa-entwurf">
+                            Entwurf von ${formatDate(SA_STATE.gespeichertAm)} wiederhergestellt.
+                            <button type="button" id="saVerwerfen">verwerfen</button>
+                        </div>` : ''}
                         <div class="sa-kopf">
                             <div class="form-group">
                                 <label>Kunde</label>

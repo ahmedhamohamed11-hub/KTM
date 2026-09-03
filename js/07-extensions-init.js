@@ -5984,16 +5984,17 @@
                     S.customerId = e.target.value;
                     const frei = q('#saKundeFrei');
                     if (frei) frei.style.display = S.customerId ? 'none' : '';
+                    saEntwurfSpeichern();
                 });
-                q('#saKundeFrei')?.addEventListener('input', (e) => { S.kundeFrei = e.target.value; });
-                q('#saTitel')?.addEventListener('input', (e) => { S.titel = e.target.value; });
+                q('#saKundeFrei')?.addEventListener('input', (e) => { S.kundeFrei = e.target.value; saEntwurfSpeichern(); });
+                q('#saTitel')?.addEventListener('input', (e) => { S.titel = e.target.value; saEntwurfSpeichern(); });
                 q('#saBrutto')?.addEventListener('change', (e) => { S.bruttoAnzeige = e.target.checked; renderSchnellAngebot(); });
-                q('#saRabatt')?.addEventListener('change', (e) => { S.rabatt = parseFloat(e.target.value) || 0; renderSchnellAngebot(); });
-                q('#saPlus')?.addEventListener('click', () => { S.zeilen.push(saLeereZeile()); renderSchnellAngebot(); });
+                q('#saRabatt')?.addEventListener('change', (e) => { S.rabatt = parseFloat(e.target.value) || 0; saEntwurfSpeichern(); renderSchnellAngebot(); });
+                q('#saPlus')?.addEventListener('click', () => { S.zeilen.push(saLeereZeile()); saEntwurfSpeichern(); renderSchnellAngebot(); });
 
                 q('#saLeeren')?.addEventListener('click', async () => {
                     if (!await showConfirm('Alle Zeilen und Angaben verwerfen?', { title: 'Leeren', okText: 'Leeren' })) return;
-                    S.customerId = ''; S.kundeFrei = ''; S.titel = ''; S.rabatt = 0; S.zeilen = [saLeereZeile()];
+                    await saEntwurfVerwerfen();
                     renderSchnellAngebot();
                 });
 
@@ -6021,6 +6022,7 @@
                         } else {
                             z[f] = parseFloat(String(e.target.value).replace(',', '.')) || 0;
                         }
+                        saEntwurfSpeichern();
                         renderSchnellAngebot();
                     });
                 });
@@ -6029,6 +6031,7 @@
                     b.addEventListener('click', () => {
                         S.zeilen.splice(parseInt(b.dataset.del, 10), 1);
                         if (!S.zeilen.length) S.zeilen.push(saLeereZeile());
+                        saEntwurfSpeichern();
                         renderSchnellAngebot();
                     });
                 });
@@ -6038,6 +6041,11 @@
                 });
                 document.querySelectorAll('[data-save]').forEach(b => {
                     b.addEventListener('click', () => app.saAlsMaterialSpeichern(parseInt(b.dataset.save, 10)));
+                });
+                q('#saVerwerfen')?.addEventListener('click', async () => {
+                    if (!await showConfirm('Wiederhergestellten Entwurf verwerfen?', { title: 'Entwurf verwerfen', okText: 'Verwerfen' })) return;
+                    await saEntwurfVerwerfen();
+                    renderSchnellAngebot();
                 });
                 q('#saErstellen')?.addEventListener('click', () => app.saAngebotErstellen());
             },
@@ -6189,7 +6197,7 @@
                 const offerId = await db.add('offers', entwurf);
 
                 showToast(`Angebot ${entwurf.offerNumber} für ${cust ? `${cust.firstName || ''} ${cust.lastName || ''}`.trim() : 'Kunde'} erstellt – ${formatCurrency(R.total)}.`, 'success');
-                S.zeilen = [saLeereZeile()]; S.titel = ''; S.rabatt = 0;
+                await saEntwurfVerwerfen();   // Entwurf ist verbraucht
                 app.navigate('offers');
             },
 

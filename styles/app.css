@@ -1799,3 +1799,11 @@
 .sa-kalk > div { display: flex; justify-content: space-between; padding: 2px 0; }
 .sa-aktionen { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 @media (max-width: 720px) { .sa-kopf { grid-template-columns: 1fr; } .sa-summen { max-width: 100%; } }
+
+/* Hinweis auf wiederhergestellten Entwurf */
+.sa-entwurf { padding: 9px 12px; margin-bottom: 12px; border-radius: var(--radius);
+    background: var(--accent-light); border: 1px solid var(--border);
+    font-size: 12.5px; display: flex; justify-content: space-between;
+    align-items: center; gap: 10px; flex-wrap: wrap; }
+.sa-entwurf button { border: none; background: none; color: var(--accent);
+    font-size: 12.5px; cursor: pointer; text-decoration: underline; padding: 0; }
