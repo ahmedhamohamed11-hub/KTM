@@ -3155,12 +3155,12 @@
                 // Zeilen wie zwei "Kabelkanal"-Eintraege mit unterschiedlichem Preis.
                 const _RM = (typeof recomputeOffer === 'function') ? recomputeOffer(offer) : null;
                 const _quellPositionen = _RM ? _RM.positions : (offer.positions || []);
-                const rows = _quellPositionen.filter(p => !_istArbeit(p)).map((p, i) => {
+                const rows = _quellPositionen.filter(p => !_istArbeit(p)).map((p) => {
                     const disc = Number(p.discount) || 0;
                     const unit = (typeof posDisplayPrice === 'function') ? posDisplayPrice(p, offer) : (Number(p.price) || 0);
                     const lineTotal = unit * (Number(p.quantity) || 0) * (1 - disc / 100);
-                    return [
-                        String(i + 1),
+                    const zeile = [
+                        '',
                         p.name || '',
                         (p.description || (p.manufacturer ? `${p.manufacturer}${p.articleNumber ? ' · ' + p.articleNumber : ''}` : '')) + (disc > 0 ? ` (−${disc}% Rabatt)` : ''),
                         String(p.quantity),
@@ -3168,29 +3168,52 @@
                         formatCurrency(unit),
                         formatCurrency(lineTotal)
                     ];
+                    // Kategorie-Badge (GERÄT / MONTAGE / MATERIAL) wird in didDrawCell
+                    // gezeichnet - hier nur am Zeilenobjekt mitgegeben, JS-Arrays
+                    // erlauben zusaetzliche Properties, autoTable liest nur die Indizes.
+                    zeile._tag = pdfKategorieTag(p.category);
+                    return zeile;
                 });
 
                 doc.autoTable({
                     startY: y,
                     margin: { left: mx, right: mx, bottom: 26 },
-                    head: [['Nr.', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
+                    head: [['', 'Artikel', 'Beschreibung', 'Menge', 'Einh.', 'Einzelpreis', 'Gesamt']],
                     body: rows,
                     ...PDF_TABLE_STYLES,
                     columnStyles: {
-                        0: { cellWidth: 12, halign: 'center' },
-                        3: { cellWidth: 15, halign: 'center' },
-                        4: { cellWidth: 13, halign: 'center' },
-                        5: { cellWidth: 25, halign: 'right' },
+                        0: { cellWidth: 20, halign: 'center', textColor: [255, 255, 255], fontSize: 0.1 },
+                        1: { cellWidth: 30, fontStyle: 'bold' },
+                        3: { cellWidth: 13, halign: 'center' },
+                        4: { cellWidth: 11, halign: 'center' },
+                        5: { cellWidth: 24, halign: 'right' },
                         6: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }
+                    },
+                    didDrawCell: (data) => {
+                        // Badge ueber die (unsichtbar gerenderte) erste Spalte zeichnen
+                        if (data.section !== 'body' || data.column.index !== 0) return;
+                        const tag = rows[data.row.index] && rows[data.row.index]._tag;
+                        if (!tag) return;
+                        const pad = 1.8;
+                        const bw = data.cell.width - pad * 2;
+                        const bh = Math.min(7.2, data.cell.height - pad * 2);
+                        const bx = data.cell.x + pad;
+                        const by = data.cell.y + (data.cell.height - bh) / 2;
+                        doc.setFillColor(...tag.bg);
+                        doc.roundedRect(bx, by, bw, bh, 1.6, 1.6, 'F');
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(6.3);
+                        doc.setTextColor(...tag.fg);
+                        doc.text(tag.label, bx + bw / 2, by + bh / 2 + 1.35, { align: 'center', charSpace: 0.2 });
                     },
                     willDrawPage: () => pdfWatermark(doc),
                     didDrawPage: () => pdfFooterOnce(doc, co)
                 });
 
                 let fy = doc.lastAutoTable.finalY + 8;
-                fy = pdfNewPageIfNeeded(doc, fy, 45, co);
+                fy = pdfNewPageIfNeeded(doc, fy, 60, co);   // 60 statt 45: der Gesamtbetrag-Block ist jetzt groesser (25mm statt 12,5mm)
 
-                const boxW = 80;
+                const boxW = 92;
                 const boxX = pw - mx - boxW;
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(9.2);
@@ -3212,22 +3235,27 @@
                 summaryRows.forEach(([label, val]) => {
                     doc.text(label, boxX, fy);
                     doc.text(val, pw - mx, fy, { align: 'right' });
-                    fy += 5.8;
+                    fy += 6.2;
                 });
-                fy += 1.5;
+                fy += 2;
+                // Gesamtbetrag als grosser Block - Label klein oben, Betrag gross darunter.
+                // Das ist die einzige starke Hervorhebung auf der Seite, bewusst so.
+                const heroH = 25;
                 doc.setFillColor(...PDF_TEAL);
-                doc.roundedRect(boxX, fy - 5.5, boxW, 12.5, 2.5, 2.5, 'F');
+                doc.roundedRect(boxX, fy - 6, boxW, heroH, 3, 3, 'F');
                 doc.setFont('helvetica', 'bold');
-                doc.setFontSize(11.5);
+                doc.setFontSize(8.6);
+                doc.setTextColor(...PDF_ONBAND);
+                doc.text('GESAMTBETRAG', boxX + boxW - 6, fy + 1.6, { align: 'right', charSpace: 0.6 });
+                doc.setFontSize(19);
                 doc.setTextColor(255, 255, 255);
-                doc.text('Gesamtbetrag', boxX + 4, fy + 2.3);
-                doc.text(formatCurrency(_R.total), pw - mx - 4, fy + 2.3, { align: 'right' });
-                fy += 15;
+                doc.text(formatCurrency(_R.total), boxX + boxW - 6, fy + 13.5, { align: 'right' });
+                fy += heroH + 6;
 
                 // Vereinbarter Preis (telefonisch abweichend vom Angebot)
                 const _agreed = (offer.agreedPrice != null && offer.agreedPrice !== '') ? Number(offer.agreedPrice) : null;
                 if (_agreed != null && Math.abs(_agreed - _R.total) > 0.005) {
-                    doc.setFillColor(232, 245, 243);
+                    doc.setFillColor(...PDF_LIGHT);
                     doc.roundedRect(boxX, fy - 5.5, boxW, 12.5, 2.5, 2.5, 'F');
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(11);
