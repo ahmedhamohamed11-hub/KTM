@@ -4,7 +4,7 @@
             dashboard: 'Dashboard', customers: 'Kunden', projects: 'Projekte',
             calendar: 'Kalender', materials: 'Materialien', offers: 'Angebote',
             orders: 'Bestellungen', invoices: 'Rechnungen', finanzuebersicht: 'Finanzen – Übersicht', schnellangebot: 'Schnell-Angebot', katalogDuplikate: 'Katalog-Dubletten', preiskontrolle: 'Preis-/Rabattkontrolle', katalogpreisCheck: 'Katalogpreise prüfen', angebotDuplikate: 'Doppelte Angebote', ekUebersicht: 'EK-Übersicht', settings: 'Einstellungen', backup: 'Backup', fields: 'Felder & Kategorien',
-            calc: 'Schnellrechner', equipment: 'Anlagen', maintenance: 'Wartung', katalog: 'Katalog'
+            calc: 'Schnellrechner', equipment: 'Anlagen', maintenance: 'Wartung', katalog: 'Katalog', kaelte: 'Kälteanlagen-Auslegung'
         };
         function setPageTitle(page) {
             const el = document.getElementById('pageTitle');
