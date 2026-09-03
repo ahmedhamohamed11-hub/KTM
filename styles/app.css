@@ -1884,3 +1884,8 @@
 .rohr-eingaben input { padding: 5px 7px; font-size: 12.5px; text-align: right; }
 .rohr-empfehlung { background: var(--accent-light); color: var(--text-primary); font-size: 12.5px; padding: 8px 10px; border-radius: 6px; }
 .kaelte-weiter { display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
+.kaelte-freigabe { display: flex; gap: 10px; align-items: flex-start; padding: 11px 13px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; margin-top: 18px; }
+.kaelte-freigabe-ikon { font-size: 16px; line-height: 1.2; }
+.kaelte-freigabe-ok { background: rgba(40, 160, 90, 0.13); }
+.kaelte-freigabe-warnung { background: rgba(230, 160, 30, 0.15); }
+.kaelte-freigabe-fehler { background: rgba(220, 60, 60, 0.15); }
