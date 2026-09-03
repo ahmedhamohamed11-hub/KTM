@@ -1883,3 +1883,4 @@
 .rohr-eingaben label { font-size: 11px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 3px; }
 .rohr-eingaben input { padding: 5px 7px; font-size: 12.5px; text-align: right; }
 .rohr-empfehlung { background: var(--accent-light); color: var(--text-primary); font-size: 12.5px; padding: 8px 10px; border-radius: 6px; }
+.kaelte-weiter { display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
