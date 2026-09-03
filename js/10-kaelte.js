@@ -34,9 +34,9 @@
             { key: 'komponenten', label: 'Komponenten', fertig: true },
             { key: 'rohrleitungen', label: 'Rohrleitungen', fertig: true },
             { key: 'verbund', label: 'Verbund', fertig: true },
-            { key: 'material', label: 'Material', fertig: false },
+            { key: 'material', label: 'Material', fertig: true },
             { key: 'pruefung', label: 'Prüfung', fertig: true },
-            { key: 'angebot', label: 'Angebot', fertig: false }
+            { key: 'angebot', label: 'Angebot', fertig: true }
         ];
 
         const KUEHLSTELLE_RAUMARTEN = ['Kühlraum', 'Tiefkühlraum', 'Kühlzelle', 'Tiefkühlzelle', 'Kühlmöbel', 'Tiefkühlmöbel', 'Kühltheke', 'Prozesskühlung', 'Sonstiger Verbraucher'];
@@ -181,7 +181,9 @@
                 else if (tab === 'rohrleitungen') tabHtml = renderKaelteTabRohr(project);
                 else if (tab === 'komponenten') tabHtml = renderKaelteTabKomponenten(project);
                 else if (tab === 'verbund') tabHtml = renderKaelteTabVerbund(project);
+                else if (tab === 'material') tabHtml = renderKaelteTabMaterial(project);
                 else if (tab === 'pruefung') tabHtml = renderKaelteTabPruefung(project);
+                else if (tab === 'angebot') tabHtml = renderKaelteTabAngebot(project);
                 else tabHtml = renderKaelteTabPlatzhalter(KAELTE_STEPS.find(s => s.key === tab));
 
                 // "Weiter"-Leiste: fuehrt durch die Schritte, ohne dass oben
@@ -230,6 +232,31 @@
                             const n = parseFloat(roh.replace(',', '.'));
                             if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; }
                             p.kaelte.auslegung[el.dataset.feld] = n;
+                        }
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
+                // Materialliste: Mengen und Preise ueberschreiben. Wird je
+                // Schluessel gespeichert, damit es eine Neuberechnung ueberlebt.
+                contentArea.querySelectorAll('.ma-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        const key = el.dataset.key;
+                        const roh = el.value.trim();
+                        if (key.startsWith('zusatz_')) {
+                            const i = Number(key.slice(7));
+                            const z = (p.kaelte.materialZusatz || [])[i];
+                            if (!z) return;
+                            if (roh === '') delete z[el.dataset.feld];
+                            else { const n = parseFloat(roh.replace(',', '.')); if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; } z[el.dataset.feld] = n; }
+                        } else {
+                            p.kaelte.materialEigen = p.kaelte.materialEigen || {};
+                            const o = p.kaelte.materialEigen[key] = p.kaelte.materialEigen[key] || {};
+                            if (roh === '') delete o[el.dataset.feld];
+                            else { const n = parseFloat(roh.replace(',', '.')); if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; } o[el.dataset.feld] = n; }
+                            if (!Object.keys(o).length) delete p.kaelte.materialEigen[key];
                         }
                         await db.put('projects', p);
                         renderKaelteDetail(projectId);
@@ -934,6 +961,192 @@
             return { status: 'warnung', text: 'Dieser Schritt ist noch nicht umgesetzt.' };
         }
 
+        // ---- Materialliste: wird aus der Auslegung ABGELEITET, nicht geraten.
+        // Rohrmeter und Formstuecke kommen aus den Eingaben im Rohr-Schritt,
+        // Isolierung aus der Rohrlaenge, Schellen aus einem Verlegeabstand.
+        // Alles ist danach frei editierbar (Menge, EK, VK) und Eigenposten
+        // koennen ergaenzt werden.
+        const MAT_SCHELLENABSTAND_M = 1.5;   // üblicher Abstand Rohrschellen
+        const MAT_VERSCHNITT = 1.05;         // 5 % Verschnitt auf Rohr und Isolierung
+
+        function kaelteMaterialListe(project) {
+            const A = kaelteAuslegungsdaten(project);
+            const a = kaelteAuslegung(project);
+            const pos = [];
+            const eigen = project.kaelte.materialEigen || {};   // Überschreibungen je Schlüssel
+
+            const add = (schluessel, kategorie, name, beschreibung, menge, einheit, herkunft) => {
+                const o = eigen[schluessel] || {};
+                pos.push({
+                    schluessel, kategorie, name, beschreibung, einheit,
+                    menge: o.menge != null ? Number(o.menge) : menge,
+                    ekPreis: o.ekPreis != null ? Number(o.ekPreis) : null,
+                    vkPreis: o.vkPreis != null ? Number(o.vkPreis) : null,
+                    herkunft, geaendert: o.menge != null
+                });
+            };
+
+            // 1) Komponenten aus Schritt 5
+            (project.kaelte.komponenten || []).forEach((k, i) => {
+                const sl = `komp_${i}`;
+                const o = eigen[sl] || {};
+                pos.push({
+                    schluessel: sl, kategorie: 'Komponente',
+                    name: [k.hersteller, k.modell].filter(Boolean).join(' ') || k.typ,
+                    beschreibung: [k.typ, k.artikelnummer, k.leistungKW ? Number(k.leistungKW).toFixed(2).replace('.', ',') + ' kW' : '', k.anschluss].filter(Boolean).join(' · '),
+                    einheit: k.einheit || 'Stk',
+                    menge: o.menge != null ? Number(o.menge) : (Number(k.menge) || 1),
+                    ekPreis: o.ekPreis != null ? Number(o.ekPreis) : (k.ekPreis != null ? Number(k.ekPreis) : null),
+                    vkPreis: o.vkPreis != null ? Number(o.vkPreis) : (k.vkPreis != null ? Number(k.vkPreis) : null),
+                    herkunft: 'aus Schritt Komponenten', geaendert: o.menge != null
+                });
+            });
+
+            // 2) Rohr, Isolierung, Formstücke je Kühlstelle und Leitung
+            a.ergebnisse.forEach(e => {
+                const rohr = e.ks.rohr || {};
+                const tVerd = e.werte.verdampfungstemperatur ? e.werte.verdampfungstemperatur.wert : null;
+                ROHR_ARTEN.forEach(art => {
+                    const g = rohr[art.key] || {};
+                    const laenge = Number(g.laenge) || 0;
+                    if (!laenge) return;
+                    const dim = g.gewaehlt || '(Dimension noch offen)';
+                    const pre = `${e.ks.id}_${art.key}`;
+                    const kurz = `${e.ks.bezeichnung} · ${art.label}`;
+
+                    add(`${pre}_rohr`, 'Rohr', `Kupferrohr ${dim}`, `${kurz}`,
+                        Math.ceil(laenge * MAT_VERSCHNITT), 'm', `${laenge} m + 5 % Verschnitt`);
+
+                    // Isolierung nur bei kalten Leitungen - Heissgas wird nicht
+                    // gegen Kondensat gedaemmt, hoechstens als Beruehrschutz.
+                    if (art.key !== 'heissgas') {
+                        add(`${pre}_iso`, 'Isolierung', `Isolierung für ${dim}`,
+                            `${kurz}${tVerd != null && tVerd < 0 ? ' · Tiefkühlung – Dämmstärke gegen Kondensat prüfen' : ''}`,
+                            Math.ceil(laenge * MAT_VERSCHNITT), 'm', `${laenge} m + 5 % Verschnitt`);
+                    }
+
+                    add(`${pre}_schellen`, 'Befestigung', `Rohrschellen ${dim}`, kurz,
+                        Math.max(2, Math.ceil(laenge / MAT_SCHELLENABSTAND_M)), 'Stk',
+                        `${laenge} m ÷ ${MAT_SCHELLENABSTAND_M.toFixed(1).replace('.', ',')} m Abstand`);
+
+                    const boegen = (Number(g.bogen90) || 0) + (Number(g.bogen45) || 0);
+                    if (boegen) add(`${pre}_boegen`, 'Formstück', `Bögen ${dim}`, kurz, boegen, 'Stk', 'aus der Rohrberechnung');
+                    const tst = (Number(g.tStueckDurchgang) || 0) + (Number(g.tStueckAbzweig) || 0);
+                    if (tst) add(`${pre}_t`, 'Formstück', `T-Stücke ${dim}`, kurz, tst, 'Stk', 'aus der Rohrberechnung');
+
+                    // Lötstellen: je Bogen/T-Stück zwei, plus je 3 m eine Verbindung
+                    const loetstellen = boegen * 2 + tst * 3 + Math.ceil(laenge / 3);
+                    add(`${pre}_loet`, 'Verbrauchsmaterial', `Hartlot / Lötstellen ${dim}`, kurz, loetstellen, 'Stk',
+                        `${boegen} Bögen × 2 + ${tst} T-Stücke × 3 + ${Math.ceil(laenge / 3)} Verbindungen`);
+                });
+            });
+
+            // 3) Anlagenweite Verbrauchsmaterialien
+            if (pos.length) {
+                add('kaeltemittel', 'Verbrauchsmaterial', `Kältemittel ${A.kaeltemittel}`,
+                    'Füllmenge noch nicht berechnet – Menge selbst eintragen', 0, 'kg',
+                    '🔴 Füllmengenberechnung ist noch nicht umgesetzt');
+                add('stickstoff', 'Verbrauchsmaterial', 'Formiergas / Stickstoff', 'Spülen und Druckprobe', 1, 'Fl', 'Erfahrungswert');
+            }
+
+            // 4) Frei ergänzte Eigenposten
+            (project.kaelte.materialZusatz || []).forEach((z, i) => {
+                pos.push({ schluessel: `zusatz_${i}`, kategorie: z.kategorie || 'Sonstiges', name: z.name,
+                    beschreibung: z.beschreibung || '', einheit: z.einheit || 'Stk',
+                    menge: Number(z.menge) || 0, ekPreis: z.ekPreis != null ? Number(z.ekPreis) : null,
+                    vkPreis: z.vkPreis != null ? Number(z.vkPreis) : null, herkunft: 'selbst ergänzt', zusatz: i });
+            });
+
+            const summeEK = pos.reduce((s, p) => s + (p.ekPreis || 0) * p.menge, 0);
+            const summeVK = pos.reduce((s, p) => s + (p.vkPreis || 0) * p.menge, 0);
+            const ohnePreis = pos.filter(p => p.vkPreis == null && p.menge > 0).length;
+            return { pos, summeEK, summeVK, ohnePreis };
+        }
+
+        function renderKaelteTabMaterial(project) {
+            const m = kaelteMaterialListe(project);
+            if (!m.pos.length) return `<div class="empty-note" style="padding:14px;">Noch nichts abzuleiten – erst Komponenten eintragen oder Rohrleitungen dimensionieren.</div>`;
+
+            const zeilen = m.pos.map(p => `
+                <tr>
+                    <td><span class="mat-kat">${escapeHtml(p.kategorie)}</span></td>
+                    <td><strong>${escapeHtml(p.name)}</strong><br><span style="font-size:11px;color:var(--text-muted);">${escapeHtml(p.beschreibung)}</span>
+                        <br><span style="font-size:10.5px;color:var(--text-muted);">↳ ${escapeHtml(p.herkunft)}${p.geaendert ? ' · <strong>von dir geändert</strong>' : ''}</span></td>
+                    <td style="width:78px;"><input type="text" inputmode="decimal" class="ma-in" data-key="${escapeHtml(p.schluessel)}" data-feld="menge" value="${p.menge}"></td>
+                    <td style="width:46px;font-size:11.5px;color:var(--text-muted);">${escapeHtml(p.einheit)}</td>
+                    <td style="width:88px;"><input type="text" inputmode="decimal" class="ma-in" data-key="${escapeHtml(p.schluessel)}" data-feld="ekPreis" value="${p.ekPreis ?? ''}" placeholder="EK"></td>
+                    <td style="width:88px;"><input type="text" inputmode="decimal" class="ma-in" data-key="${escapeHtml(p.schluessel)}" data-feld="vkPreis" value="${p.vkPreis ?? ''}" placeholder="VK"></td>
+                    <td class="kl-w">${p.vkPreis != null ? formatCurrency(p.vkPreis * p.menge) : '–'}</td>
+                    <td style="text-align:right;">${p.zusatz != null ? `<button class="btn btn-sm btn-danger" onclick="app.deleteMaterialZusatz(${idJS(project.id)}, ${p.zusatz})">${icon('trash')}</button>` : ''}</td>
+                </tr>`).join('');
+
+            const gewinn = m.summeVK - m.summeEK;
+            const marge = m.summeVK > 0 ? (gewinn / m.summeVK * 100) : 0;
+
+            return `
+                <div class="kl-hinweis kl-info">Mengen sind aus deinen Eingaben abgeleitet (Rohrlängen, Formstücke, Verlegeabstand, 5 % Verschnitt). Alles ist überschreibbar – geänderte Zeilen bleiben gespeichert, auch wenn du oben weiterrechnest.</div>
+                ${m.ohnePreis ? `<div class="kl-hinweis kl-warnung">⚠ ${m.ohnePreis} Position(en) ohne Verkaufspreis. Die fehlen dann im Angebot.</div>` : ''}
+                <div class="form-card">
+                    <div class="detail-section-head" style="margin-top:0;">
+                        <h4>Materialliste (${m.pos.length} Positionen)</h4>
+                        <button class="btn btn-sm btn-outline" onclick="app.openMaterialZusatz(${idJS(project.id)})">${icon('plus')} Position ergänzen</button>
+                    </div>
+                    <div class="table-container"><table class="mat-tabelle">
+                        <thead><tr><th>Kategorie</th><th>Bezeichnung</th><th>Menge</th><th></th><th>EK</th><th>VK</th><th>Gesamt</th><th></th></tr></thead>
+                        <tbody>${zeilen}</tbody>
+                    </table></div>
+                    <div class="survey-summary" style="margin-top:12px;">
+                        <div class="survey-chip"><span>Einkauf gesamt</span><strong>${formatCurrency(m.summeEK)}</strong></div>
+                        <div class="survey-chip"><span>Verkauf gesamt</span><strong>${formatCurrency(m.summeVK)}</strong></div>
+                        <div class="survey-chip"><span>Rohertrag</span><strong>${formatCurrency(gewinn)}</strong></div>
+                        <div class="survey-chip"><span>Marge</span><strong>${marge.toFixed(1).replace('.', ',')} %</strong></div>
+                    </div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Diese Auswertung ist nur für dich – im Kundenangebot steht sie nicht.</div>
+                </div>`;
+        }
+
+        // ---- Angebot: Übernahme in das bestehende Angebotsmodul.
+        function renderKaelteTabAngebot(project) {
+            const m = kaelteMaterialListe(project);
+            const uebernehmbar = m.pos.filter(p => p.vkPreis != null && p.menge > 0);
+            const a = kaelteAuslegung(project);
+            const A = kaelteAuslegungsdaten(project);
+
+            return `
+                <div class="form-card">
+                    <div class="form-card-title">Übernahme ins Angebot</div>
+                    ${!uebernehmbar.length ? '<div class="kl-hinweis kl-fehler">✕ Keine Position mit Verkaufspreis und Menge. Im Schritt Material die Preise eintragen.</div>' : `
+                        <table class="kl-ergebnis"><tbody>
+                            <tr><td>Positionen mit Preis</td><td class="kl-w">${uebernehmbar.length} von ${m.pos.length}</td></tr>
+                            <tr><td>Kunde</td><td class="kl-w">${project.customerId ? 'zugewiesen' : '<span style="color:#d24545;">fehlt</span>'}</td></tr>
+                            <tr class="kl-total"><td>Angebotssumme</td><td class="kl-w">${formatCurrency(uebernehmbar.reduce((s, p) => s + p.vkPreis * p.menge, 0))}</td></tr>
+                        </tbody></table>
+                        ${m.ohnePreis ? `<div class="kl-hinweis kl-warnung">⚠ ${m.ohnePreis} Position(en) ohne Preis werden NICHT übernommen.</div>` : ''}
+                        ${!project.customerId ? '<div class="kl-hinweis kl-fehler">✕ Dem Projekt ist kein Kunde zugewiesen – im Schritt Projekt nachtragen.</div>' : ''}
+                        <button class="btn btn-primary" style="margin-top:12px;" ${!project.customerId ? 'disabled' : ''} onclick="app.kaelteInsAngebot(${idJS(project.id)})">Ins Angebot übernehmen</button>
+                        <div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Es wird ein neues Angebot zu diesem Projekt angelegt. Preis-, Steuer- und Rabattlogik sowie der PDF-Export bleiben unverändert – die Positionen laufen durch dieselbe Berechnung wie jedes andere Angebot.</div>
+                    `}
+                </div>
+                <div class="form-card">
+                    <div class="form-card-title">Technische Beschreibung fürs Angebot</div>
+                    <div style="font-size:12.5px;line-height:1.6;background:var(--bg-secondary);padding:11px 13px;border-radius:7px;white-space:pre-wrap;">${escapeHtml(kaelteAngebotstext(project, a, A))}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:7px;">Wird als Notiz ins Angebot übernommen.</div>
+                </div>`;
+        }
+
+        function kaelteAngebotstext(project, a, A) {
+            const z = [];
+            z.push(`Kälteanlage – ${(KAELTE_ANLAGENARTEN.find(x => x.key === project.kaelte.anlagenart) || {}).label || 'Anlage'}`);
+            z.push(`Kältemittel: ${A.kaeltemittel} · Verflüssigung ${A.tVerfluessigung} °C`);
+            a.ergebnisse.forEach(e => {
+                if (!e.ergebnis.moeglich) return;
+                z.push(`${e.ks.bezeichnung}: ${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW bei ${e.werte.raumtemperatur.wert} °C Raumtemperatur, Verdampfung ${e.werte.verdampfungstemperatur.wert} °C`);
+            });
+            z.push('');
+            z.push('Vorauslegung auf Basis der übermittelten Angaben. Endgültige Ausführung nach technischer Prüfung.');
+            return z.join('\n');
+        }
+
         function renderKaelteTabPlatzhalter(step) {
             return `
                 <div class="empty-state">
@@ -1184,6 +1397,97 @@
                         setz('#koLieferant', g.lieferant); setz('#koQuelle', g.quelle); setz('#koNotiz', g.notiz);
                     });
                 }, 60);
+            },
+
+            async openMaterialZusatz(projectId) {
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                showModal('Position ergänzen', `
+                    <div class="form-group"><label>Bezeichnung *</label><input type="text" id="mzName"></div>
+                    <div class="form-group"><label>Beschreibung</label><input type="text" id="mzBeschr"></div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Kategorie</label><input type="text" id="mzKat" value="Sonstiges"></div>
+                        <div class="form-group"><label>Einheit</label><input type="text" id="mzEinheit" value="Stk"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Menge</label><input type="text" inputmode="decimal" id="mzMenge" value="1"></div>
+                        <div class="form-group"><label>Einkaufspreis (€)</label><input type="text" inputmode="decimal" id="mzEk"></div>
+                    </div>
+                    <div class="form-group"><label>Verkaufspreis (€)</label><input type="text" inputmode="decimal" id="mzVk"></div>
+                `, async (overlay) => {
+                    const zahl = id => { const v = overlay.querySelector(id).value.trim(); if (v === '') return null; const n = parseFloat(v.replace(',', '.')); return Number.isFinite(n) ? n : null; };
+                    const name = overlay.querySelector('#mzName').value.trim();
+                    if (!name) { showToast('Bezeichnung ist erforderlich.', 'error'); return; }
+                    project.kaelte.materialZusatz = project.kaelte.materialZusatz || [];
+                    project.kaelte.materialZusatz.push({
+                        name, beschreibung: overlay.querySelector('#mzBeschr').value.trim(),
+                        kategorie: overlay.querySelector('#mzKat').value.trim() || 'Sonstiges',
+                        einheit: overlay.querySelector('#mzEinheit').value.trim() || 'Stk',
+                        menge: zahl('#mzMenge') ?? 1, ekPreis: zahl('#mzEk'), vkPreis: zahl('#mzVk')
+                    });
+                    await db.put('projects', project);
+                    overlay.remove();
+                    showToast('Position ergänzt.', 'success');
+                    renderKaelteDetail(projectId);
+                });
+            },
+
+            async deleteMaterialZusatz(projectId, index) {
+                if (!await showConfirm('Diese Position wirklich löschen?')) return;
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                (project.kaelte.materialZusatz || []).splice(index, 1);
+                await db.put('projects', project);
+                renderKaelteDetail(projectId);
+            },
+
+            // Uebernahme ins bestehende Angebotsmodul. Es wird NICHTS an der
+            // Preis-/Steuerlogik geaendert: die Positionen werden genauso
+            // aufgebaut wie beim Schnell-Angebot und danach durch das normale
+            // recomputeOffer() gerechnet.
+            async kaelteInsAngebot(projectId) {
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                if (!project.customerId) { showToast('Dem Projekt ist kein Kunde zugewiesen.', 'error'); return; }
+                const m = kaelteMaterialListe(project);
+                const uebernehmbar = m.pos.filter(p => p.vkPreis != null && p.menge > 0);
+                if (!uebernehmbar.length) { showToast('Keine Position mit Verkaufspreis.', 'error'); return; }
+                if (!await showConfirm(`${uebernehmbar.length} Position(en) als neues Angebot anlegen?`)) return;
+
+                const MWST = (typeof MAT_VAT === 'number') ? MAT_VAT : 0.20;
+                const positions = uebernehmbar.map(p => ({
+                    materialId: null,
+                    name: p.name,
+                    description: p.beschreibung || '',
+                    unit: p.einheit || 'Stk',
+                    quantity: p.menge,
+                    // Positionspreise sind Endpreise inkl. USt. - wie ueberall in der App
+                    price: Math.round(p.vkPreis * (1 + MWST) * 100) / 100,
+                    priceIncludesVat: true,
+                    discount: 0,
+                    category: p.kategorie === 'Komponente' ? 'Klimageräte' : 'Zubehör',
+                    ...(p.ekPreis > 0 ? { purchasePriceNet: Math.round(p.ekPreis * 100) / 100 } : {})
+                }));
+
+                const a = kaelteAuslegung(project);
+                const entwurf = {
+                    offerNumber: await getNextAutoNumber(),
+                    projectId, customerId: project.customerId,
+                    positions,
+                    vatEnabled: true, vatRate: MWST,
+                    discountEnabled: false, discountRate: 0,
+                    status: 'Angebot offen',
+                    createdAt: new Date().toISOString(),
+                    notes: kaelteAngebotstext(project, a, kaelteAuslegungsdaten(project))
+                };
+                const R = recomputeOffer(entwurf);
+                Object.assign(entwurf, {
+                    subtotal: R.net, netAfterDiscount: R.netAfter,
+                    discountAmount: R.globalDiscount, vatAmount: R.vatAmount, totalPrice: R.total
+                });
+                await db.add('offers', entwurf);
+                showToast(`Angebot ${entwurf.offerNumber} erstellt – ${formatCurrency(R.total)}.`, 'success');
+                app.navigate('offers');
             },
 
             async deleteKomponente(projectId, index) {
