@@ -178,6 +178,37 @@
             };
         }
 
+        // ---------- Mindestgeschwindigkeit fuer den Oeltransport ----------
+        // Konkret berechnet statt pauschal "bitte pruefen".
+        // Grundlage: das Gas muss den Oelfilm mitreissen. Massgebend ist das
+        // Verhaeltnis von Traegheitskraft zu Schwerkraft - eine Froude-Zahl:
+        //     w_min = Fr · sqrt( g · di · (rhoFl − rhoDa) / rhoDa )
+        // Dadurch steigt die Mindestgeschwindigkeit mit dem Rohrdurchmesser,
+        // genau wie es die Praxisliteratur beschreibt ("in Steigleitungen
+        // kriecht das Oel an der Innenwand hoch, je groesser das Rohr, desto
+        // hoeher muss die Geschwindigkeit in der Rohrmitte sein").
+        // Fr-Werte so gewaehlt, dass die Formel die seit Jahrzehnten bewaehrten
+        // Nennwerte reproduziert:
+        //   Steigleitung  1500 fpm = 7,6 m/s     waagrecht 700-800 fpm = 3,6-4,1 m/s
+        // Zusaetzlich wirkt dieser Nennwert als absolute Untergrenze, damit die
+        // Formel bei sehr kleinen Rohren nicht unter die Praxiswerte faellt.
+        // Quellen: Refrigeration World "Basics of Refrigerant Piping";
+        // Lennox Application and Design Guidelines (Refrigerant Piping Manual).
+        const OEL_FROUDE = { steigend: 1.0, waagrecht: 0.45 };
+        const OEL_NENN_MS = { steigend: 6.1, waagrecht: 3.6 };
+
+        function kaelteOelMindestgeschwindigkeit(rhoFl, rhoDa, diMm, steigend) {
+            const di = diMm / 1000;
+            const fr = steigend ? OEL_FROUDE.steigend : OEL_FROUDE.waagrecht;
+            const froude = fr * Math.sqrt(9.81 * di * Math.max(0.001, (rhoFl - rhoDa)) / Math.max(0.001, rhoDa));
+            const nenn = steigend ? OEL_NENN_MS.steigend : OEL_NENN_MS.waagrecht;
+            return {
+                wMin: Math.max(froude, nenn),
+                ausFroude: froude, ausNennwert: nenn,
+                massgebend: froude >= nenn ? 'Froude-Kriterium (Rohrdurchmesser)' : 'bewährter Nennwert'
+            };
+        }
+
         // Bewertungsgrenzen fuer die Stroemungsgeschwindigkeit [m/s].
         // Uebliche Auslegungsbereiche der Kaeltetechnik - keine Norm.
         // Saugleitung waagrecht braucht Mindestgeschwindigkeit fuer den
@@ -199,12 +230,17 @@
                 let ok = true;
                 if (e.w > g.max) { bewertung.push({ art: 'fehler', text: `Strömung ${e.w.toFixed(1)} m/s über dem Grenzwert ${g.max} m/s – Geräusch und Druckverlust zu hoch.` }); ok = false; }
                 else if (e.w > g.opt[1]) bewertung.push({ art: 'warnung', text: `Strömung ${e.w.toFixed(1)} m/s über dem üblichen Bereich.` });
+                let oel = null;
                 if (art !== 'fluessig') {
-                    const mind = steigend ? g.minSteig : g.min;
-                    if (e.w < mind) { bewertung.push({ art: 'fehler', text: `Strömung ${e.w.toFixed(1)} m/s unter der Mindestgeschwindigkeit ${mind} m/s (${steigend ? 'Steigleitung' : 'waagrecht'}) – Öltransport nicht gesichert.` }); ok = false; }
-                    else if (e.w < g.opt[0]) bewertung.push({ art: 'warnung', text: `Strömung ${e.w.toFixed(1)} m/s knapp – Öltransport bei Teillast prüfen.` });
-                } else if (e.w > g.opt[1]) bewertung.push({ art: 'warnung', text: 'Hohe Flüssigkeitsgeschwindigkeit – Flashgas-Gefahr, Unterkühlung prüfen.' });
-                return { ...e, ok, bewertung };
+                    // Fuer Gasleitungen die Mindestgeschwindigkeit konkret rechnen.
+                    const rhoFl = kp.rhoFluessig;
+                    oel = kaelteOelMindestgeschwindigkeit(rhoFl, e.rho, r.di, steigend);
+                    if (e.w < oel.wMin) { bewertung.push({ art: 'fehler', text: `Strömung ${e.w.toFixed(1)} m/s liegt unter der berechneten Mindestgeschwindigkeit ${oel.wMin.toFixed(1)} m/s für den Öltransport (${steigend ? 'Steigleitung' : 'waagrecht'}, Ø ${r.di.toFixed(1)} mm innen, maßgebend: ${oel.massgebend}). Öl kehrt nicht sicher zum Verdichter zurück – kleinere Dimension wählen.` }); ok = false; }
+                    else if (e.w < oel.wMin * 1.25) bewertung.push({ art: 'warnung', text: `Strömung ${e.w.toFixed(1)} m/s liegt nur knapp über der Mindestgeschwindigkeit ${oel.wMin.toFixed(1)} m/s. Bei Teillast (geregelter Verdichter) reicht das nicht mehr – dann Doppelsteigleitung oder Leistungsregelung berücksichtigen.` });
+                    // Teillast-Reserve: bei halber Leistung halbiert sich die Geschwindigkeit.
+                    if (ok && e.w / 2 < oel.wMin) bewertung.push({ art: 'info', text: `Bei 50 % Teillast fällt die Strömung auf ${(e.w / 2).toFixed(1)} m/s und liegt damit unter ${oel.wMin.toFixed(1)} m/s. Für geregelte Anlagen Doppelsteigleitung prüfen.` });
+                } else if (e.w > g.opt[1]) bewertung.push({ art: 'warnung', text: `Flüssigkeitsgeschwindigkeit ${e.w.toFixed(2)} m/s über dem üblichen Bereich (${g.opt[0]}–${g.opt[1]} m/s) – Druckverlust erhöht die Flashgas-Gefahr vor dem Expansionsventil. Unterkühlung prüfen oder größere Dimension wählen.` });
+                return { ...e, ok, bewertung, oel };
             });
             // Empfehlung: kleinste Dimension, die alle harten Kriterien erfuellt
             const geeignet = varianten.filter(v => v.ok);
