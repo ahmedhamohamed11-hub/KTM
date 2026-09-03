@@ -29,7 +29,7 @@
         const KAELTE_STEPS = [
             { key: 'projekt', label: 'Projekt', fertig: true },
             { key: 'kuehlstellen', label: 'Kühlstellen', fertig: true },
-            { key: 'kaeltelast', label: 'Kältelast', fertig: false },
+            { key: 'kaeltelast', label: 'Kältelast', fertig: true },
             { key: 'anlage', label: 'Anlage', fertig: false },
             { key: 'komponenten', label: 'Komponenten', fertig: false },
             { key: 'rohrleitungen', label: 'Rohrleitungen', fertig: false },
@@ -176,6 +176,7 @@
                 let tabHtml = '';
                 if (tab === 'projekt') tabHtml = renderKaelteTabProjekt(project, customer);
                 else if (tab === 'kuehlstellen') tabHtml = renderKaelteTabKuehlstellen(project);
+                else if (tab === 'kaeltelast') tabHtml = renderKaelteTabKaeltelast(project);
                 else tabHtml = renderKaelteTabPlatzhalter(KAELTE_STEPS.find(s => s.key === tab));
 
                 contentArea.innerHTML = `
@@ -196,6 +197,28 @@
                         ${tabHtml}
                     </div>
                 `;
+
+                // Kältelast-Felder anbinden. Leeres Feld = Vorschlag wieder
+                // aktivieren, deshalb wird der Schlüssel dann geloescht.
+                if (tab === 'kaeltelast') {
+                    contentArea.querySelectorAll('.kl-input, .kl-select').forEach(el => {
+                        el.addEventListener('change', async () => {
+                            const p = await db.get('projects', projectId);
+                            const ks = (p.kaelte.kuehlstellen || []).find(x => x.id === el.dataset.ks);
+                            if (!ks) return;
+                            const roh = el.value.trim();
+                            if (roh === '') delete ks[el.dataset.feld];
+                            else if (el.classList.contains('kl-select')) ks[el.dataset.feld] = roh;
+                            else {
+                                const n = parseFloat(roh.replace(',', '.'));
+                                if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; }
+                                ks[el.dataset.feld] = n;
+                            }
+                            await db.put('projects', p);
+                            renderKaelteDetail(projectId);
+                        });
+                    });
+                }
             })().catch(e => {
                 console.error('Fehler beim Aufbau der Ansicht:', e);
                 if (typeof contentArea !== 'undefined' && contentArea) {
@@ -269,6 +292,124 @@
                         </table>
                     </div>
                 `}
+            `;
+        }
+
+        // ---- Kältelast-Tab: zeigt für jede Kühlstelle die aufgeschlüsselte
+        // Berechnung. Jeder Wert zeigt seinen Status; überschriebene Werte
+        // landen als echte Eingabe an der Kühlstelle und lösen eine komplette
+        // Neuberechnung aus (die Engine rechnet ohnehin immer frisch durch).
+        function renderKaelteTabKaeltelast(project) {
+            const a = kaelteAuslegung(project);
+            if (a.anzahlGesamt === 0) {
+                return `<div class="empty-state"><div style="font-size:40px;">🧊</div>
+                    <p>Noch keine Kühlstelle erfasst.<br>Die Kältelast wird je Kühlstelle berechnet.</p>
+                    <button class="btn btn-primary" onclick="app.kaelteSetTab(${idJS(project.id)}, 'kuehlstellen')">Zu den Kühlstellen</button></div>`;
+            }
+
+            const statusChip = (st) => {
+                const s = KAELTE_STATUS[st] || KAELTE_STATUS.schaetzung;
+                return `<span class="kl-status kl-status-${st}" title="${escapeHtml(s.label)}">${s.icon}</span>`;
+            };
+
+            // Werte, die der Techniker sinnvoll überschreiben können muss.
+            const editierbar = [
+                ['daemmstaerke', 'Dämmstärke', 'mm'], ['uWert', 'U-Wert', 'W/m²K'],
+                ['aussentemperatur', 'Außentemperatur', '°C'], ['aussenfeuchte', 'Außenluftfeuchte', '%'],
+                ['raumfeuchte', 'Raumfeuchte', '%'], ['tueroeffnungen', 'Türöffnungen', '/h'],
+                ['luftwechsel', 'Luftwechsel', '1/h'], ['personen', 'Personen', ''],
+                ['personenStunden', 'Aufenthalt', 'h/Tag'], ['beleuchtung', 'Beleuchtung', 'W'],
+                ['beleuchtungStunden', 'Brenndauer', 'h/Tag'], ['ventilatorleistung', 'Ventilatorleistung', 'W'],
+                ['sonstigeWaerme', 'Sonstige Verbraucher', 'W'], ['produktmenge', 'Produktmenge', 'kg/Tag'],
+                ['produktEintrittstemperatur', 'Produkt-Eintritt', '°C'], ['produktTemperaturZiel', 'Zieltemperatur', '°C'],
+                ['abkuehlzeit', 'Abkühlzeit', 'h'], ['sicherheitszuschlag', 'Sicherheitszuschlag', '%'],
+                ['laufzeit', 'Verdichterlaufzeit', 'h/Tag'], ['verdampfungstemperatur', 'Verdampfungstemperatur', '°C']
+            ];
+
+            const bloecke = a.ergebnisse.map(({ ks, werte, ergebnis, meldungen }) => {
+                const w = key => werte[key];
+                const eingabeZeilen = editierbar.map(([key, label, unit]) => {
+                    const e = w(key);
+                    if (!e) return '';
+                    return `<tr>
+                        <td>${statusChip(e.status)} ${escapeHtml(label)}</td>
+                        <td style="width:110px;"><input type="text" inputmode="decimal" value="${e.wert ?? ''}" data-ks="${ks.id}" data-feld="${key}" class="kl-input" placeholder="–"></td>
+                        <td style="width:60px;color:var(--text-muted);font-size:11.5px;">${escapeHtml(unit)}</td>
+                        <td style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(e.herkunft || '')}</td>
+                    </tr>`;
+                }).join('');
+
+                const produktartSelect = `
+                    <div class="form-group" style="margin-bottom:10px;"><label>Produktart ${statusChip(w('produktart').status)}</label>
+                        <select class="kl-select" data-ks="${ks.id}" data-feld="produktart">
+                            ${Object.keys(KAELTE_RICHTWERTE.produkte).map(p => `<option value="${escapeHtml(p)}" ${w('produktart').wert === p ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:10px;"><label>Nutzungsgrad (steuert Beleuchtung & Türöffnungen)</label>
+                        <select class="kl-select" data-ks="${ks.id}" data-feld="nutzungsgrad">
+                            ${['niedrig', 'normal', 'hoch'].map(n => `<option value="${n}" ${(ks.nutzungsgrad || 'normal') === n ? 'selected' : ''}>${n}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:2px;"><label>Abtauart ${statusChip(w('abtauart').status)}</label>
+                        <select class="kl-select" data-ks="${ks.id}" data-feld="abtauart">
+                            ${KUEHLSTELLE_ABTAUARTEN.map(x => `<option value="${escapeHtml(x)}" ${w('abtauart').wert === x ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('')}
+                        </select>
+                    </div>`;
+
+                const ergebnisHtml = !ergebnis.moeglich
+                    ? `<div class="empty-note" style="padding:12px;">${escapeHtml(ergebnis.hinweise[0] || 'Berechnung nicht möglich.')}</div>`
+                    : `
+                        <table class="kl-ergebnis">
+                            <tbody>
+                                ${ergebnis.teile.map(t => `<tr><td>${escapeHtml(t.name)}</td><td class="kl-w">${Math.round(t.watt).toLocaleString('de-AT')} W</td></tr>
+                                    <tr class="kl-formel"><td colspan="2">${escapeHtml(t.formel)}</td></tr>`).join('')}
+                                <tr class="kl-sum"><td>Zwischensumme</td><td class="kl-w">${Math.round(ergebnis.nutzlast).toLocaleString('de-AT')} W</td></tr>
+                                <tr><td>Sicherheitszuschlag ${ergebnis.zuschlagProzent} %</td><td class="kl-w">${Math.round(ergebnis.zuschlagWatt).toLocaleString('de-AT')} W</td></tr>
+                                <tr class="kl-sum"><td>Gesamtkältelast</td><td class="kl-w">${(ergebnis.gesamt / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
+                                <tr class="kl-total"><td>Erforderliche Anlagenleistung<br><small>bei ${ergebnis.laufzeit} h Laufzeit/Tag</small></td><td class="kl-w">${(ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
+                                ${ergebnis.abtauheizung ? `<tr><td>${KAELTE_STATUS.pruefen.icon} Abtauheizung (Richtwert)</td><td class="kl-w">${(ergebnis.abtauheizung / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
+                                    <tr class="kl-formel"><td colspan="2">Grober Richtwert – verbindlich ist der Wert aus dem Verdampfer-Datenblatt.</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                        ${(ergebnis.hinweise || []).map(h => `<div class="kl-hinweis kl-${h.art}">${escapeHtml(h.text)}</div>`).join('')}
+                    `;
+
+                const meldungenHtml = meldungen.map(m => `<div class="kl-hinweis kl-${m.art}">${m.art === 'fehler' ? '✕' : m.art === 'warnung' ? '⚠' : '🔴'} ${escapeHtml(m.text)}</div>`).join('');
+
+                return `
+                    <div class="form-card">
+                        <div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')}</div>
+                        <div class="kl-spalten">
+                            <div>
+                                <div class="kl-untertitel">Eingaben &amp; Vorschläge</div>
+                                ${produktartSelect}
+                                <table class="kl-eingaben"><tbody>${eingabeZeilen}</tbody></table>
+                                <div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Feld leeren = wieder automatischer Vorschlag. Jede Änderung rechnet alles Abhängige neu durch.</div>
+                            </div>
+                            <div>
+                                <div class="kl-untertitel">Ergebnis</div>
+                                ${ergebnisHtml}
+                                ${meldungenHtml}
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+
+            const legende = Object.entries(KAELTE_STATUS).map(([k, s]) => `<span>${s.icon} ${escapeHtml(s.label)}</span>`).join('');
+
+            return `
+                <div class="kl-legende">${legende}</div>
+                ${a.anzahlRechenbar > 1 ? `
+                    <div class="form-card kl-gesamt">
+                        <div class="form-card-title">Summe über alle Kühlstellen</div>
+                        <div style="display:flex;gap:22px;flex-wrap:wrap;">
+                            <div><div class="kl-gross">${(a.summeGesamt / 1000).toFixed(2).replace('.', ',')} kW</div><div class="kl-klein">Gesamtkältelast</div></div>
+                            <div><div class="kl-gross">${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW</div><div class="kl-klein">erforderliche Anlagenleistung</div></div>
+                            <div><div class="kl-gross">${a.anzahlRechenbar} / ${a.anzahlGesamt}</div><div class="kl-klein">Kühlstellen berechenbar</div></div>
+                        </div>
+                        <div class="kl-hinweis kl-pruefen" style="margin-top:10px;">🔴 Das ist die einfache Summe. Gleichzeitigkeitsfaktoren für Verbundanlagen kommen in der Verbund-Phase – vorher darf diese Zahl nicht als Verdichterleistung verwendet werden.</div>
+                    </div>` : ''}
+                ${bloecke}
             `;
         }
 
