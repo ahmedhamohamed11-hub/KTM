@@ -659,49 +659,133 @@
             custom:  ['Verdichter', 'Verflüssiger/Gaskühler', 'Verdampfer', 'Expansionsventil', 'Sammler', 'Regelung']
         };
 
-        function renderKaelteTabKomponenten(project) {
-            const art = project.kaelte.anlagenart || 'einzel';
-            const vorlage = KOMPONENTEN_VORLAGE[art] || KOMPONENTEN_VORLAGE.custom;
-            const liste = project.kaelte.komponenten || [];
+        // ---- Anforderungsprofil je Komponente.
+        // Das Programm rechnet aus, WAS gebraucht wird. Das konkrete Geraet
+        // traegt der Techniker ein - und es wandert dabei in die eigene
+        // Geraetedatenbank, damit es beim naechsten Projekt vorgeschlagen wird.
+        //
+        // Verfluessigerleistung: Qc = Q0 + Verdichterleistung. Ohne Verdichter-
+        // datenblatt ist die Verdichterleistung nicht exakt bestimmbar, deshalb
+        // ein klar gekennzeichneter Richtwertfaktor nach Temperaturbereich.
+        // Sobald ein Verdichter mit Leistungsaufnahme eingetragen ist, wird
+        // damit gerechnet statt mit dem Richtwert.
+        function kaelteKomponentenBedarf(project) {
+            const A = kaelteAuslegungsdaten(project);
             const a = kaelteAuslegung(project);
-            const bedarfKW = a.summeAuslegung / 1000;
+            const art = project.kaelte.anlagenart || 'einzel';
+            const q0KW = a.summeAuslegung / 1000;
+            if (!q0KW) return { moeglich: false, slots: [] };
 
-            const zeilen = liste.map((k, i) => {
-                const leistung = Number(k.leistungKW) || 0;
-                let bewertung = '';
-                if (leistung > 0 && bedarfKW > 0 && /verdichter|verflüssigungssatz|verdampfer|aggregat/i.test(k.typ || '')) {
-                    if (leistung < bedarfKW * 0.98) bewertung = `<div class="kl-hinweis kl-fehler">✕ ${leistung.toFixed(2).replace('.', ',')} kW liegen unter dem berechneten Bedarf von ${bedarfKW.toFixed(2).replace('.', ',')} kW.</div>`;
-                    else if (leistung > bedarfKW * 1.6) bewertung = `<div class="kl-hinweis kl-warnung">⚠ ${leistung.toFixed(2).replace('.', ',')} kW sind mehr als 60 % über dem Bedarf – Taktbetrieb und schlechte Teillast prüfen.</div>`;
-                    else bewertung = `<div class="kl-hinweis kl-info">✓ Leistung passt zum berechneten Bedarf (${bedarfKW.toFixed(2).replace('.', ',')} kW).</div>`;
-                }
-                return `<tr>
-                        <td><strong>${escapeHtml(k.typ || '–')}</strong><br><span style="font-size:11px;color:var(--text-muted);">${escapeHtml(k.hersteller || '')} ${escapeHtml(k.modell || '')}</span></td>
-                        <td>${escapeHtml(k.artikelnummer || '–')}</td>
-                        <td class="kl-w">${k.leistungKW ? Number(k.leistungKW).toFixed(2).replace('.', ',') + ' kW' : '–'}</td>
-                        <td class="kl-w">${k.menge || 1}</td>
-                        <td class="kl-w">${k.ekPreis ? formatCurrency(Number(k.ekPreis)) : '–'}</td>
-                        <td class="kl-w">${k.vkPreis ? formatCurrency(Number(k.vkPreis)) : '–'}</td>
-                        <td style="text-align:right;white-space:nowrap;">
-                            <button class="btn btn-sm btn-outline" onclick="app.openKomponenteModal(${idJS(project.id)}, ${i})">${icon('edit')}</button>
-                            <button class="btn btn-sm btn-danger" onclick="app.deleteKomponente(${idJS(project.id)}, ${i})">${icon('trash')}</button>
-                        </td>
-                    </tr>${bewertung ? `<tr><td colspan="7" style="padding-top:0;">${bewertung}</td></tr>` : ''}`;
+            // Massgebende (tiefste) Verdampfungstemperatur
+            const tVerd = Math.min(...a.ergebnisse.filter(e => e.ergebnis.moeglich)
+                .map(e => e.werte.verdampfungstemperatur.wert));
+            const kp = kaelteKreisprozess({ kaeltemittel: A.kaeltemittel, tVerdampfung: tVerd,
+                tVerfluessigung: A.tVerfluessigung, ueberhitzung: A.ueberhitzung,
+                unterkuehlung: A.unterkuehlung, kaelteleistungW: a.summeAuslegung });
+
+            const betrieb = `${A.kaeltemittel} · t₀ ${tVerd} °C · tc ${A.tVerfluessigung} °C · ΔtÜH ${A.ueberhitzung} K · Δtuk ${A.unterkuehlung} K`;
+            const komp = project.kaelte.komponenten || [];
+            const verdichter = komp.find(c => /verdichter|verflüssigungssatz|aggregat/i.test(c.typ || '') && Number(c.leistungsaufnahmeKW) > 0);
+
+            let qcKW, qcQuelle, qcStatus;
+            if (verdichter) {
+                qcKW = q0KW + Number(verdichter.leistungsaufnahmeKW);
+                qcQuelle = `Q₀ ${q0KW.toFixed(2)} kW + Leistungsaufnahme ${Number(verdichter.leistungsaufnahmeKW).toFixed(2)} kW aus "${verdichter.typ}"`;
+                qcStatus = 'berechnet';
+            } else {
+                const faktor = tVerd < -15 ? 1.5 : 1.3;
+                qcKW = q0KW * faktor;
+                qcQuelle = `Q₀ × ${faktor.toFixed(2).replace('.', ',')} – Richtwert für ${tVerd < -15 ? 'Tiefkühlung' : 'Normalkühlung'}. Sobald ein Verdichter mit Leistungsaufnahme eingetragen ist, wird exakt gerechnet.`;
+                qcStatus = 'schaetzung';
+            }
+
+            const slots = [];
+            const add = (typ, kw, einheit, quelle, status, extra) => slots.push({ typ, kw, einheit: einheit || 'kW', quelle, status: status || 'berechnet', extra: extra || betrieb });
+
+            if (art === 'einzel') {
+                add('Verflüssigungssatz', q0KW, 'kW Kälteleistung', `aus der Kältelastberechnung`, 'berechnet');
+                add('Verflüssiger', qcKW, 'kW Wärmeabfuhr', qcQuelle, qcStatus);
+            } else {
+                add('Verdichter', q0KW, 'kW Kälteleistung', `Summe der Sauggruppen`, 'berechnet');
+                add(art === 'hdmd' ? 'Gaskühler' : 'Verflüssiger', qcKW, 'kW Wärmeabfuhr', qcQuelle, qcStatus);
+                add('Flüssigkeitssammler', 0, '', 'Volumen nach Füllmenge und Betriebszustand – Herstellervorgabe erforderlich', 'pruefen');
+                add('Ölabscheider', 0, '', 'nach Verdichtergröße – Herstellervorgabe', 'pruefen');
+            }
+            add('Verdampfer', q0KW, 'kW Kälteleistung', 'je Kühlstelle einzeln auszulegen, Summe hier', 'berechnet');
+            add('Expansionsventil', q0KW, 'kW Ventilkapazität',
+                kp.moeglich ? `bei Δp ${(kp.pVerfluessigung - kp.pVerdampfung).toFixed(2).replace('.', ',')} bar und Massenstrom ${kp.mDotKgH.toFixed(1).replace('.', ',')} kg/h – Ventilkapazität ist bei DIESEN Bedingungen zu prüfen, nicht nur nach kW` : 'Betriebspunkt noch nicht berechenbar', 'berechnet');
+            add('Filtertrockner', 0, '', kp.moeglich ? `für ${kp.mDotKgH.toFixed(1).replace('.', ',')} kg/h Massenstrom` : '', 'berechnet');
+            add('Magnetventil', 0, '', 'Flüssigkeitsleitung, Nennweite nach gewählter Rohrdimension', 'berechnet');
+            add('Schauglas', 0, '', 'Flüssigkeitsleitung', 'berechnet');
+
+            return { moeglich: true, slots, q0KW, qcKW, tVerd, betrieb, kp, A };
+        }
+
+        function renderKaelteTabKomponenten(project) {
+            const bedarf = kaelteKomponentenBedarf(project);
+            const liste = project.kaelte.komponenten || [];
+
+            if (!bedarf.moeglich) {
+                return `<div class="empty-note" style="padding:14px;">Erst die Kältelast berechnen – dann steht hier, welche Leistung jede Komponente haben muss.</div>`;
+            }
+
+            const anfSlots = bedarf.slots.map((sl, i) => {
+                const eingetragen = liste.filter(k => (k.typ || '').toLowerCase() === sl.typ.toLowerCase());
+                const st = KAELTE_STATUS[sl.status] || KAELTE_STATUS.berechnet;
+                return `
+                    <div class="komp-slot">
+                        <div class="komp-anf">
+                            <div class="komp-anf-kopf">${escapeHtml(sl.typ)}
+                                ${sl.kw > 0 ? `<span class="komp-kw">${st.icon} ${sl.kw.toFixed(2).replace('.', ',')} ${escapeHtml(sl.einheit)}</span>` : ''}
+                            </div>
+                            <div class="komp-anf-text">${escapeHtml(sl.quelle)}</div>
+                            <div class="komp-anf-betrieb">${escapeHtml(sl.extra)}</div>
+                        </div>
+                        ${eingetragen.length ? eingetragen.map(k => {
+                            const idx = liste.indexOf(k);
+                            const leistung = Number(k.leistungKW) || 0;
+                            let urteil = '';
+                            if (leistung > 0 && sl.kw > 0) {
+                                if (leistung < sl.kw * 0.98) urteil = `<span class="komp-urteil komp-schlecht">✕ ${leistung.toFixed(2).replace('.', ',')} kW &lt; Bedarf</span>`;
+                                else if (leistung > sl.kw * 1.6) urteil = `<span class="komp-urteil komp-warn">⚠ ${leistung.toFixed(2).replace('.', ',')} kW – über 60 % Reserve</span>`;
+                                else urteil = `<span class="komp-urteil komp-gut">✓ ${leistung.toFixed(2).replace('.', ',')} kW passt</span>`;
+                            }
+                            return `<div class="komp-geraet">
+                                <div><strong>${escapeHtml([k.hersteller, k.modell].filter(Boolean).join(' ') || 'ohne Bezeichnung')}</strong>
+                                ${k.artikelnummer ? `<span style="color:var(--text-muted);font-size:11px;"> · ${escapeHtml(k.artikelnummer)}</span>` : ''}
+                                ${urteil}
+                                <div style="font-size:11px;color:var(--text-muted);">${k.menge || 1} ${escapeHtml(k.einheit || 'Stk')}${k.ekPreis ? ' · EK ' + formatCurrency(Number(k.ekPreis)) : ''}${k.vkPreis ? ' · VK ' + formatCurrency(Number(k.vkPreis)) : ''}${k.quelle ? ' · ' + escapeHtml(k.quelle) : ''}</div></div>
+                                <div style="white-space:nowrap;">
+                                    <button class="btn btn-sm btn-outline" onclick="app.openKomponenteModal(${idJS(project.id)}, ${idx})">${icon('edit')}</button>
+                                    <button class="btn btn-sm btn-danger" onclick="app.deleteKomponente(${idJS(project.id)}, ${idx})">${icon('trash')}</button>
+                                </div>
+                            </div>`;
+                        }).join('') : ''}
+                        <button class="btn btn-sm ${eingetragen.length ? 'btn-outline' : 'btn-primary'}" onclick="app.openKomponenteModal(${idJS(project.id)}, null, ${idJS(sl.typ)}, ${sl.kw})">${icon('plus')} ${eingetragen.length ? 'Weiteres Gerät' : 'Gerät eintragen'}</button>
+                    </div>`;
             }).join('');
 
+            const sonstige = liste.filter(k => !bedarf.slots.some(sl => sl.typ.toLowerCase() === (k.typ || '').toLowerCase()));
+
             return `
-                <div class="kl-hinweis kl-pruefen">🔴 Hier werden keine Herstellerprodukte vorgeschlagen. Diese App hat keinen geprüften Verdichter-, Verdampfer- oder Ventilkatalog – erfundene Typenbezeichnungen oder Leistungsdaten wären gefährlich. Trage dein Gerät aus dem Datenblatt ein, dann prüft das Programm die Leistung gegen den berechneten Betriebspunkt.</div>
+                <div class="kl-hinweis kl-info">Das Programm rechnet aus, <strong>welche Leistung</strong> jede Komponente braucht. Das konkrete Gerät suchst du beim Hersteller oder Lieferanten und trägst es hier ein – mit „In Gerätedatenbank speichern" steht es beim nächsten Projekt automatisch zur Auswahl.</div>
                 <div class="form-card">
-                    <div class="detail-section-head" style="margin-top:0;">
-                        <h4>Komponenten (${liste.length}) · Bedarf ${bedarfKW.toFixed(2).replace('.', ',')} kW</h4>
-                        <button class="btn btn-sm btn-primary" onclick="app.openKomponenteModal(${idJS(project.id)})">${icon('plus')} Komponente</button>
+                    <div class="form-card-title">Betriebspunkt der Anlage</div>
+                    <div class="survey-summary">
+                        <div class="survey-chip"><span>Kälteleistung</span><strong>${bedarf.q0KW.toFixed(2).replace('.', ',')} kW</strong></div>
+                        <div class="survey-chip"><span>Verdampfung (maßgebend)</span><strong>${bedarf.tVerd} °C</strong></div>
+                        <div class="survey-chip"><span>Verflüssigung</span><strong>${bedarf.A.tVerfluessigung} °C</strong></div>
+                        <div class="survey-chip"><span>Kältemittel</span><strong>${escapeHtml(bedarf.A.kaeltemittel)}</strong></div>
+                        ${bedarf.kp.moeglich ? `<div class="survey-chip"><span>Massenstrom</span><strong>${bedarf.kp.mDotKgH.toFixed(1).replace('.', ',')} kg/h</strong></div>` : ''}
                     </div>
-                    <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px;">Übliche Komponenten für <strong>${escapeHtml((KAELTE_ANLAGENARTEN.find(x => x.key === art) || {}).label || art)}</strong>: ${vorlage.map(escapeHtml).join(' · ')}</div>
-                    ${liste.length === 0 ? '<div class="empty-note" style="padding:14px;">Noch keine Komponente eingetragen.</div>' : `
-                        <div class="table-container"><table>
-                            <thead><tr><th>Typ / Gerät</th><th>Art.-Nr.</th><th>Leistung</th><th>Menge</th><th>EK</th><th>VK</th><th></th></tr></thead>
-                            <tbody>${zeilen}</tbody>
-                        </table></div>`}
-                </div>`;
+                </div>
+                ${anfSlots}
+                ${sonstige.length ? `<div class="form-card"><div class="form-card-title">Weitere Komponenten</div>
+                    ${sonstige.map(k => `<div class="komp-geraet"><div><strong>${escapeHtml(k.typ)}</strong> ${escapeHtml([k.hersteller, k.modell].filter(Boolean).join(' '))}</div>
+                        <div style="white-space:nowrap;"><button class="btn btn-sm btn-outline" onclick="app.openKomponenteModal(${idJS(project.id)}, ${liste.indexOf(k)})">${icon('edit')}</button>
+                        <button class="btn btn-sm btn-danger" onclick="app.deleteKomponente(${idJS(project.id)}, ${liste.indexOf(k)})">${icon('trash')}</button></div></div>`).join('')}
+                </div>` : ''}
+                <div style="text-align:center;margin-top:12px;"><button class="btn btn-sm btn-outline" onclick="app.openKomponenteModal(${idJS(project.id)})">${icon('plus')} Freie Komponente hinzufügen</button></div>`;
         }
 
         // ---- Verbund: Sauggruppen und Gleichzeitigkeitsfaktoren.
@@ -992,16 +1076,30 @@
                 );
             },
 
-            async openKomponenteModal(projectId, index = null) {
+            async openKomponenteModal(projectId, index = null, vorgabeTyp = '', bedarfKW = 0) {
                 const project = await db.get('projects', projectId);
                 if (!project || !project.kaelte) return;
                 const liste = project.kaelte.komponenten || (project.kaelte.komponenten = []);
-                const k = (index != null && liste[index]) ? liste[index] : {};
+                const k = (index != null && liste[index]) ? liste[index] : { typ: vorgabeTyp };
                 const art = project.kaelte.anlagenart || 'einzel';
                 const vorlage = KOMPONENTEN_VORLAGE[art] || KOMPONENTEN_VORLAGE.custom;
+
+                // Eigene Geraetedatenbank: alles, was frueher eingetragen wurde.
+                const gdb = await getSetting('kaelteGeraete', []);
+                const passend = (Array.isArray(gdb) ? gdb : []).filter(g =>
+                    !k.typ || (g.typ || '').toLowerCase() === String(k.typ).toLowerCase());
+
                 showModal(
-                    index != null ? 'Komponente bearbeiten' : 'Komponente hinzufügen',
+                    index != null ? 'Komponente bearbeiten' : (vorgabeTyp ? `${vorgabeTyp} eintragen` : 'Komponente hinzufügen'),
                     `
+                        ${bedarfKW > 0 ? `<div class="kl-hinweis kl-info" style="margin-bottom:12px;">Benötigt werden mindestens <strong>${bedarfKW.toFixed(2).replace('.', ',')} kW</strong>. Trage das Gerät ein, das du beim Hersteller oder Lieferanten gefunden hast.</div>` : ''}
+                        ${passend.length ? `
+                        <div class="form-group"><label>Aus deiner Gerätedatenbank übernehmen (${passend.length})</label>
+                            <select id="koDb">
+                                <option value="">-- neues Gerät eintragen --</option>
+                                ${passend.map((g, i) => `<option value="${i}">${escapeHtml([g.hersteller, g.modell, g.artikelnummer].filter(Boolean).join(' · '))}${g.leistungKW ? ' — ' + Number(g.leistungKW).toFixed(2).replace('.', ',') + ' kW' : ''}</option>`).join('')}
+                            </select>
+                        </div>` : ''}
                         <div class="form-group"><label>Typ / Bauteil *</label>
                             <input list="kompTypen" id="koTyp" value="${escapeHtml(k.typ || '')}" placeholder="z. B. Verdichter">
                             <datalist id="kompTypen">${vorlage.map(v => `<option value="${escapeHtml(v)}">`).join('')}</datalist>
@@ -1015,6 +1113,10 @@
                             <div class="form-group"><label>Leistung im Betriebspunkt (kW)</label><input type="text" inputmode="decimal" id="koLeistung" value="${k.leistungKW ?? ''}"></div>
                         </div>
                         <div class="form-row">
+                            <div class="form-group"><label>Leistungsaufnahme (kW) <small>– für die Verflüssigerleistung</small></label><input type="text" inputmode="decimal" id="koPauf" value="${k.leistungsaufnahmeKW ?? ''}"></div>
+                            <div class="form-group"><label>Anschlüsse</label><input type="text" id="koAnschluss" value="${escapeHtml(k.anschluss || '')}" placeholder="z. B. 22 / 12 mm"></div>
+                        </div>
+                        <div class="form-row">
                             <div class="form-group"><label>Menge</label><input type="text" inputmode="decimal" id="koMenge" value="${k.menge ?? 1}"></div>
                             <div class="form-group"><label>Einheit</label><input type="text" id="koEinheit" value="${escapeHtml(k.einheit || 'Stk')}"></div>
                         </div>
@@ -1022,8 +1124,12 @@
                             <div class="form-group"><label>Einkaufspreis netto (€)</label><input type="text" inputmode="decimal" id="koEk" value="${k.ekPreis ?? ''}"></div>
                             <div class="form-group"><label>Verkaufspreis (€)</label><input type="text" inputmode="decimal" id="koVk" value="${k.vkPreis ?? ''}"></div>
                         </div>
-                        <div class="form-group"><label>Quelle / Datenblatt <small>– woher stammen die Leistungsdaten?</small></label><input type="text" id="koQuelle" value="${escapeHtml(k.quelle || '')}" placeholder="z. B. Datenblatt Rev. 03/2026"></div>
-                        <div class="form-group"><label>Notiz</label><textarea id="koNotiz" rows="2">${escapeHtml(k.notiz || '')}</textarea></div>
+                        <div class="form-group"><label>Lieferant</label><input type="text" id="koLieferant" value="${escapeHtml(k.lieferant || '')}"></div>
+                        <div class="form-group"><label>Quelle / Link <small>– woher stammen die Daten?</small></label><input type="text" id="koQuelle" value="${escapeHtml(k.quelle || '')}" placeholder="z. B. Datenblatt 03/2026 oder Link"></div>
+                        <div class="form-group"><label>Technische Daten / Notiz</label><textarea id="koNotiz" rows="2">${escapeHtml(k.notiz || '')}</textarea></div>
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;">
+                            <input type="checkbox" id="koSpeichern" checked style="width:auto;"> In Gerätedatenbank speichern (steht dann bei jedem Projekt zur Auswahl)
+                        </label>
                     `,
                     async (overlay) => {
                         const zahl = id => { const v = overlay.querySelector(id).value.trim(); if (v === '') return null; const n = parseFloat(v.replace(',', '.')); return Number.isFinite(n) ? n : null; };
@@ -1033,19 +1139,51 @@
                             typ, hersteller: overlay.querySelector('#koHersteller').value.trim(),
                             modell: overlay.querySelector('#koModell').value.trim(),
                             artikelnummer: overlay.querySelector('#koArt').value.trim(),
-                            leistungKW: zahl('#koLeistung'), menge: zahl('#koMenge') ?? 1,
+                            leistungKW: zahl('#koLeistung'), leistungsaufnahmeKW: zahl('#koPauf'),
+                            anschluss: overlay.querySelector('#koAnschluss').value.trim(),
+                            menge: zahl('#koMenge') ?? 1,
                             einheit: overlay.querySelector('#koEinheit').value.trim() || 'Stk',
                             ekPreis: zahl('#koEk'), vkPreis: zahl('#koVk'),
+                            lieferant: overlay.querySelector('#koLieferant').value.trim(),
                             quelle: overlay.querySelector('#koQuelle').value.trim(),
                             notiz: overlay.querySelector('#koNotiz').value.trim()
                         };
                         if (index != null) liste[index] = neu; else liste.push(neu);
                         await db.put('projects', project);
+
+                        // In die eigene Geraetedatenbank uebernehmen. Gleiches
+                        // Geraet (Typ + Hersteller + Modell + Art.-Nr.) wird
+                        // aktualisiert statt doppelt angelegt.
+                        if (overlay.querySelector('#koSpeichern').checked && (neu.hersteller || neu.modell || neu.artikelnummer)) {
+                            const alt = await getSetting('kaelteGeraete', []);
+                            const arr = Array.isArray(alt) ? alt : [];
+                            const schluessel = g => [g.typ, g.hersteller, g.modell, g.artikelnummer].map(x => String(x || '').toLowerCase()).join('|');
+                            const i = arr.findIndex(g => schluessel(g) === schluessel(neu));
+                            const eintrag = { ...neu, menge: undefined, gespeichertAm: new Date().toISOString() };
+                            if (i >= 0) arr[i] = eintrag; else arr.push(eintrag);
+                            await setSetting('kaelteGeraete', arr);
+                        }
                         overlay.remove();
                         showToast('Komponente gespeichert.', 'success');
                         renderKaelteDetail(projectId);
                     }
                 );
+
+                // Auswahl aus der Datenbank fuellt die Felder vor.
+                setTimeout(() => {
+                    const sel = document.querySelector('#koDb');
+                    if (!sel) return;
+                    sel.addEventListener('change', () => {
+                        const g = passend[Number(sel.value)];
+                        if (!g) return;
+                        const setz = (id, v) => { const el = document.querySelector(id); if (el) el.value = v ?? ''; };
+                        setz('#koTyp', g.typ); setz('#koHersteller', g.hersteller); setz('#koModell', g.modell);
+                        setz('#koArt', g.artikelnummer); setz('#koLeistung', g.leistungKW);
+                        setz('#koPauf', g.leistungsaufnahmeKW); setz('#koAnschluss', g.anschluss);
+                        setz('#koEinheit', g.einheit); setz('#koEk', g.ekPreis); setz('#koVk', g.vkPreis);
+                        setz('#koLieferant', g.lieferant); setz('#koQuelle', g.quelle); setz('#koNotiz', g.notiz);
+                    });
+                }, 60);
             },
 
             async deleteKomponente(projectId, index) {
