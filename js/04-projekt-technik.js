@@ -82,7 +82,13 @@
                 return `<div class="form-group" style="grid-column:1/-1;"><label>${escapeHtml(f.label)}</label><textarea id="${id}" rows="3">${escapeHtml(v || '')}</textarea></div>`;
             }
             if (f.type === 'number') {
-                return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' <small>(' + f.unit + ')</small>' : ''}</label><input type="number" inputmode="decimal" step="any" min="0" id="${id}" value="${v ?? ''}"></div>`;
+                // type="number" mit min="0" hat auf vielen Mobil-Tastaturen (v.a.
+                // Android) die Minus-Taste ausgeblendet - bei Temperaturen wie
+                // Raumtemperatur oder Verdampfungstemperatur ein echtes Problem.
+                // type="text" + inputmode="decimal" zeigt zuverlaessig eine
+                // Zifferntastatur MIT Minus. techFieldRead() parst den Wert ohnehin
+                // selbst per parseFloat() - das Verhalten aendert sich dadurch nicht.
+                return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' <small>(' + f.unit + ')</small>' : ''}</label><input type="text" inputmode="decimal" id="${id}" value="${v ?? ''}"></div>`;
             }
             if (f.type === 'date') {
                 return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="date" id="${id}" value="${escapeHtml(v || '')}"></div>`;
