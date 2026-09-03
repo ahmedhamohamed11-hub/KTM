@@ -5173,7 +5173,7 @@
                     if (opt.showPrices) { row.push(formatCurrency(Number(p.price) || 0)); row.push(formatCurrency((Number(p.price) || 0) * (Number(p.quantity) || 1))); }
                     return row;
                 });
-                doc.autoTable({ startY: y, head: [head], body, styles: { fontSize: 9 }, headStyles: { fillColor: [18, 128, 143] }, margin: { left: mx, right: mx } });
+                doc.autoTable({ startY: y, head: [head], body, styles: { fontSize: 9 }, headStyles: { fillColor: PDF_TEAL }, margin: { left: mx, right: mx } });
                 let fy = doc.lastAutoTable.finalY + 8;
                 if (opt.showPrices) {
                     doc.setFontSize(10);
@@ -7995,17 +7995,76 @@
 
             async openPDFSettings() {
                 const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
+                let farbWahl = await getSetting('pdfFarbe', 'eis');
+                let farbHex = (await getSetting('pdfFarbeHex', '')) || '#12808f';
+                if (farbWahl !== 'eigen' && !PDF_PALETTEN[farbWahl]) farbWahl = 'eis';
+
+                const felder = Object.entries(PDF_PALETTEN).map(([key, p]) => `
+                    <button type="button" class="pdf-farbfeld" data-farbe="${key}" title="${escapeHtml(p.name)}"
+                        style="background:${pdfRgbZuHex(p.haupt)};"><span></span></button>`).join('');
+
                 const modal = showModal(
                     'PDF-Einstellungen',
                     `
+                        <div class="form-group">
+                            <label>Farbe für Angebot &amp; Rechnung</label>
+                            <div class="pdf-farbreihe" id="setPdfFarben">
+                                ${felder}
+                                <button type="button" class="pdf-farbfeld pdf-farbfeld--eigen" data-farbe="eigen" title="Eigene Farbe"><span></span></button>
+                            </div>
+                            <div class="pdf-farb-eigen" id="setPdfEigenZeile">
+                                <input type="color" id="setPdfHex" value="${escapeHtml(farbHex)}">
+                                <span>Eigene Farbe wählen</span>
+                            </div>
+                            <div class="pdf-farb-vorschau" id="setPdfVorschau"></div>
+                        </div>
                         <div class="form-group"><label>Zahlungsbedingungen (Footer)</label><textarea id="setPaymentTerms" rows="3">${escapeHtml(paymentTerms)}</textarea></div>
                     `,
                     async (overlay) => {
+                        await setSetting('pdfFarbe', farbWahl);
+                        await setSetting('pdfFarbeHex', farbHex);
                         await setSetting('paymentTerms', overlay.querySelector('#setPaymentTerms').value.trim());
                         overlay.remove();
                         showToast('PDF-Einstellungen gespeichert.', 'success');
                     }
                 );
+
+                // Vorschau zeigt denselben Aufbau wie das PDF: Band mit Titel,
+                // heller Infokasten, Tabellenkopf. Nebentoene wie in pdfFarbenSetzen.
+                const zeichnen = () => {
+                    const haupt = (farbWahl === 'eigen' ? pdfHexZuRgb(farbHex) : null)
+                        || (PDF_PALETTEN[farbWahl] || PDF_PALETTEN.eis).haupt;
+                    const weiss = [255, 255, 255];
+                    const c = {
+                        band: pdfRgbZuHex(haupt),
+                        dunkel: pdfRgbZuHex(pdfMix(haupt, [0, 0, 0], 0.25)),
+                        ink: pdfRgbZuHex(pdfMix(haupt, [12, 20, 26], 0.80)),
+                        hell: pdfRgbZuHex(pdfMix(haupt, weiss, 0.90)),
+                        zebra: pdfRgbZuHex(pdfMix(haupt, weiss, 0.96))
+                    };
+                    modal.querySelector('#setPdfVorschau').innerHTML = `
+                        <div class="pdf-vs-blatt">
+                            <div class="pdf-vs-band" style="background:${c.band};border-bottom:2px solid ${c.dunkel};">ANGEBOT</div>
+                            <div class="pdf-vs-box" style="background:${c.hell};color:${c.ink};">Kunde · Projekt</div>
+                            <div class="pdf-vs-kopf" style="background:${c.band};">Position</div>
+                            <div class="pdf-vs-zeile" style="color:${c.ink};">Innengerät 2,5 kW</div>
+                            <div class="pdf-vs-zeile" style="background:${c.zebra};color:${c.ink};">Kupferrohr 1/4"</div>
+                        </div>`;
+                    modal.querySelectorAll('.pdf-farbfeld').forEach(b => {
+                        b.classList.toggle('is-aktiv', b.dataset.farbe === farbWahl);
+                    });
+                    const eigenFeld = modal.querySelector('.pdf-farbfeld--eigen');
+                    if (eigenFeld) eigenFeld.style.background = farbHex;
+                    modal.querySelector('#setPdfEigenZeile').style.display = (farbWahl === 'eigen') ? 'flex' : 'none';
+                };
+
+                modal.querySelectorAll('.pdf-farbfeld').forEach(b => {
+                    b.addEventListener('click', () => { farbWahl = b.dataset.farbe; zeichnen(); });
+                });
+                modal.querySelector('#setPdfHex')?.addEventListener('input', (e) => {
+                    farbHex = e.target.value; farbWahl = 'eigen'; zeichnen();
+                });
+                zeichnen();
             },
 
             async resetAllData() {
