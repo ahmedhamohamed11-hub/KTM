@@ -30,9 +30,9 @@
             { key: 'projekt', label: 'Projekt', fertig: true },
             { key: 'kuehlstellen', label: 'Kühlstellen', fertig: true },
             { key: 'kaeltelast', label: 'Kältelast', fertig: true },
-            { key: 'anlage', label: 'Anlage', fertig: false },
+            { key: 'anlage', label: 'Anlage', fertig: true },
             { key: 'komponenten', label: 'Komponenten', fertig: false },
-            { key: 'rohrleitungen', label: 'Rohrleitungen', fertig: false },
+            { key: 'rohrleitungen', label: 'Rohrleitungen', fertig: true },
             { key: 'verbund', label: 'Verbund', fertig: false },
             { key: 'material', label: 'Material', fertig: false },
             { key: 'pruefung', label: 'Prüfung', fertig: false },
@@ -177,6 +177,8 @@
                 if (tab === 'projekt') tabHtml = renderKaelteTabProjekt(project, customer);
                 else if (tab === 'kuehlstellen') tabHtml = renderKaelteTabKuehlstellen(project);
                 else if (tab === 'kaeltelast') tabHtml = renderKaelteTabKaeltelast(project);
+                else if (tab === 'anlage') tabHtml = renderKaelteTabAnlage(project);
+                else if (tab === 'rohrleitungen') tabHtml = renderKaelteTabRohr(project);
                 else tabHtml = renderKaelteTabPlatzhalter(KAELTE_STEPS.find(s => s.key === tab));
 
                 contentArea.innerHTML = `
@@ -200,6 +202,45 @@
 
                 // Kältelast-Felder anbinden. Leeres Feld = Vorschlag wieder
                 // aktivieren, deshalb wird der Schlüssel dann geloescht.
+                // Auslegungsbedingungen (Anlage-Tab) - liegen am Projekt.
+                contentArea.querySelectorAll('.ka-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        p.kaelte.auslegung = p.kaelte.auslegung || {};
+                        const roh = el.value.trim();
+                        if (el.dataset.feld === 'kaeltemittel') p.kaelte.auslegung.kaeltemittel = roh;
+                        else {
+                            const n = parseFloat(roh.replace(',', '.'));
+                            if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; }
+                            p.kaelte.auslegung[el.dataset.feld] = n;
+                        }
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
+                // Rohrleitungs-Eingaben - liegen je Kuehlstelle unter ks.rohr[art].
+                contentArea.querySelectorAll('.ro-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        const ks = (p.kaelte.kuehlstellen || []).find(x => x.id === el.dataset.ks);
+                        if (!ks) return;
+                        ks.rohr = ks.rohr || {};
+                        ks.rohr[el.dataset.art] = ks.rohr[el.dataset.art] || {};
+                        const ziel = ks.rohr[el.dataset.art];
+                        const roh = el.value.trim();
+                        if (roh === '') delete ziel[el.dataset.feld];
+                        else if (el.dataset.feld === 'gewaehlt') ziel.gewaehlt = roh;
+                        else {
+                            const n = parseFloat(roh.replace(',', '.'));
+                            if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; }
+                            ziel[el.dataset.feld] = n;
+                        }
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
                 if (tab === 'kaeltelast') {
                     contentArea.querySelectorAll('.kl-input, .kl-select').forEach(el => {
                         el.addEventListener('change', async () => {
@@ -411,6 +452,157 @@
                     </div>` : ''}
                 ${bloecke}
             `;
+        }
+
+
+        // ---- Anlage-Tab: Auslegungsbedingungen + Kreisprozess je Kühlstelle.
+        // Die Auslegungsbedingungen (Kältemittel, Verflüssigung, Überhitzung,
+        // Unterkühlung) gelten für die ganze Anlage und liegen deshalb am
+        // Projekt. Die Verdampfungstemperatur kommt je Kühlstelle aus der
+        // Kältelast-Ebene.
+        function kaelteAuslegungsdaten(project) {
+            const a = project.kaelte.auslegung || {};
+            return {
+                kaeltemittel: a.kaeltemittel || 'R290',
+                tVerfluessigung: a.tVerfluessigung != null ? Number(a.tVerfluessigung) : 40,
+                ueberhitzung: a.ueberhitzung != null ? Number(a.ueberhitzung) : 8,
+                unterkuehlung: a.unterkuehlung != null ? Number(a.unterkuehlung) : 4
+            };
+        }
+
+        function renderKaelteTabAnlage(project) {
+            const A = kaelteAuslegungsdaten(project);
+            const a = kaelteAuslegung(project);
+            const km = kmListe();
+
+            const kopf = `
+                <div class="form-card">
+                    <div class="form-card-title">Auslegungsbedingungen (gelten für die ganze Anlage)</div>
+                    <div class="survey-grid">
+                        <div class="form-group"><label>Kältemittel</label>
+                            <select class="ka-in" data-feld="kaeltemittel">
+                                ${km.map(k => `<option value="${k.key}" ${A.kaeltemittel === k.key ? 'selected' : ''}>${escapeHtml(k.key)} – ${escapeHtml(k.label)}${k.blend ? ' (Blend)' : ''}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Verflüssigungstemperatur <small>(°C)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="tVerfluessigung" value="${A.tVerfluessigung}"></div>
+                        <div class="form-group"><label>Sauggasüberhitzung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="ueberhitzung" value="${A.ueberhitzung}"></div>
+                        <div class="form-group"><label>Unterkühlung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="unterkuehlung" value="${A.unterkuehlung}"></div>
+                    </div>
+                    ${km.find(k => k.key === A.kaeltemittel && k.blend) ? '<div class="kl-hinweis kl-pruefen">🔴 Gemisch (Blend): Stoffdaten aus einem Gemischmodell, Temperaturgleit nicht berücksichtigt. Für die endgültige Auslegung das Herstellerdatenblatt verwenden.</div>' : ''}
+                </div>`;
+
+            if (a.anzahlGesamt === 0) return kopf + `<div class="empty-note" style="padding:14px;">Noch keine Kühlstelle erfasst – ohne Kältelast kein Kreisprozess.</div>`;
+
+            const bloecke = a.ergebnisse.map(({ ks, werte, ergebnis }) => {
+                if (!ergebnis.moeglich) return `<div class="form-card"><div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')}</div><div class="empty-note" style="padding:10px;">Kältelast noch nicht berechenbar.</div></div>`;
+                const tVerd = werte.verdampfungstemperatur ? werte.verdampfungstemperatur.wert : null;
+                const kp = kaelteKreisprozess({
+                    kaeltemittel: A.kaeltemittel, tVerdampfung: tVerd, tVerfluessigung: A.tVerfluessigung,
+                    ueberhitzung: A.ueberhitzung, unterkuehlung: A.unterkuehlung, kaelteleistungW: ergebnis.auslegung
+                });
+                if (!kp.moeglich) return `<div class="form-card"><div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')}</div><div class="kl-hinweis kl-fehler">✕ ${escapeHtml(kp.hinweise[0])}</div></div>`;
+                return `
+                    <div class="form-card">
+                        <div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')}</div>
+                        <table class="kl-ergebnis"><tbody>
+                            <tr><td>Kälteleistung (aus Kältelast)</td><td class="kl-w">${(ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
+                            <tr><td>Verdampfungstemperatur</td><td class="kl-w">${tVerd} °C</td></tr>
+                            <tr><td>Verdampfungsdruck</td><td class="kl-w">${kp.pVerdampfung.toFixed(2).replace('.', ',')} bar</td></tr>
+                            <tr><td>Verflüssigungsdruck</td><td class="kl-w">${kp.pVerfluessigung.toFixed(2).replace('.', ',')} bar</td></tr>
+                            <tr><td>Druckverhältnis</td><td class="kl-w">${kp.druckverhaeltnis.toFixed(2).replace('.', ',')}</td></tr>
+                            <tr><td>spez. Kälteleistung q₀</td><td class="kl-w">${kp.q0.toFixed(1).replace('.', ',')} kJ/kg</td></tr>
+                            <tr class="kl-sum"><td>Massenstrom</td><td class="kl-w">${kp.mDotKgH.toFixed(1).replace('.', ',')} kg/h</td></tr>
+                            <tr class="kl-formel"><td colspan="2">ṁ = Q̇₀ / q₀ · q₀ = h₁(überhitzt) − h₃(unterkühlt)</td></tr>
+                            <tr><td>Volumenstrom Saugleitung</td><td class="kl-w">${kp.volumenstromSaug.toFixed(1).replace('.', ',')} m³/h</td></tr>
+                            <tr><td>Volumenstrom Flüssigkeitsleitung</td><td class="kl-w">${kp.volumenstromFluessig.toFixed(2).replace('.', ',')} m³/h</td></tr>
+                            <tr><td>Volumenstrom Druckleitung</td><td class="kl-w">${kp.volumenstromHeissgas.toFixed(1).replace('.', ',')} m³/h</td></tr>
+                            <tr class="kl-formel"><td colspan="2">Dichten: Sauggas ${kp.rhoSaug.toFixed(2)} · flüssig ${kp.rhoFluessig.toFixed(0)} · Heißgas ${kp.rhoHeissgas.toFixed(2)} kg/m³ – je Leitung eigene Dichte</td></tr>
+                        </tbody></table>
+                        ${(kp.hinweise || []).map(h => `<div class="kl-hinweis kl-${h.art}">${escapeHtml(h.text)}</div>`).join('')}
+                    </div>`;
+            }).join('');
+            return kopf + bloecke;
+        }
+
+        // ---- Rohrleitungen-Tab
+        const ROHR_ARTEN = [
+            { key: 'saug', label: 'Saugleitung' },
+            { key: 'fluessig', label: 'Flüssigkeitsleitung' },
+            { key: 'heissgas', label: 'Druck-/Heißgasleitung' }
+        ];
+        const ROHR_FORMSTUECKE = [
+            ['bogen90', 'Bögen 90°'], ['bogen45', 'Bögen 45°'],
+            ['tStueckDurchgang', 'T-Stück Durchgang'], ['tStueckAbzweig', 'T-Stück Abzweig'],
+            ['ventil', 'Ventile'], ['magnetventil', 'Magnetventile'],
+            ['filtertrockner', 'Filtertrockner'], ['schauglas', 'Schaugläser'], ['rueckschlagventil', 'Rückschlagventile']
+        ];
+
+        function renderKaelteTabRohr(project) {
+            const A = kaelteAuslegungsdaten(project);
+            const a = kaelteAuslegung(project);
+            if (a.anzahlGesamt === 0) return `<div class="empty-note" style="padding:14px;">Noch keine Kühlstelle erfasst.</div>`;
+
+            const bloecke = a.ergebnisse.map(({ ks, werte, ergebnis }) => {
+                if (!ergebnis.moeglich) return '';
+                const tVerd = werte.verdampfungstemperatur ? werte.verdampfungstemperatur.wert : null;
+                const kp = kaelteKreisprozess({
+                    kaeltemittel: A.kaeltemittel, tVerdampfung: tVerd, tVerfluessigung: A.tVerfluessigung,
+                    ueberhitzung: A.ueberhitzung, unterkuehlung: A.unterkuehlung, kaelteleistungW: ergebnis.auslegung
+                });
+                if (!kp.moeglich) return `<div class="form-card"><div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung)}</div><div class="kl-hinweis kl-fehler">✕ ${escapeHtml(kp.hinweise[0])}</div></div>`;
+
+                const rohrDaten = ks.rohr || {};
+                const artBloecke = ROHR_ARTEN.map(art => {
+                    const g = rohrDaten[art.key] || {};
+                    const geo = {
+                        laenge: Number(g.laenge) || 0,
+                        hoehenunterschied: Number(g.hoehenunterschied) || 0,
+                        formstuecke: Object.fromEntries(ROHR_FORMSTUECKE.map(([k]) => [k, Number(g[k]) || 0]))
+                    };
+                    const aus = kaelteRohrAuswahl(art.key, kp, geo);
+                    const emp = aus.empfehlung;
+                    const gewaehlt = g.gewaehlt || (emp ? emp.rohr.bez : null);
+                    const zeile = aus.varianten.find(v => v.rohr.bez === gewaehlt) || emp;
+
+                    return `
+                        <div class="rohr-block">
+                            <div class="rohr-kopf">${escapeHtml(art.label)}${geo.hoehenunterschied > 0.5 ? ' <span class="rohr-tag">Steigleitung</span>' : ''}</div>
+                            <div class="rohr-eingaben">
+                                <label>Länge (m)<input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="laenge" value="${g.laenge ?? ''}"></label>
+                                <label>Höhenunterschied (m)<input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="hoehenunterschied" value="${g.hoehenunterschied ?? ''}"></label>
+                                ${ROHR_FORMSTUECKE.map(([k, l]) => `<label>${escapeHtml(l)}<input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="${k}" value="${g[k] ?? ''}"></label>`).join('')}
+                            </div>
+                            ${!geo.laenge ? '<div class="empty-note" style="padding:8px;font-size:12px;">Länge eintragen, dann wird dimensioniert.</div>' : !emp ? '<div class="kl-hinweis kl-fehler">✕ Keine der verfügbaren Kupferdimensionen erfüllt alle Kriterien. Massenstrom, Leitungsführung oder Auslegungsbedingungen prüfen.</div>' : `
+                                <div class="rohr-empfehlung">Empfehlung: <strong>${escapeHtml(emp.rohr.bez)}</strong> · ${emp.w.toFixed(1).replace('.', ',')} m/s · Δp ${emp.dpGesamtBar.toFixed(3).replace('.', ',')} bar · äquiv. Länge ${emp.lGesamt.toFixed(1).replace('.', ',')} m</div>
+                                <div class="form-group" style="margin:8px 0 6px;"><label>Gewählte Dimension</label>
+                                    <select class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="gewaehlt">
+                                        ${aus.varianten.map(v => `<option value="${escapeHtml(v.rohr.bez)}" ${gewaehlt === v.rohr.bez ? 'selected' : ''}>${escapeHtml(v.rohr.bez)} — ${v.w.toFixed(1)} m/s, Δp ${v.dpGesamtBar.toFixed(3)} bar${v.ok ? '' : ' ⚠ ungeeignet'}</option>`).join('')}
+                                    </select>
+                                </div>
+                                ${zeile ? `
+                                <table class="kl-ergebnis"><tbody>
+                                    <tr><td>Innendurchmesser</td><td class="kl-w">${zeile.rohr.di.toFixed(1).replace('.', ',')} mm</td></tr>
+                                    <tr><td>Strömungsgeschwindigkeit</td><td class="kl-w">${zeile.w.toFixed(2).replace('.', ',')} m/s</td></tr>
+                                    <tr><td>Reynoldszahl</td><td class="kl-w">${Math.round(zeile.re).toLocaleString('de-AT')}</td></tr>
+                                    <tr><td>Formstücke als äquiv. Länge</td><td class="kl-w">${zeile.aeqLaenge.toFixed(1).replace('.', ',')} m</td></tr>
+                                    <tr class="kl-formel"><td colspan="2">${escapeHtml(zeile.aeqDetail.join(' · ') || 'keine Formstücke')}</td></tr>
+                                    <tr><td>Δp Rohrreibung</td><td class="kl-w">${zeile.dpReibungBar.toFixed(4).replace('.', ',')} bar</td></tr>
+                                    <tr><td>Δp Höhenunterschied</td><td class="kl-w">${zeile.dpHoeheBar.toFixed(4).replace('.', ',')} bar</td></tr>
+                                    <tr class="kl-sum"><td>Δp gesamt</td><td class="kl-w">${zeile.dpGesamtBar.toFixed(4).replace('.', ',')} bar</td></tr>
+                                    <tr class="kl-formel"><td colspan="2">Darcy-Weisbach, Rohrreibungszahl nach Colebrook-White (λ = ${zeile.f.toFixed(4)})</td></tr>
+                                </tbody></table>
+                                ${zeile.bewertung.map(b => `<div class="kl-hinweis kl-${b.art}">${b.art === 'fehler' ? '✕' : '⚠'} ${escapeHtml(b.text)}</div>`).join('')}` : ''}
+                            `}
+                        </div>`;
+                }).join('');
+
+                return `<div class="form-card">
+                    <div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')} · ${(ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW · ${kp.mDotKgH.toFixed(1).replace('.', ',')} kg/h</div>
+                    ${artBloecke}
+                </div>`;
+            }).join('');
+
+            return `<div class="kl-hinweis kl-pruefen" style="margin-bottom:12px;">🔴 Mindestgeschwindigkeit für den Öltransport wird bei Steigleitungen strenger geprüft. Teillastbetrieb ist damit noch NICHT abgedeckt – bei geregelten Anlagen gesondert prüfen.</div>${bloecke}`;
         }
 
         function renderKaelteTabPlatzhalter(step) {
