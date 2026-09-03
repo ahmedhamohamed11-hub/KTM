@@ -27,7 +27,7 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 
-    <link rel="stylesheet" href="styles/app.css?v=4338ebae89">
+    <link rel="stylesheet" href="styles/app.css?v=2c74cd8ae3">
 </head>
 <body data-theme="light">
 
@@ -129,6 +129,10 @@
                 <div class="nav-item" data-page="katalog">
                     <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
                     Katalog
+                </div>
+                <div class="nav-item" data-page="kaelte">
+                    <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M12 22a4 4 0 0 0 4-4V6a4 4 0 0 0-8 0v12a4 4 0 0 0 4 4Z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/></svg></span>
+                    Kälteanlagen-Auslegung
                 </div>
 
                 <div class="nav-group" data-group="finanzen">
@@ -237,14 +241,15 @@
 
     <script defer src="js/00-auth.js"></script>
     <script defer src="js/01-core-db-sync.js?v=6a20613dc2"></script>
-    <script defer src="js/02-ui-helpers.js?v=f46af35dfe"></script>
-    <script defer src="js/03-pages.js?v=374032b2ab"></script>
+    <script defer src="js/02-ui-helpers.js?v=b06b2d831d"></script>
+    <script defer src="js/03-pages.js?v=e20359194d"></script>
     <script defer src="js/04-projekt-technik.js?v=c1f1dfa8ff"></script>
     <script defer src="js/05-plan-editor.js?v=633eac9b89"></script>
     <script defer src="js/06-lernen-rechnungen.js?v=8629b992fc"></script>
     <script defer src="js/09-katalog-import.js"></script>
     <script defer src="js/08-anlagen-wartung.js"></script>
-    <script defer src="js/07-extensions-init.js?v=c5291984ed"></script>
+    <script defer src="js/07-extensions-init.js?v=2ab124087f"></script>
+    <script defer src="js/10-kaelte.js?v=fb9c665860"></script>
 
 </body>
 </html>
