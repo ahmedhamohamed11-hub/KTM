@@ -353,10 +353,8 @@
         const PDF_LIGHT = [237, 243, 245];      // Info-Boxen
         const PDF_SOFT = [240, 247, 249];       // Flaechen-Tint (Raumskizze)
         const PDF_ONBAND = [224, 240, 243];     // Text auf dem farbigen Band
-        const PDF_ORN = [78, 158, 170];         // Ornament im Band (Fallback ohne Transparenz)
-        const PDF_WM = [228, 239, 241];         // Wasserzeichen (Fallback ohne Transparenz)
         const PDF_LINE = [214, 226, 230];       // Tabellen-Gitter
-        const PDF_ZEBRA = [246, 250, 251];      // jede zweite Tabellenzeile
+        const PDF_ZEBRA = [246, 250, 251];      // jede zweite Tabellenzeile (aktuell ungenutzt, siehe PDF_TABLE_STYLES)
 
         const PDF_PALETTEN = {
             eis:      { name: 'Eis-Türkis',    haupt: [18, 128, 143] },
@@ -394,8 +392,6 @@
             setze(PDF_LIGHT, pdfMix(haupt, weiss, 0.90));
             setze(PDF_SOFT, pdfMix(haupt, weiss, 0.93));
             setze(PDF_ONBAND, pdfMix(haupt, weiss, 0.85));
-            setze(PDF_ORN, pdfMix(haupt, weiss, 0.28));
-            setze(PDF_WM, pdfMix(haupt, weiss, 0.90));
             setze(PDF_LINE, pdfMix(haupt, weiss, 0.82));
             setze(PDF_ZEBRA, pdfMix(haupt, weiss, 0.96));
         }
@@ -417,57 +413,12 @@
         window.pdfRgbZuHex = pdfRgbZuHex;
         window.pdfFarbenLaden = pdfFarbenLaden;
 
-        function pdfSnowflake(doc, cx, cy, r, color, lineW) {
-            doc.setDrawColor(...color);
-            doc.setLineWidth(lineW);
-            doc.setLineCap('round');
-            for (let i = 0; i < 6; i++) {
-                const a = (Math.PI / 3) * i;
-                const dx = Math.cos(a), dy = Math.sin(a);
-                const ex = cx + dx * r, ey = cy + dy * r;
-                doc.line(cx, cy, ex, ey);
-                // Seitenzweige bei 55% und 80% des Astes
-                for (const t of [0.55, 0.8]) {
-                    const bx = cx + dx * r * t, by = cy + dy * r * t;
-                    const tl = r * (t === 0.55 ? 0.24 : 0.16);
-                    for (const s of [1, -1]) {
-                        const ba = a + s * Math.PI / 5;
-                        doc.line(bx, by, bx + Math.cos(ba) * tl, by + Math.sin(ba) * tl);
-                    }
-                }
-                // kleiner Innenkreis-Akzent
-            }
-            doc.circle(cx, cy, r * 0.09, 'S');
-        }
-
-        function pdfWatermark(doc) {
-            try {
-                // Nur 1x pro Seite (Header/autoTable/Manuell rufen mehrfach)
-                const pg = doc.internal.getCurrentPageInfo ? doc.internal.getCurrentPageInfo().pageNumber : doc.internal.getNumberOfPages();
-                doc.__wmPages = doc.__wmPages || new Set();
-                if (doc.__wmPages.has(pg)) return;
-                doc.__wmPages.add(pg);
-
-                const pw = doc.internal.pageSize.getWidth();
-                const ph = doc.internal.pageSize.getHeight();
-                // WICHTIG: Die Flocke besteht aus LINIEN -> 'stroke-opacity' nötig,
-                // 'opacity' allein wirkt nur auf Füllungen (deshalb war sie vorher deckend).
-                let done = false;
-                try {
-                    if (doc.GState && doc.setGState && doc.saveGraphicsState && doc.restoreGraphicsState) {
-                        doc.saveGraphicsState();
-                        doc.setGState(new doc.GState({ opacity: 0.06, 'stroke-opacity': 0.06 }));
-                        pdfSnowflake(doc, pw / 2, ph / 2 + 8, 58, PDF_TEAL, 1.5);
-                        doc.restoreGraphicsState();
-                        done = true;
-                    }
-                } catch (e) { /* Fallback unten */ }
-                if (!done) {
-                    // Fallback ohne Transparenz: sehr helle Farbe, stört nie
-                    pdfSnowflake(doc, pw / 2, ph / 2 + 8, 58, PDF_WM, 1.3);
-                }
-            } catch (e) { /* Wasserzeichen ist optional */ }
-        }
+        // Wasserzeichen entfernt (2026-09): grosse Schneeflocke im Hintergrund war
+        // dekorativ und nicht mehr gewuenscht. Die Funktion bleibt als No-Op
+        // bestehen, weil sie an ueber einem Dutzend Stellen (Angebot, Rechnung,
+        // Materialbestellung, Plaene, ...) aufgerufen wird - so muss keine
+        // einzige Aufrufstelle angefasst werden und es kann keine vergessen werden.
+        function pdfWatermark(doc) { /* bewusst leer */ }
         function pdfFooterOnce(doc, co) {
             const pg = doc.internal.getCurrentPageInfo ? doc.internal.getCurrentPageInfo().pageNumber : doc.internal.getNumberOfPages();
             doc.__ftPages = doc.__ftPages || new Set();
@@ -492,71 +443,57 @@
             };
         }
 
-        // Kopfbereich: weiße Zeile mit Logo/Kontakt + Teal-Band mit Titel & Schneeflocke
+        // Kopfbereich: weisse Zeile mit Logo/Kontakt + farbiges Band mit Titel.
+        // Farbe kommt aus der in den Einstellungen gewaehlten Palette (PDF_TEAL).
         function pdfHeader(doc, co, title, metaLines) {
             const pw = doc.internal.pageSize.getWidth();
             const mx = 16;
-            let topY = 12;
+            let topY = 13;
 
             if (co.logo) {
                 try {
                     const imgProps = doc.getImageProperties(co.logo);
-                    const logoH = 13;
-                    const logoW = (imgProps.width / imgProps.height) * logoH;
+                    // Grosszuegiger als frueher, aber gedeckelt: bei sehr breiten
+                    // Logos (Querformat) sonst Kollision mit den Kontaktdaten rechts.
+                    let logoH = 19;
+                    let logoW = (imgProps.width / imgProps.height) * logoH;
+                    const maxLogoW = 66;
+                    if (logoW > maxLogoW) { logoW = maxLogoW; logoH = (imgProps.height / imgProps.width) * logoW; }
                     doc.addImage(co.logo, imgProps.fileType || 'PNG', mx, topY - 3, logoW, logoH);
                 } catch (e) { /* Logo optional */ }
             } else if (co.name) {
                 doc.setFont('helvetica', 'bold');
-                doc.setFontSize(13);
+                doc.setFontSize(15);
                 doc.setTextColor(...PDF_INK);
-                doc.text(co.name, mx, topY + 4);
+                doc.text(co.name, mx, topY + 5);
             }
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(8);
             doc.setTextColor(...PDF_GRAY);
             const contact = [co.address, [co.phone, co.email].filter(Boolean).join('  ·  '), co.website].filter(Boolean);
             let cy = topY;
-            contact.forEach(line => { doc.text(line, pw - mx, cy, { align: 'right' }); cy += 4; });
+            contact.forEach(line => { doc.text(line, pw - mx, cy, { align: 'right' }); cy += 4.2; });
 
-            // Teal-Band
-            const bandY = Math.max(topY + 14, cy + 3);
-            const bandH = 24;
+            // Farbband mit Titel
+            const bandY = Math.max(topY + 19, cy + 4);
+            const bandH = 26;
             doc.setFillColor(...PDF_TEAL);
             doc.rect(0, bandY, pw, bandH, 'F');
-            // dunkler Akzentstreifen unten am Band
+            // dunkler Akzentstreifen unten am Band - einzige Verzierung, bewusst dezent
             doc.setFillColor(...PDF_TEAL_DARK);
             doc.rect(0, bandY + bandH, pw, 1.2, 'F');
-            // dezente Schneeflocken im Band
-            try {
-                let bandDone = false;
-                try {
-                    if (doc.GState && doc.setGState && doc.saveGraphicsState) {
-                        doc.saveGraphicsState();
-                        doc.setGState(new doc.GState({ opacity: 0.2, 'stroke-opacity': 0.2 }));
-                        pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, [255, 255, 255], 0.7);
-                        pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, [255, 255, 255], 0.45);
-                        doc.restoreGraphicsState();
-                        bandDone = true;
-                    }
-                } catch (e) { /* Fallback */ }
-                if (!bandDone) {
-                    // gedeckte, hellere Teal-Töne statt Transparenz
-                    pdfSnowflake(doc, pw - 30, bandY + bandH / 2, 13, PDF_ORN, 0.7);
-                    pdfSnowflake(doc, pw - 56, bandY + bandH - 4, 6, PDF_ORN, 0.45);
-                }
-            } catch (e) { /* optional */ }
 
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(19);
+            doc.setFontSize(21);
             doc.setTextColor(255, 255, 255);
-            doc.text(title, mx, bandY + 10.5);
+            doc.text(title, mx, bandY + 11.5);
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8.5);
+            doc.setFontSize(9);
             doc.setTextColor(...PDF_ONBAND);
-            let my = bandY + 16.5;
-            (metaLines || []).slice(0, 2).forEach(l => { doc.text(l, mx, my); my += 4.2; });
+            let my = bandY + 18.5;
+            (metaLines || []).slice(0, 2).forEach(l => { doc.text(l, mx, my); my += 4.6; });
 
-            return bandY + bandH + 10;
+            return bandY + bandH + 11;
         }
 
         function pdfFooter(doc, co) {
@@ -582,24 +519,27 @@
         function pdfInfoBoxes(doc, y, leftTitle, leftLines, rightTitle, rightLines) {
             const pw = doc.internal.pageSize.getWidth();
             const mx = 16;
-            const gap = 6;
+            const gap = 7;
             const boxW = (pw - mx * 2 - gap) / 2;
-            const lineH = 4.6;
-            const boxH = Math.max(leftLines.length, rightLines.length) * lineH + 13;
+            const lineH = 4.8;
+            const boxH = Math.max(leftLines.length, rightLines.length) * lineH + 14.5;
             [[mx, leftTitle, leftLines], [mx + boxW + gap, rightTitle, rightLines]].forEach(([bx, title, lines]) => {
                 doc.setFillColor(...PDF_LIGHT);
                 doc.roundedRect(bx, y, boxW, boxH, 2.5, 2.5, 'F');
+                // schmaler Farbbalken links - einziges grafisches Element hier, sehr dezent
+                doc.setFillColor(...PDF_TEAL);
+                doc.roundedRect(bx, y, 1.6, boxH, 0.8, 0.8, 'F');
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(8);
                 doc.setTextColor(...PDF_TEAL);
-                doc.text(String(title).toUpperCase(), bx + 5, y + 6.5);
+                doc.text(String(title).toUpperCase(), bx + 6.5, y + 7.5, { charSpace: 0.3 });
                 doc.setFont('helvetica', 'normal');
-                doc.setFontSize(9);
+                doc.setFontSize(9.2);
                 doc.setTextColor(...PDF_INK);
-                let ly = y + 12.5;
-                lines.forEach(l => { doc.text(String(l), bx + 5, ly, { maxWidth: boxW - 10 }); ly += lineH; });
+                let ly = y + 14;
+                lines.forEach(l => { doc.text(String(l), bx + 6.5, ly, { maxWidth: boxW - 11 }); ly += lineH; });
             });
-            return y + boxH + 8;
+            return y + boxH + 9;
         }
 
         // Aufstellungsplan: Räume maßstäblich als Skizze
@@ -664,8 +604,21 @@
             return y;
         }
 
+        // Kategorie-Badge fuer die Angebots-Positionstabelle: bildet die feineren
+        // Materialstamm-Kategorien auf die drei sichtbaren Gruppen GERÄT/MONTAGE/
+        // MATERIAL ab. Alle Farben sind Ableitungen der Hauptfarbe (siehe
+        // pdfFarbenSetzen), bleiben also bei jeder gewaehlten Palette stimmig.
+        function pdfKategorieTag(category) {
+            const c = String(category || '');
+            if (c === 'Klimageräte') return { label: 'GERÄT', bg: PDF_TEAL, fg: [255, 255, 255] };
+            if (c === 'Befestigung & Montage' || c === 'Arbeitsleistung') return { label: 'MONTAGE', bg: PDF_TEAL_DARK, fg: [255, 255, 255] };
+            return { label: 'MATERIAL', bg: PDF_LIGHT, fg: PDF_TEAL };
+        }
+
+        // Modernisiert (2026-09): keine Zebra-Streifen mehr, nur noch sehr feine
+        // Trennlinien - wirkt weniger nach Standard-Tabellenvorlage, mehr Weissraum.
         const PDF_TABLE_STYLES = {
-            styles: { font: 'helvetica', fontSize: 8.6, cellPadding: 2.8, textColor: PDF_INK, lineColor: PDF_LINE, lineWidth: 0.15 },
-            headStyles: { fillColor: PDF_TEAL, textColor: 255, fontStyle: 'bold', fontSize: 8.3 },
-            alternateRowStyles: { fillColor: PDF_ZEBRA }
+            theme: 'plain',
+            styles: { font: 'helvetica', fontSize: 8.8, cellPadding: { top: 3.4, right: 2.8, bottom: 3.4, left: 2.8 }, textColor: PDF_INK, lineColor: PDF_LINE, lineWidth: 0.1 },
+            headStyles: { fillColor: PDF_TEAL, textColor: 255, fontStyle: 'bold', fontSize: 8.3, cellPadding: { top: 3.6, right: 2.8, bottom: 3.6, left: 2.8 } }
         };
