@@ -188,9 +188,14 @@
                 // in der Leiste gesucht werden muss.
                 const stepIdx = KAELTE_STEPS.findIndex(s => s.key === tab);
                 const vor = KAELTE_STEPS[stepIdx - 1], nach = KAELTE_STEPS[stepIdx + 1];
-                tabHtml += `<div class="kaelte-weiter">
+                const frei = kaelteSchrittStatus(project, tab);
+                tabHtml += `<div class="kaelte-freigabe kaelte-freigabe-${frei.status}">
+                        <span class="kaelte-freigabe-ikon">${frei.status === 'ok' ? '✓' : frei.status === 'warnung' ? '⚠' : '✕'}</span>
+                        <div><strong>${frei.status === 'ok' ? 'Dieser Schritt passt.' : frei.status === 'warnung' ? 'Weitergehen möglich, aber:' : 'Hier stimmt noch etwas nicht.'}</strong><br>${escapeHtml(frei.text)}</div>
+                    </div>
+                    <div class="kaelte-weiter">
                     ${vor ? `<button class="btn btn-outline" onclick="app.kaelteSetTab(${idJS(projectId)}, '${vor.key}')">← ${escapeHtml(vor.label)}</button>` : '<span></span>'}
-                    ${nach ? `<button class="btn btn-primary" onclick="app.kaelteSetTab(${idJS(projectId)}, '${nach.key}')">Weiter: ${escapeHtml(nach.label)} →</button>` : '<span></span>'}
+                    ${nach ? `<button class="btn ${frei.status === 'fehler' ? 'btn-outline' : 'btn-primary'}" onclick="app.kaelteSetTab(${idJS(projectId)}, '${nach.key}')">Weiter: ${escapeHtml(nach.label)} →</button>` : '<span></span>'}
                 </div>`;
 
                 contentArea.innerHTML = `
@@ -784,6 +789,65 @@
                     ${schaetzungen.length ? `<ul style="font-size:12px;line-height:1.6;margin:0;padding-left:18px;">${schaetzungen.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div class="empty-note" style="padding:10px;">Keine – alle Werte sind eingegeben oder berechnet.</div>'}
                 </div>
                 <div class="kl-hinweis kl-pruefen">🔴 Diese Auslegung ist eine Vorauslegung. Das Programm kann und darf nicht bestätigen, dass die Anlage normgerecht ist. Vor Bestellung und Ausführung ist eine fachliche Prüfung anhand der gültigen Vorschriften und der Herstellerdatenblätter erforderlich.</div>`;
+        }
+
+        // Prueft je Schritt, ob weitergegangen werden kann. Gibt bewusst
+        // KEINE Freigabe, wenn etwas fehlt - lieber einmal zu oft stoppen.
+        function kaelteSchrittStatus(project, tab) {
+            const k = project.kaelte;
+            const stellen = k.kuehlstellen || [];
+            const a = (tab === 'projekt') ? null : kaelteAuslegung(project);
+
+            if (tab === 'projekt') {
+                if (!k.anlagenart) return { status: 'fehler', text: 'Anlagenart noch nicht gewählt.' };
+                return { status: 'ok', text: 'Anlagenart gewählt. Weiter zu den Kühlstellen.' };
+            }
+            if (tab === 'kuehlstellen') {
+                if (!stellen.length) return { status: 'fehler', text: 'Noch keine Kühlstelle angelegt – ohne Kühlstelle kann nichts berechnet werden.' };
+                const ohneMasse = stellen.filter(x => !(x.laenge && x.breite && x.hoehe) && !x.volumen);
+                const ohneTemp = stellen.filter(x => x.raumtemperatur === undefined || x.raumtemperatur === '');
+                if (ohneMasse.length || ohneTemp.length) return { status: 'fehler', text: `${[ohneMasse.length ? ohneMasse.length + '× ohne Raummaße' : '', ohneTemp.length ? ohneTemp.length + '× ohne Raumtemperatur' : ''].filter(Boolean).join(', ')}. Diese Angaben sind Pflicht.` };
+                return { status: 'ok', text: `${stellen.length} Kühlstelle(n) vollständig genug für die Kältelast.` };
+            }
+            if (tab === 'kaeltelast') {
+                if (!a.anzahlRechenbar) return { status: 'fehler', text: 'Keine Kühlstelle berechenbar.' };
+                const fehler = a.ergebnisse.flatMap(e => (e.meldungen || []).filter(m => m.art === 'fehler'));
+                if (fehler.length) return { status: 'fehler', text: `${fehler.length} unplausible Eingabe(n): ${fehler[0].text}` };
+                const warn = a.ergebnisse.flatMap(e => (e.meldungen || []).filter(m => m.art === 'warnung'));
+                const schaetz = a.ergebnisse.reduce((n, e) => n + Object.values(e.werte).filter(w => w.status === 'schaetzung').length, 0);
+                if (warn.length) return { status: 'warnung', text: `${warn.length} Warnung(en), ${schaetz} Richtwert-Schätzungen. Ergebnis: ${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW.` };
+                return { status: 'ok', text: `Kältelast berechnet: ${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW über ${a.anzahlRechenbar} Kühlstelle(n). ${schaetz} Werte sind Richtwert-Schätzungen – im Schritt Prüfung einsehbar.` };
+            }
+            if (tab === 'anlage') {
+                const A = kaelteAuslegungsdaten(project);
+                const kaputt = a.ergebnisse.filter(e => {
+                    if (!e.ergebnis.moeglich) return false;
+                    const kp = kaelteKreisprozess({ kaeltemittel: A.kaeltemittel, tVerdampfung: e.werte.verdampfungstemperatur && e.werte.verdampfungstemperatur.wert, tVerfluessigung: A.tVerfluessigung, ueberhitzung: A.ueberhitzung, unterkuehlung: A.unterkuehlung, kaelteleistungW: e.ergebnis.auslegung });
+                    return !kp.moeglich;
+                });
+                if (kaputt.length) return { status: 'fehler', text: `Für ${kaputt.length} Kühlstelle(n) liegen mit ${A.kaeltemittel} bei ${A.tVerfluessigung} °C keine Stoffdaten vor (z. B. CO₂ transkritisch).` };
+                return { status: 'ok', text: `Kreisprozess mit ${A.kaeltemittel} gerechnet. Massenströme stehen – weiter zu den Komponenten oder Rohrleitungen.` };
+            }
+            if (tab === 'komponenten') {
+                const komp = k.komponenten || [];
+                if (!komp.length) return { status: 'warnung', text: 'Noch keine Komponente eingetragen. Weitergehen geht, aber ohne Geräte gibt es später keine vollständige Materialliste.' };
+                const zuKlein = komp.filter(c => Number(c.leistungKW) > 0 && Number(c.leistungKW) < a.summeAuslegung / 1000 * 0.98 && /verdichter|verflüssigungssatz|verdampfer|aggregat/i.test(c.typ || ''));
+                if (zuKlein.length) return { status: 'fehler', text: `${zuKlein.length} Gerät(e) liegen unter dem berechneten Bedarf von ${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW.` };
+                const ohneQuelle = komp.filter(c => !c.quelle && !c.artikelnummer).length;
+                if (ohneQuelle) return { status: 'warnung', text: `${ohneQuelle} Komponente(n) ohne Artikelnummer oder Quelle – für die Bestellung noch nachtragen.` };
+                return { status: 'ok', text: `${komp.length} Komponente(n) eingetragen und zur Leistung passend.` };
+            }
+            if (tab === 'rohrleitungen') {
+                const mitRohr = a.ergebnisse.filter(e => e.ks.rohr && Object.values(e.ks.rohr).some(r => Number(r.laenge) > 0));
+                if (!mitRohr.length) return { status: 'warnung', text: 'Noch keine Leitungslänge eingetragen. Ohne Längen gibt es keine Dimension und kein Rohrmaterial.' };
+                return { status: 'ok', text: `Rohrleitungen für ${mitRohr.length} Kühlstelle(n) dimensioniert. Warnungen zu Öltransport und Teillast stehen direkt bei der jeweiligen Leitung.` };
+            }
+            if (tab === 'verbund') {
+                if ((k.anlagenart || 'einzel') === 'einzel') return { status: 'ok', text: 'Einzelanlage – kein Verbund erforderlich.' };
+                return { status: 'warnung', text: 'Gleichzeitigkeitsfaktoren prüfen. Solange sie auf 1,00 stehen, wird die volle Summe ausgelegt – das ist sicher, aber möglicherweise zu groß.' };
+            }
+            if (tab === 'pruefung') return { status: 'warnung', text: 'Fachliche Prüfung anhand der Herstellerdatenblätter und der gültigen Vorschriften bleibt erforderlich – das kann das Programm nicht ersetzen.' };
+            return { status: 'warnung', text: 'Dieser Schritt ist noch nicht umgesetzt.' };
         }
 
         function renderKaelteTabPlatzhalter(step) {
