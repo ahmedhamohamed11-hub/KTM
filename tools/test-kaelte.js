@@ -110,6 +110,28 @@ gesamt++;
 if (!fl.empfehlung || fl.empfehlung.w > 1.5) { console.log('  ✕  Flüssigkeitsgeschwindigkeit zu hoch'); fehler++; }
 else console.log('  OK  Flüssigkeitsgeschwindigkeit unter 1,5 m/s');
 
+console.log('\n— CO₂ transkritisch —');
+const co2src = fs.readFileSync(__dirname + '/../js/16-co2-transkritisch.js', 'utf8');
+const c2 = {};
+new Function(co2src + 'this.T=kaelteCO2Transkritisch; this.KP=kaelteCO2Kreisprozess;').call(c2);
+// Stuetzstellen muessen exakt reproduziert werden (mit CoolProp vorgerechnet)
+pruefe('CO₂ t0 -10 / t_gc 34: Hochdruck [bar]', c2.T(-10, 34).hochdruckBar, 86.5, 0.1);
+pruefe('CO₂ t0 -10 / t_gc 34: COP', c2.T(-10, 34).cop, 1.78, 0.01);
+pruefe('CO₂ t0 -30 / t_gc 34: Hochdruck [bar]', c2.T(-30, 34).hochdruckBar, 90.0, 0.1);
+pruefe('CO₂ t0 -10 / t_gc 40: Hochdruck [bar]', c2.T(-10, 40).hochdruckBar, 104.0, 0.1);
+gesamt++;
+if (!c2.T(-10, 34).ueberkritisch) { console.log('  ✕   34 °C hätte transkritisch sein müssen'); fehler++; }
+else console.log('  OK  34 °C korrekt als transkritisch erkannt');
+gesamt++;
+if (c2.T(-10, 25).ueberkritisch) { console.log('  ✕   25 °C ist unterkritisch'); fehler++; }
+else console.log('  OK  25 °C korrekt als unterkritisch erkannt');
+gesamt++;
+if (c2.KP({ tVerdampfung: -50, tGaskuehler: 36, kaelteleistungW: 20000 }).moeglich) { console.log('  ✕   -50 °C liegt außerhalb der Tabelle'); fehler++; }
+else console.log('  OK  Außerhalb der Tabelle korrekt abgelehnt statt extrapoliert');
+const kpc = c2.KP({ tVerdampfung: -30, tGaskuehler: 36, kaelteleistungW: 20000 });
+pruefe('CO₂ 20 kW bei -30/36: Massenstrom [kg/h]', kpc.mDotKgH, 493, 3);
+pruefe('CO₂ 20 kW bei -30/36: Verdichterleistung [kW]', kpc.verdichterleistungKW, 19.9, 0.3);
+
 console.log('\n— Fehlende Daten dürfen nicht erfunden werden —');
 gesamt++;
 const kpCO2 = ctx.KP({kaeltemittel:'R744',tVerdampfung:-30,tVerfluessigung:40,kaelteleistungW:10000});
