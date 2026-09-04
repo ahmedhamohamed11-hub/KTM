@@ -9,9 +9,11 @@ new Function(src + `
   this.V=kaelteVorschlaege; this.B=kaelteBerechne; this.TP=kaelteTaupunkt;
   this.AF=kaelteAbsolutFeuchte; this.PS=kaelteSaettigungsdruck;
   this.KP=kaelteKreisprozess; this.RA=kaelteRohrAuswahl; this.ST=kmStoff;
+  this.KMT=KAELTEMITTEL;
 `).call(ctx);
 
 let fehler = 0, gesamt = 0;
+const KAELTEMITTEL_TEST = ctx.KMT;
 function pruefe(name, ist, soll, toleranz) {
   gesamt++;
   const ok = Math.abs(ist - soll) <= toleranz;
@@ -34,6 +36,30 @@ pruefe('R290 Verdampfungsenthalpie -30 °C [kJ/kg]', ctx.ST('R290',-30).r, 412, 
 console.log('  OK  R744 über 31 °C liefert null (transkritisch):', ctx.ST('R744',35) === null);
 if (ctx.ST('R744',35) !== null) fehler++;
 gesamt++;
+
+console.log('\n— Gemische: Tiefkühlbereich muss vorhanden sein —');
+for (const [f, t] of [['R449A',-30],['R449A',-20],['R448A',-30],['R452A',-30],['R513A',-30],
+                      ['R404A',-40],['R507A',-40],['R290',-40],['R134a',-40],['R32',-40]]) {
+  gesamt++;
+  const st = ctx.ST(f, t);
+  if (!st) { console.log(`  ✕   ${f} bei ${t} °C: KEINE Stoffdaten`); fehler++; }
+  else console.log(`  OK  ${f} bei ${t} °C: p_dew ${st.p.toFixed(3)} bar, p_bub ${st.pBubble.toFixed(3)} bar, r ${st.r.toFixed(0)} kJ/kg`);
+}
+console.log('\n— Alle Tabellen reichen bis -50 °C (außer R744, überkritisch ab 31 °C) —');
+for (const f of Object.keys(KAELTEMITTEL_TEST)) {
+  gesamt++;
+  const t0 = KAELTEMITTEL_TEST[f].tabelle[0][0];
+  if (t0 > -50) { console.log(`  ✕   ${f} beginnt erst bei ${t0} °C`); fehler++; }
+  else console.log(`  OK  ${f}: ${t0} bis ${KAELTEMITTEL_TEST[f].tabelle.slice(-1)[0][0]} °C`);
+}
+console.log('\n— Gemisch-Glide (Siededruck über Taupunktdruck) —');
+for (const [f, erwartetGlide] of [['R449A',true],['R448A',true],['R452A',true],['R513A',false],['R290',false]]) {
+  gesamt++;
+  const st = ctx.ST(f, -30);
+  const hatGlide = Math.abs(st.glidBar) > 0.05;
+  if (hatGlide !== erwartetGlide) { console.log(`  ✕   ${f}: Glide ${st.glidBar.toFixed(3)} bar, erwartet ${erwartetGlide ? 'vorhanden' : 'keiner'}`); fehler++; }
+  else console.log(`  OK  ${f}: Glide ${st.glidBar.toFixed(3)} bar ${erwartetGlide ? '(Zeotrop)' : '(kein Glide)'}`);
+}
 
 console.log('\n— U-Wert —');
 const uw = (d,l) => 1/(0.125 + (d/1000)/l + 0.040);
