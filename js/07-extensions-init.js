@@ -3076,13 +3076,31 @@
                 setTimeout(() => {
                     document.querySelector('#pdfWithCustomer')?.addEventListener('click', () => {
                         document.querySelector('.modal-overlay')?.remove();
-                        this.exportOfferPDF(offerId, false, true);
+                        this.exportOfferWaehlen(offerId, true);
                     });
                     document.querySelector('#pdfWithoutCustomer')?.addEventListener('click', () => {
                         document.querySelector('.modal-overlay')?.remove();
-                        this.exportOfferPDF(offerId, false, false);
+                        this.exportOfferWaehlen(offerId, false);
                     });
                 }, 80);
+            },
+
+            // Weiche zwischen dem neuen Angebotslayout (Standard) und dem
+            // alten. Das alte bleibt vollstaendig erhalten und ist ueber
+            // Einstellungen -> PDF wieder waehlbar - so geht nichts verloren.
+            async exportOfferWaehlen(offerId, withCustomer) {
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
+                let layout = 'neu';
+                try { layout = await getSetting('angebotLayout', 'neu'); } catch (e) { /* Standard */ }
+                if (layout === 'alt' || typeof app.exportOfferPDFneu !== 'function') return this.exportOfferPDF(offerId, false, withCustomer);
+                try {
+                    await app.exportOfferPDFneu(offerId, false, withCustomer);
+                } catch (e) {
+                    // Lieber das alte Layout ausgeben als gar kein Angebot.
+                    console.error('Neues Angebotslayout fehlgeschlagen:', e);
+                    showToast('Neues Layout fehlgeschlagen – altes Layout wird verwendet.', 'info');
+                    return this.exportOfferPDF(offerId, false, withCustomer);
+                }
             },
 
             async exportOfferPDF(offerId, share = false, withCustomer = true) {
@@ -8024,6 +8042,7 @@
 
             async openPDFSettings() {
                 const paymentTerms = await getSetting('paymentTerms', 'Zahlbar innerhalb 14 Tagen ohne Abzug.');
+                const angebotLayout = await getSetting('angebotLayout', 'neu');
                 let farbWahl = await getSetting('pdfFarbe', 'eis');
                 let farbHex = (await getSetting('pdfFarbeHex', '')) || '#12808f';
                 if (farbWahl !== 'eigen' && !PDF_PALETTEN[farbWahl]) farbWahl = 'eis';
@@ -8047,11 +8066,18 @@
                             </div>
                             <div class="pdf-farb-vorschau" id="setPdfVorschau"></div>
                         </div>
+                        <div class="form-group"><label>Angebots-Layout</label>
+                            <select id="setAngebotLayout">
+                                <option value="neu" ${angebotLayout !== 'alt' ? 'selected' : ''}>Neu – Deckblatt mit Projektübersicht, Komponenten und Leistungsumfang</option>
+                                <option value="alt" ${angebotLayout === 'alt' ? 'selected' : ''}>Klassisch – nur Positionstabelle</option>
+                            </select>
+                        </div>
                         <div class="form-group"><label>Zahlungsbedingungen (Footer)</label><textarea id="setPaymentTerms" rows="3">${escapeHtml(paymentTerms)}</textarea></div>
                     `,
                     async (overlay) => {
                         await setSetting('pdfFarbe', farbWahl);
                         await setSetting('pdfFarbeHex', farbHex);
+                        await setSetting('angebotLayout', overlay.querySelector('#setAngebotLayout').value);
                         await setSetting('paymentTerms', overlay.querySelector('#setPaymentTerms').value.trim());
                         overlay.remove();
                         showToast('PDF-Einstellungen gespeichert.', 'success');
