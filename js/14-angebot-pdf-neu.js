@@ -134,7 +134,10 @@
 
         Object.assign(app, {
 
-            async exportOfferPDFneu(offerId, share = false, withCustomer = true) {
+            // Baut das Dokument und gibt es zurueck - Speichern, Vorschau und
+            // Teilen verwenden alle denselben Bauweg, damit die Vorschau
+            // garantiert dasselbe zeigt wie die spaeter geladene Datei.
+            async angebotPdfBauen(offerId, withCustomer = true) {
                 const offer = await db.get('offers', offerId);
                 if (!offer) { showToast('Angebot nicht gefunden.', 'error'); return; }
                 const customer = offer.customerId ? await db.get('customers', offer.customerId) : null;
@@ -182,48 +185,90 @@
                 };
 
                 // ================= SEITE 1 =================
-                seitenRahmen();
-                let y = 28;
+                // Eigener Kopf: Logo LINKS, Angebotsblock RECHTS auf gleicher
+                // Hoehe. Vorher lag das Logo rechts auf der Hoehe des
+                // KUNDE-Blocks und hat ihn ueberlappt.
+                doc.setFillColor(...PDF_TEAL);
+                doc.rect(0, 0, pw, 3, 'F');
 
+                const kopfOben = 14;
+                let logoUnten = kopfOben;
                 if (co.logo) {
                     try {
                         const ip = doc.getImageProperties(co.logo);
-                        let h = 15, w = (ip.width / ip.height) * h;
-                        if (w > 55) { w = 55; h = (ip.height / ip.width) * w; }
-                        doc.addImage(co.logo, ip.fileType || 'PNG', pw - mx - w, y - 4, w, h);
+                        let h = 18, w = (ip.width / ip.height) * h;
+                        if (w > 62) { w = 62; h = (ip.height / ip.width) * w; }
+                        doc.addImage(co.logo, ip.fileType || 'PNG', mx, kopfOben, w, h);
+                        logoUnten = kopfOben + h;
                     } catch (e) { /* Logo optional */ }
+                } else if (co.name) {
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(14);
+                    doc.setTextColor(...PDF_INK);
+                    doc.text(co.name, mx, kopfOben + 8);
+                    logoUnten = kopfOben + 12;
                 }
 
-                // KUNDE / PROJEKT nebeneinander
-                y = abschnitt(y, 'Kunde');
+                // Angebotsblock rechts, an derselben Oberkante ausgerichtet
                 doc.setFont('helvetica', 'bold');
-                doc.setFontSize(11);
+                doc.setFontSize(19);
+                doc.setTextColor(...PDF_TEAL);
+                doc.text('ANGEBOT', pw - mx, kopfOben + 7, { align: 'right' });
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(...PDF_GRAY);
+                doc.text(`Nr. ${nummer}`, pw - mx, kopfOben + 13.5, { align: 'right' });
+                doc.text(`Datum: ${datum}`, pw - mx, kopfOben + 18.5, { align: 'right' });
+
+                let y = Math.max(logoUnten, kopfOben + 21) + 9;
+                doc.setDrawColor(...PDF_LINE);
+                doc.setLineWidth(0.3);
+                doc.line(mx, y, pw - mx, y);
+                y += 10;
+
+                // KUNDE und PROJEKT nebeneinander - gleiche Spaltenbreite,
+                // gleiche Oberkante, damit die Seite symmetrisch wirkt.
+                const spalte = (pw - mx * 2 - 8) / 2;
+                const rx = mx + spalte + 8;
+                const spaltenKopf = (x, titel) => {
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8);
+                    doc.setTextColor(...PDF_TEAL);
+                    doc.text(titel.toUpperCase(), x, y, { charSpace: 0.5 });
+                    doc.setDrawColor(...PDF_TEAL);
+                    doc.setLineWidth(0.4);
+                    doc.line(x, y + 1.8, x + spalte, y + 1.8);
+                };
+                spaltenKopf(mx, 'Kunde');
+                spaltenKopf(rx, 'Projekt / Baustelle');
+                let ly = y + 8, ry = y + 8;
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10.5);
                 doc.setTextColor(...PDF_INK);
-                doc.text(kundeName || 'Ohne Kundenangabe', mx, y);
+                const kz = doc.splitTextToSize(kundeName || 'Ohne Kundenangabe', spalte);
+                doc.text(kz, mx, ly); ly += kz.length * 5;
                 if (withCustomer && customer) {
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(9);
                     doc.setTextColor(...PDF_GRAY);
-                    const adr = [customer.street, [customer.zip, customer.city].filter(Boolean).join(' ')].filter(Boolean);
-                    let ay = y + 5;
-                    adr.forEach(z => { doc.text(String(z), mx, ay); ay += 4.4; });
-                    y = Math.max(y, ay - 4.4);
+                    [customer.street, [customer.zip, customer.city].filter(Boolean).join(' ')]
+                        .filter(Boolean).forEach(z => { doc.text(String(z), mx, ly); ly += 4.4; });
                 }
-                y += 11;
 
-                y = abschnitt(y, 'Projekt / Baustelle');
                 doc.setFont('helvetica', 'bold');
-                doc.setFontSize(11);
+                doc.setFontSize(10.5);
                 doc.setTextColor(...PDF_INK);
-                doc.text(pTyp.titel, mx, y, { maxWidth: pw - mx * 2 });
+                const pz = doc.splitTextToSize(pTyp.titel, spalte);
+                doc.text(pz, rx, ry); ry += pz.length * 5;
                 if (project && project.siteAddress) {
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(9);
                     doc.setTextColor(...PDF_GRAY);
-                    doc.text(String(project.siteAddress), mx, y + 5.2, { maxWidth: pw - mx * 2 });
-                    y += 5.2;
+                    const az = doc.splitTextToSize(String(project.siteAddress), spalte);
+                    doc.text(az, rx, ry); ry += az.length * 4.4;
                 }
-                y += 12;
+                y = Math.max(ly, ry) + 10;
 
                 // PROJEKTÜBERSICHT & KOMPONENTEN
                 y = abschnitt(y, 'Projektübersicht & Komponenten');
@@ -346,6 +391,11 @@
                 }
 
                 const datei = `Angebot_${nummer}${kundeName ? '_' + kundeName.replace(/[^\wäöüÄÖÜß]+/g, '_') : ''}.pdf`;
+                return { doc, datei, nummer, total: R.total };
+            },
+
+            async exportOfferPDFneu(offerId, share = false, withCustomer = true) {
+                const { doc, datei, nummer } = await app.angebotPdfBauen(offerId, withCustomer);
                 if (share && navigator.share && navigator.canShare) {
                     try {
                         const blob = doc.output('blob');
@@ -354,5 +404,59 @@
                     } catch (e) { /* Fallback: normaler Download */ }
                 }
                 doc.save(datei);
+            },
+
+            // Vorschau vor dem Herunterladen. Zeigt dasselbe Dokument, das
+            // auch gespeichert wird - es wird nicht zweimal gebaut, sondern
+            // dieselbe Instanz weiterverwendet.
+            async vorschauAngebotPDF(offerId, withCustomer = true) {
+                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
+                let gebaut;
+                try {
+                    gebaut = await app.angebotPdfBauen(offerId, withCustomer);
+                } catch (e) {
+                    console.error('Vorschau fehlgeschlagen:', e);
+                    showToast('Vorschau konnte nicht erstellt werden.', 'error');
+                    return;
+                }
+                const blob = gebaut.doc.output('blob');
+                const url = URL.createObjectURL(blob);
+
+                const overlay = showModal('Angebot – Vorschau', `
+                    <div class="pdf-vorschau">
+                        <iframe id="pdfVorschauRahmen" src="${url}#toolbar=0&navpanes=0" title="Angebotsvorschau"></iframe>
+                        <div class="pdf-vorschau-fallback">
+                            Falls hier nichts angezeigt wird, kann dein Gerät PDFs nicht direkt einbetten.
+                            <button class="btn btn-sm btn-outline" id="pdfVorschauTab" style="margin-top:8px;">In neuem Tab öffnen</button>
+                        </div>
+                    </div>
+                    <div class="pdf-vorschau-leiste">
+                        <div><strong>${escapeHtml(gebaut.nummer)}</strong> · ${formatCurrency(gebaut.total)}</div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button class="btn btn-outline" id="pdfVorschauShare">📤 Teilen</button>
+                            <button class="btn btn-primary" id="pdfVorschauLaden">⬇ Herunterladen</button>
+                        </div>
+                    </div>
+                `, null, null, { wide: true, okText: null });
+
+                setTimeout(() => {
+                    document.querySelector('#pdfVorschauTab')?.addEventListener('click', () => window.open(url, '_blank'));
+                    document.querySelector('#pdfVorschauLaden')?.addEventListener('click', () => {
+                        gebaut.doc.save(gebaut.datei);
+                    });
+                    document.querySelector('#pdfVorschauShare')?.addEventListener('click', async () => {
+                        try {
+                            const file = new File([blob], gebaut.datei, { type: 'application/pdf' });
+                            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                                await navigator.share({ files: [file], title: `Angebot ${gebaut.nummer}` });
+                            } else { gebaut.doc.save(gebaut.datei); }
+                        } catch (e) { /* Teilen abgebrochen - nichts tun */ }
+                    });
+                    // Speicher wieder freigeben, sobald die Vorschau zugeht
+                    const beobachter = new MutationObserver(() => {
+                        if (overlay && !document.body.contains(overlay)) { URL.revokeObjectURL(url); beobachter.disconnect(); }
+                    });
+                    beobachter.observe(document.body, { childList: true, subtree: true });
+                }, 80);
             }
         });
