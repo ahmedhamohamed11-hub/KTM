@@ -1938,3 +1938,5 @@
 .iso-var { font-size: 10.5px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
 .iso-var.ok { background: rgba(40,160,90,0.16); color: var(--text-primary); }
 .iso-var.nein { background: rgba(220,60,60,0.13); color: var(--text-muted); text-decoration: line-through; }
+.schema-flaeche { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; }
+.schema-flaeche svg { min-width: 480px; display: block; }
