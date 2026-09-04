@@ -50,7 +50,7 @@
                                     <div class="ae-pos-zahlen">
                                         <label>Menge<input type="text" inputmode="decimal" class="ae-f" data-i="${i}" data-f="quantity" value="${p.quantity ?? ''}"></label>
                                         <label>Einheit<input type="text" class="ae-f" data-i="${i}" data-f="unit" value="${escapeHtml(p.unit || 'Stk')}"></label>
-                                        <label>Preis ${p.priceIncludesVat ? '(inkl.)' : '(netto)'}<input type="text" inputmode="decimal" class="ae-f" data-i="${i}" data-f="price" value="${p.price ?? ''}"></label>
+                                        <label>Preis ${entwurf.netMode ? '(netto)' : '(inkl. USt.)'}<input type="text" inputmode="decimal" class="ae-f" data-i="${i}" data-f="price" value="${p.price ?? ''}"></label>
                                         <label>Rabatt %<input type="text" inputmode="decimal" class="ae-f" data-i="${i}" data-f="discount" value="${p.discount ?? 0}"></label>
                                         <label>EK netto<input type="text" inputmode="decimal" class="ae-f" data-i="${i}" data-f="purchasePriceNet" value="${p.purchasePriceNet ?? ''}" placeholder="–"></label>
                                     </div>
@@ -63,14 +63,25 @@
                         </div>
 
                         <div class="form-card">
-                            <div class="form-card-title">Steuer und Rabatt</div>
-                            <label class="ae-check"><input type="checkbox" id="aeVat" ${entwurf.vatEnabled ? 'checked' : ''}> Umsatzsteuer berücksichtigen</label>
-                            <div class="form-group" style="max-width:200px;${entwurf.vatEnabled ? '' : 'display:none;'}" id="aeVatRateBox">
-                                <label>USt-Satz</label>
+                            <div class="form-card-title">Umsatzsteuer</div>
+                            <div class="ae-modus">
+                                <button type="button" class="ae-modus-btn ${!entwurf.netMode ? 'active' : ''}" onclick="app.aeSetzeModus(false)">
+                                    <strong>Preise inklusive USt.</strong><span>Der Kunde zahlt den angezeigten Betrag. Übliche Einstellung für Privatkunden.</span>
+                                </button>
+                                <button type="button" class="ae-modus-btn ${entwurf.netMode ? 'active' : ''}" onclick="app.aeSetzeModus(true)">
+                                    <strong>Angebot ohne USt.</strong><span>Alle Preise werden auf Nettobeträge umgerechnet, es wird keine Umsatzsteuer aufgeschlagen.</span>
+                                </button>
+                            </div>
+                            ${entwurf.netMode ? '<div class="kl-hinweis kl-warnung" style="margin-top:8px;">⚠ Dieses Angebot enthält keine Umsatzsteuer. Ob das zulässig ist (z. B. Reverse Charge, Kleinunternehmer, Auslandskunde), musst du selbst prüfen – das Programm entscheidet das nicht.</div>' : ''}
+                            <div class="form-group" style="max-width:200px;margin-top:10px;${entwurf.netMode ? 'display:none;' : ''}">
+                                <label>USt-Satz auf Arbeitsleistung</label>
                                 <select id="aeVatRate">
                                     ${[0.20, 0.13, 0.10, 0].map(r => `<option value="${r}" ${Math.abs((entwurf.vatRate ?? 0.20) - r) < 0.001 ? 'selected' : ''}>${(r * 100).toFixed(0)} %</option>`).join('')}
                                 </select>
                             </div>
+                        </div>
+                        <div class="form-card">
+                            <div class="form-card-title">Rabatt</div>
                             <label class="ae-check"><input type="checkbox" id="aeDisc" ${entwurf.discountEnabled ? 'checked' : ''}> Gesamtrabatt gewähren</label>
                             <div class="form-group" style="max-width:200px;${entwurf.discountEnabled ? '' : 'display:none;'}" id="aeDiscBox">
                                 <label>Rabatt in %</label>
@@ -83,7 +94,8 @@
                         <div class="ae-summe">
                             <div><span>Zwischensumme</span><strong>${formatCurrency(R.grossMaterial != null ? R.grossMaterial : R.net)}</strong></div>
                             ${R.globalDiscount > 0 ? `<div><span>Rabatt</span><strong>− ${formatCurrency(R.globalDiscount)}</strong></div>` : ''}
-                            <div class="ae-summe-total"><span>Gesamtbetrag</span><strong>${formatCurrency(R.total)}</strong></div>
+                            <div class="ae-summe-total"><span>Gesamtbetrag${entwurf.netMode ? ' (ohne USt.)' : ''}</span><strong>${formatCurrency(R.total)}</strong></div>
+                            ${!entwurf.netMode ? `<div style="font-size:11px;color:var(--text-muted);"><span>darin enthaltene USt.</span><span>${formatCurrency(R.vatAmount)}</span></div>` : ''}
                         </div>
                     `;
                     binden();
@@ -148,6 +160,37 @@
                     null, { wide: true }
                 );
                 setTimeout(zeichnen, 50);
+            },
+
+            // Schaltet das ganze Angebot zwischen "inklusive USt." und
+            // "ohne USt." um. Die Positionspreise werden dabei EINMALIG
+            // umgerechnet, damit die Summe tatsaechlich stimmt - genau das
+            // hat vorher gefehlt: der Schalter aenderte nur das Etikett.
+            aeSetzeModus(nettoModus) {
+                const e = app.__aeEntwurf;
+                if (!e || !!e.netMode === !!nettoModus) return;
+
+                e.positions.forEach(p => {
+                    const preis = Number(p.price) || 0;
+                    if (nettoModus) {
+                        // brutto -> netto. Mit dem Satz, der fuer DIESE Position
+                        // bisher galt (Geraete 20 %, Arbeitsleistung nach Schalter).
+                        if (p.priceIncludesVat) {
+                            const satz = posVatRate(p, { ...e, netMode: false });
+                            p.price = Math.round((preis / (1 + satz)) * 100) / 100;
+                        }
+                        p.priceIncludesVat = false;
+                    } else {
+                        // netto -> brutto zurueck
+                        const satz = posVatRate(p, { ...e, netMode: false });
+                        if (!p.priceIncludesVat) {
+                            p.price = Math.round((preis * (1 + satz)) * 100) / 100;
+                            p.priceIncludesVat = true;
+                        }
+                    }
+                });
+                e.netMode = !!nettoModus;
+                app.__aeZeichnen();
             },
 
             aeLoeschen(i) {
