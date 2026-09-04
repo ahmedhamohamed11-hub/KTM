@@ -84,9 +84,28 @@
                 for (const [re, label] of muster) {
                     if (re.test(text) && !gesehen.has(label)) {
                         gesehen.add(label);
-                        // Modell/Spezifikation: der Positionsname ohne die
-                        // Kategoriebezeichnung, sonst die Beschreibung.
-                        zeilen.push([label, (p.name || '').trim() || (p.description || '').trim()]);
+                        // Modell/Spezifikation: die aussagekraeftigere der
+                        // beiden Angaben. Steht im Namen nur die Bauteilart
+                        // ("Verflüssigungssatz"), ist die Beschreibung das
+                        // eigentliche Modell - und umgekehrt.
+                        const nm = (p.name || '').trim();
+                        const bs = (p.description || '').trim();
+                        const nurArt = t => {
+                            const rein = t.toLowerCase().replace(new RegExp(label.toLowerCase(), 'g'), '').replace(/[^a-zäöüß0-9]/g, '');
+                            return rein.length < 3;   // ausser der Bauteilart steht nichts drin
+                        };
+                        // Typenbezeichnungen enthalten fast immer Ziffern
+                        // (TES2, GCE314F8ED, ECP 300). Reine Bauteilworte nicht.
+                        const zifferN = /\d/.test(nm), zifferB = /\d/.test(bs);
+                        let modell;
+                        if (!nm) modell = bs;
+                        else if (!bs) modell = nm;
+                        else if (nurArt(nm) && !nurArt(bs)) modell = bs;
+                        else if (!nurArt(nm) && nurArt(bs)) modell = nm;
+                        else if (zifferN && !zifferB) modell = nm;
+                        else if (zifferB && !zifferN) modell = bs;
+                        else modell = nm.length >= bs.length ? nm : bs;
+                        zeilen.push([label, modell]);
                         break;
                     }
                 }
@@ -372,6 +391,18 @@
                 doc.setFontSize(18);
                 doc.setTextColor(255, 255, 255);
                 doc.text(formatCurrency(R.total), bx + bw - 6, sy + 19, { align: 'right' });
+
+                // Nettoangebot: der Kunde muss erkennen koennen, dass auf
+                // diesen Betrag noch Umsatzsteuer kommt. Der Hinweis erscheint
+                // AUSSCHLIESSLICH, wenn der Nettomodus ausdruecklich gewaehlt
+                // wurde - im Normalfall bleibt das PDF wie bisher ohne
+                // Steuerangaben.
+                if (offer.netMode === true) {
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(...PDF_GRAY);
+                    doc.text('Alle Preise verstehen sich zuzüglich Umsatzsteuer.', bx + bw - 6, sy + 30, { align: 'right' });
+                }
 
                 // Fusszeile auf allen Seiten, jetzt mit bekannter Gesamtzahl
                 const seiten = doc.internal.getNumberOfPages();
