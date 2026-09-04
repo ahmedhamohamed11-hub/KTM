@@ -155,6 +155,9 @@
         function renderKaelteDetail(projectId) {
             (async () => {
                 const project = await db.get('projects', projectId);
+                // Gepflegte Preise einmal laden, damit die Katalogvorschlaege
+                // den aktuellen Stand zeigen statt des Auslieferungspreises.
+                try { window.__kaeltePreise = await getSetting('kaeltePreise', {}) || {}; } catch (e) { window.__kaeltePreise = {}; }
                 if (!project || !project.kaelte) {
                     showToast('Kälteprojekt nicht gefunden.', 'error');
                     app.navigate('kaelte');
@@ -1280,6 +1283,7 @@
         function renderKaelteTabKomponenten(project) {
             const bedarf = kaelteKomponentenBedarf(project);
             const dEinheitK = (project.kaelte.auslegung || {}).druckEinheit || 'bar';
+            const preise = window.__kaeltePreise || {};
             const liste = project.kaelte.komponenten || [];
 
             if (!bedarf.moeglich) {
@@ -1335,7 +1339,19 @@
                                         <div>
                                             <strong>${escapeHtml(t.artikel.name || '')}</strong>
                                             ${t.geeignet === true ? '<span class="komp-urteil komp-gut">✓ passt</span>' : '<span class="komp-urteil komp-warn">? Leistung prüfen</span>'}
-                                            <div class="kat-detail">${escapeHtml([t.artikel.hersteller, t.artikel.artikelnummer].filter(Boolean).join(' · '))}${t.artikel.ekNetto ? ' · EK ' + formatCurrency(t.artikel.ekNetto) : ''}${t.artikel.datenstand ? ' · Stand ' + escapeHtml(t.artikel.datenstand) : ''}</div>
+                                            ${(() => {
+                                                const st = kaeltePreisStand(t.artikel, preise);
+                                                const lk = kaeltePreisLink(t.artikel);
+                                                return `<div class="kat-detail">${escapeHtml([t.artikel.hersteller, t.artikel.artikelnummer].filter(Boolean).join(' · '))}
+                                                    ${st.ekNetto != null ? ' · EK ' + formatCurrency(st.ekNetto) : ' · <strong>kein Preis</strong>'}
+                                                    ${st.tage != null ? ` · <span class="${st.veraltet ? 'preis-alt' : ''}">Stand ${escapeHtml(st.datum)}${st.veraltet ? ` (${Math.floor(st.tage / 30)} Monate alt)` : ''}</span>` : ''}
+                                                    ${st.herkunft === 'selbst gepflegt' ? ' · selbst gepflegt' : ''}
+                                                    </div>
+                                                    <div class="kat-detail">
+                                                        ${lk ? `<a href="${escapeHtml(lk.url)}" target="_blank" rel="noopener">${escapeHtml(lk.text)} ↗</a> · ` : ''}
+                                                        <a href="#" onclick="event.preventDefault();app.openPreisModal(${idJS(project.id)}, ${idJS(t.artikel.id)})">Preis eintragen</a>
+                                                    </div>`;
+                                            })()}
                                             <div class="kat-detail">${escapeHtml(t.gruende.join(' · '))}</div>
                                         </div>
                                         <button class="btn btn-sm btn-outline" onclick="app.katalogUebernehmen(${idJS(project.id)}, ${idJS(t.artikel.id)}, ${idJS(sl.typ)})">Übernehmen</button>
@@ -1541,6 +1557,26 @@
                         <div class="kl-hinweis ${r.pflichtig ? 'kl-warnung' : 'kl-info'}">${r.pflichtig ? '⚠' : 'ℹ'} ${escapeHtml(r.hinweis)}</div>
                         ${r.pflichten.length ? `<ul style="font-size:12px;line-height:1.6;margin:8px 0 0;padding-left:18px;">${r.pflichten.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : ''}
                         <div class="kl-hinweis kl-pruefen">🔴 Maßgebend für den GWP-Wert ist Anhang I der Verordnung. Die hier hinterlegten Werte dienen der Vorabschätzung und sind vor einer verbindlichen Aussage dagegen zu prüfen.</div>
+                    </div>`;
+                })()}
+                ${(() => {
+                    if (typeof kaeltePreisPruefliste !== 'function') return '';
+                    const liste = kaeltePreisPruefliste(window.__kaeltePreise || {});
+                    if (!liste.length) return '';
+                    return `<div class="form-card">
+                        <div class="form-card-title">Preise prüfen (${liste.length})</div>
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">Diese Katalogartikel haben keinen Preis oder einer, der älter als ein halbes Jahr ist. Preise werden bewusst nicht automatisch abgerufen – ein Klick führt zur Artikelseite, den Preis trägst du selbst ein.</div>
+                        ${liste.slice(0, 8).map(x => {
+                            const lk = kaeltePreisLink(x.artikel);
+                            return `<div class="kat-zeile">
+                                <div><strong>${escapeHtml(String(x.artikel.name || '').slice(0, 60))}</strong>
+                                <div class="kat-detail">${x.stand.ekNetto == null ? 'kein Preis hinterlegt' : `${formatCurrency(x.stand.ekNetto)} · <span class="preis-alt">${Math.floor(x.stand.tage / 30)} Monate alt</span>`}</div></div>
+                                <div style="white-space:nowrap;">
+                                    ${lk ? `<a class="btn btn-sm btn-outline" href="${escapeHtml(lk.url)}" target="_blank" rel="noopener">↗</a>` : ''}
+                                    <button class="btn btn-sm btn-primary" onclick="app.openPreisModal(${idJS(project.id)}, ${idJS(x.artikel.id)})">Preis</button>
+                                </div></div>`;
+                        }).join('')}
+                        ${liste.length > 8 ? `<div style="font-size:11px;color:var(--text-muted);padding-top:8px;">+ ${liste.length - 8} weitere</div>` : ''}
                     </div>`;
                 })()}
                 ${renderKaelteNormen(project)}
@@ -2390,6 +2426,45 @@
             // Katalogartikel als Komponente uebernehmen. Es werden nur Werte
             // uebernommen, die im Katalog wirklich stehen - fehlende Felder
             // bleiben leer statt mit Annahmen gefuellt zu werden.
+            async openPreisModal(projectId, artikelId) {
+                const a = KAELTE_KATALOG.find(x => x.id === artikelId);
+                if (!a) return;
+                const preise = await getSetting('kaeltePreise', {});
+                const alt = (preise && preise[artikelId]) || {};
+                const st = kaeltePreisStand(a, preise);
+                const lk = kaeltePreisLink(a);
+                const heute = new Date().toISOString().slice(0, 10);
+                showModal(`Preis pflegen – ${escapeHtml(a.name || '')}`, `
+                    <div class="kl-hinweis kl-info">Preise werden nicht automatisch abgerufen. Öffne die Artikelseite, lies den aktuellen Preis ab und trag ihn hier ein – so steht immer ein belegter Preis in der App, nie ein geschätzter.</div>
+                    ${lk ? `<p style="margin:10px 0;"><a class="btn btn-outline" href="${escapeHtml(lk.url)}" target="_blank" rel="noopener">${escapeHtml(lk.text)} ↗</a></p>` : ''}
+                    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+                        Bisher: ${st.ekNetto != null ? formatCurrency(st.ekNetto) + ' netto' : 'kein Preis'}${st.datum ? ` · Stand ${escapeHtml(st.datum)}` : ''} · Quelle: ${escapeHtml(st.herkunft)}
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Einkaufspreis netto (€) *</label><input type="text" inputmode="decimal" id="prEk" value="${alt.ekNetto ?? st.ekNetto ?? ''}"></div>
+                        <div class="form-group"><label>Verkaufspreis netto (€)</label><input type="text" inputmode="decimal" id="prVk" value="${alt.vkNetto ?? a.vkNetto ?? ''}"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Preis vom</label><input type="date" id="prDatum" value="${escapeHtml(alt.datum || heute)}"></div>
+                        <div class="form-group"><label>Quelle</label><input type="text" id="prQuelle" value="${escapeHtml(alt.quelle || '')}" placeholder="Shop, Angebot, Preisliste"></div>
+                    </div>
+                `, async (overlay) => {
+                    const zahl = id => { const v = overlay.querySelector(id).value.trim(); if (v === '') return null; const n = parseFloat(v.replace(',', '.')); return Number.isFinite(n) ? n : null; };
+                    const ek = zahl('#prEk');
+                    if (ek == null || ek <= 0) { showToast('Bitte einen gültigen Einkaufspreis eintragen.', 'error'); return; }
+                    const gespeichert = await getSetting('kaeltePreise', {});
+                    const neu = (gespeichert && typeof gespeichert === 'object') ? gespeichert : {};
+                    neu[artikelId] = { ekNetto: ek, vkNetto: zahl('#prVk'),
+                        datum: overlay.querySelector('#prDatum').value || heute,
+                        quelle: overlay.querySelector('#prQuelle').value.trim() };
+                    await setSetting('kaeltePreise', neu);
+                    window.__kaeltePreise = neu;
+                    overlay.remove();
+                    showToast('Preis gespeichert.', 'success');
+                    renderKaelteDetail(projectId);
+                });
+            },
+
             async katalogUebernehmen(projectId, artikelId, typ) {
                 const project = await db.get('projects', projectId);
                 if (!project || !project.kaelte) return;
@@ -2404,7 +2479,8 @@
                     leistungKW: a.leistungKW != null ? a.leistungKW : null,
                     anschluss: a.anschluss || '',
                     menge: 1, einheit: 'Stk',
-                    ekPreis: a.ekNetto != null ? a.ekNetto : null,
+                    // Gepflegter Preis hat Vorrang vor dem Katalogpreis
+                    ekPreis: (() => { const st = kaeltePreisStand(a, window.__kaeltePreise || {}); return st.ekNetto != null ? st.ekNetto : null; })(),
                     // Verkaufspreis nur uebernehmen, wenn er im Katalog steht
                     // (eigene Preisliste). Bei Haendlerartikeln bleibt er leer -
                     // dort ist nur der Einkauf bekannt.
