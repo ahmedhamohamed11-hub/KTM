@@ -596,6 +596,7 @@
 
         function renderKaelteTabAnlage(project) {
             const A = kaelteAuslegungsdaten(project);
+            const dEinheit = (project.kaelte.auslegung || {}).druckEinheit || 'bar';
             const a = kaelteAuslegung(project);
             const km = kmListe();
 
@@ -611,6 +612,11 @@
                         <div class="form-group"><label>${A.kaeltemittel === 'R744' ? 'Gaskühleraustritt' : 'Verflüssigungstemperatur'} <small>(°C)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="tVerfluessigung" value="${A.tVerfluessigung}"></div>
                         <div class="form-group"><label>Sauggasüberhitzung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="ueberhitzung" value="${A.ueberhitzung}"></div>
                         <div class="form-group"><label>Unterkühlung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="unterkuehlung" value="${A.unterkuehlung}"></div>
+                        <div class="form-group"><label>Druckeinheit <small>– nur die Anzeige, gerechnet wird immer in bar</small></label>
+                            <select class="ka-in" data-feld="druckEinheit">
+                                ${Object.keys(DRUCK_EINHEITEN).map(e => `<option value="${e}" ${dEinheit === e ? 'selected' : ''}>${e}</option>`).join('')}
+                            </select>
+                        </div>
                     </div>
                     ${km.find(k => k.key === A.kaeltemittel && k.blend) ? '<div class="kl-hinweis kl-pruefen">🔴 Gemisch (Blend): Stoffdaten aus einem Gemischmodell, Temperaturgleit nicht berücksichtigt. Für die endgültige Auslegung das Herstellerdatenblatt verwenden.</div>' : ''}
                 </div>`;
@@ -659,8 +665,8 @@
                             <table class="kl-ergebnis"><tbody>
                                 <tr><td>Kälteleistung</td><td class="kl-w">${(ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
                                 <tr><td>Verdampfungstemperatur</td><td class="kl-w">${tVerd} °C</td></tr>
-                                <tr><td>Verdampfungsdruck</td><td class="kl-w">${co2.pVerdampfung.toFixed(2).replace('.', ',')} bar</td></tr>
-                                <tr class="kl-sum"><td>Optimaler Hochdruck</td><td class="kl-w">${co2.hochdruckBar.toFixed(1).replace('.', ',')} bar</td></tr>
+                                <tr><td>Verdampfungsdruck</td><td class="kl-w">${fmtDruck(co2.pVerdampfung, dEinheit)}</td></tr>
+                                <tr class="kl-sum"><td>Optimaler Hochdruck</td><td class="kl-w">${fmtDruck(co2.hochdruckBar, dEinheit)}</td></tr>
                                 <tr class="kl-formel"><td colspan="2">Hochdruck ist bei CO₂ Regelgröße – dieser Wert ergibt die beste Leistungszahl, vorgerechnet über den gesamten Druckbereich</td></tr>
                                 <tr><td>Druckverhältnis</td><td class="kl-w">${co2.druckverhaeltnis.toFixed(2).replace('.', ',')}</td></tr>
                                 <tr><td>spez. Kälteleistung q₀</td><td class="kl-w">${co2.q0.toFixed(1).replace('.', ',')} kJ/kg</td></tr>
@@ -682,8 +688,8 @@
                         <table class="kl-ergebnis"><tbody>
                             <tr><td>Kälteleistung (aus Kältelast)</td><td class="kl-w">${(ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
                             <tr><td>Verdampfungstemperatur</td><td class="kl-w">${tVerd} °C</td></tr>
-                            <tr><td>Verdampfungsdruck</td><td class="kl-w">${kp.pVerdampfung.toFixed(2).replace('.', ',')} bar</td></tr>
-                            <tr><td>Verflüssigungsdruck</td><td class="kl-w">${kp.pVerfluessigung.toFixed(2).replace('.', ',')} bar</td></tr>
+                            <tr><td>Verdampfungsdruck</td><td class="kl-w">${fmtDruck(kp.pVerdampfung, dEinheit)}</td></tr>
+                            <tr><td>Verflüssigungsdruck</td><td class="kl-w">${fmtDruck(kp.pVerfluessigung, dEinheit)}</td></tr>
                             <tr><td>Druckverhältnis</td><td class="kl-w">${kp.druckverhaeltnis.toFixed(2).replace('.', ',')}</td></tr>
                             <tr><td>spez. Kälteleistung q₀</td><td class="kl-w">${kp.q0.toFixed(1).replace('.', ',')} kJ/kg</td></tr>
                             <tr class="kl-sum"><td>Massenstrom</td><td class="kl-w">${kp.mDotKgH.toFixed(1).replace('.', ',')} kg/h</td></tr>
@@ -791,6 +797,50 @@
             return { hinweise, fortschritt: Math.round(schritteFertig / 5 * 100) };
         }
 
+
+
+        // ---- Normen und technische Regeln.
+        // BEWUSST als reine Verwaltung gebaut: das Programm hinterlegt KEINE
+        // Norminhalte und prueft nicht gegen sie. Es kann und darf nicht
+        // behaupten, eine Anlage sei normgerecht. Was es kann: festhalten,
+        // welche Regelwerke in welcher Fassung herangezogen wurden, wer das
+        // geprueft hat und wann - und daran erinnern, wenn eine Fassung alt
+        // ist. Die inhaltliche Prüfung bleibt beim Techniker.
+        function renderKaelteNormen(project) {
+            const normen = project.kaelte.normen || [];
+            const heute = new Date();
+            const zeilen = normen.map((n, i) => {
+                let stand = '';
+                if (n.geprueftAm) {
+                    const tage = Math.floor((heute - new Date(n.geprueftAm)) / 86400000);
+                    stand = tage > 365
+                        ? `<span style="color:#c98a12;font-weight:600;">vor ${Math.floor(tage / 365)} Jahr(en) geprüft – Fassung nachsehen</span>`
+                        : `vor ${tage} Tag(en) geprüft`;
+                } else stand = '<span style="color:#d24545;font-weight:600;">noch nicht geprüft</span>';
+                return `<tr>
+                    <td><strong>${escapeHtml(n.bezeichnung)}</strong>${n.fassung ? `<br><span style="font-size:11px;color:var(--text-muted);">Fassung ${escapeHtml(n.fassung)}</span>` : ''}</td>
+                    <td style="font-size:11.5px;">${escapeHtml(n.betrifft || '–')}</td>
+                    <td style="font-size:11.5px;">${escapeHtml(n.quelle || '–')}</td>
+                    <td style="font-size:11.5px;">${stand}</td>
+                    <td style="text-align:right;white-space:nowrap;">
+                        <button class="btn btn-sm btn-outline" onclick="app.openNormModal(${idJS(project.id)}, ${i})">${icon('edit')}</button>
+                        <button class="btn btn-sm btn-danger" onclick="app.deleteNorm(${idJS(project.id)}, ${i})">${icon('trash')}</button>
+                    </td></tr>`;
+            }).join('');
+
+            return `
+                <div class="form-card">
+                    <div class="detail-section-head" style="margin-top:0;">
+                        <h4>Herangezogene Normen und Regelwerke (${normen.length})</h4>
+                        <button class="btn btn-sm btn-outline" onclick="app.openNormModal(${idJS(project.id)})">${icon('plus')} Regelwerk</button>
+                    </div>
+                    ${normen.length ? `<div class="table-container"><table>
+                        <thead><tr><th>Regelwerk</th><th>Betrifft</th><th>Quelle</th><th>Stand</th><th></th></tr></thead>
+                        <tbody>${zeilen}</tbody></table></div>`
+                        : '<div class="empty-note" style="padding:12px;">Noch kein Regelwerk hinterlegt.</div>'}
+                    <div class="kl-hinweis kl-pruefen" style="margin-top:10px;">🔴 Das Programm hinterlegt keine Norminhalte und prüft nicht gegen sie. Diese Liste hält nur fest, was du herangezogen hast, in welcher Fassung und wann du es zuletzt geprüft hast. Ob die Anlage den geltenden Vorschriften entspricht, kann nur die fachliche Prüfung feststellen.</div>
+                </div>`;
+        }
 
         // ---- Varianten und Was-wäre-wenn.
         // Eine Variante ist ein vollstaendiger Schnappschuss der Kaelteplanung.
@@ -1330,6 +1380,7 @@
                     <div class="form-card-title">Verwendete Richtwert-Schätzungen (${schaetzungen.length})</div>
                     ${schaetzungen.length ? `<ul style="font-size:12px;line-height:1.6;margin:0;padding-left:18px;">${schaetzungen.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div class="empty-note" style="padding:10px;">Keine – alle Werte sind eingegeben oder berechnet.</div>'}
                 </div>
+                ${renderKaelteNormen(project)}
                 ${renderKaelteVarianten(project)}
                 <div class="form-card">
                     <div class="form-card-title">Technischer Auslegungsbogen</div>
@@ -1975,6 +2026,53 @@
 
             // Fenster synchron im Klick oeffnen, sonst blockiert der Browser es
             // nach dem await beim PDF-Bauen.
+            async openNormModal(projectId, index = null) {
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                const liste = project.kaelte.normen || (project.kaelte.normen = []);
+                const n = (index != null && liste[index]) ? liste[index] : {};
+                // Vorschlagsliste: nur Bezeichnungen, KEINE Inhalte und keine
+                // Fassungen - die traegt der Techniker aus der Quelle ein.
+                const gaengig = ['EN 378', 'EN 14276', 'Druckgeräterichtlinie 2014/68/EU', 'F-Gase-Verordnung (EU) 517/2014',
+                    'ÖNORM', 'VDMA 24243', 'Herstellerdokumentation', 'Betriebsanleitung Verdichter'];
+                showModal(index != null ? 'Regelwerk bearbeiten' : 'Regelwerk hinzufügen', `
+                    <div class="form-group"><label>Bezeichnung *</label>
+                        <input list="normListe" id="noBez" value="${escapeHtml(n.bezeichnung || '')}" placeholder="z. B. EN 378">
+                        <datalist id="normListe">${gaengig.map(x => `<option value="${escapeHtml(x)}">`).join('')}</datalist>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Fassung / Ausgabe</label><input type="text" id="noFassung" value="${escapeHtml(n.fassung || '')}" placeholder="z. B. 2016+A1:2020"></div>
+                        <div class="form-group"><label>Zuletzt geprüft am</label><input type="date" id="noDatum" value="${escapeHtml(n.geprueftAm || '')}"></div>
+                    </div>
+                    <div class="form-group"><label>Betrifft</label><input type="text" id="noBetrifft" value="${escapeHtml(n.betrifft || '')}" placeholder="z. B. Aufstellung, Füllmengengrenze, Sicherheitseinrichtungen"></div>
+                    <div class="form-group"><label>Quelle</label><input type="text" id="noQuelle" value="${escapeHtml(n.quelle || '')}" placeholder="Bezugsstelle oder Link"></div>
+                    <div class="form-group"><label>Notiz</label><textarea id="noNotiz" rows="2">${escapeHtml(n.notiz || '')}</textarea></div>
+                `, async (overlay) => {
+                    const bez = overlay.querySelector('#noBez').value.trim();
+                    if (!bez) { showToast('Bezeichnung ist erforderlich.', 'error'); return; }
+                    const eintrag = { bezeichnung: bez,
+                        fassung: overlay.querySelector('#noFassung').value.trim(),
+                        geprueftAm: overlay.querySelector('#noDatum').value,
+                        betrifft: overlay.querySelector('#noBetrifft').value.trim(),
+                        quelle: overlay.querySelector('#noQuelle').value.trim(),
+                        notiz: overlay.querySelector('#noNotiz').value.trim() };
+                    if (index != null) liste[index] = eintrag; else liste.push(eintrag);
+                    await db.put('projects', project);
+                    overlay.remove();
+                    showToast('Regelwerk gespeichert.', 'success');
+                    renderKaelteDetail(projectId);
+                });
+            },
+
+            async deleteNorm(projectId, index) {
+                if (!await showConfirm('Diesen Eintrag wirklich löschen?')) return;
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                (project.kaelte.normen || []).splice(index, 1);
+                await db.put('projects', project);
+                renderKaelteDetail(projectId);
+            },
+
             async kaelteVarianteSpeichern(projectId) {
                 const project = await db.get('projects', projectId);
                 if (!project || !project.kaelte) return;
