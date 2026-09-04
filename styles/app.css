@@ -1966,3 +1966,4 @@
 .vz-knopf { flex: 0 0 auto; width: 34px; border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); color: var(--text-primary); font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer; padding: 0; }
 .vz-knopf:hover { border-color: var(--accent); color: var(--accent); }
 .vz-knopf:active { background: var(--accent); color: #fff; }
+.preis-alt { color: #c98a12; font-weight: 600; }
