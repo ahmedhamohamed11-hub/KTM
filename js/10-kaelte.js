@@ -1057,6 +1057,11 @@
                     <div class="form-card-title">Verwendete Richtwert-Schätzungen (${schaetzungen.length})</div>
                     ${schaetzungen.length ? `<ul style="font-size:12px;line-height:1.6;margin:0;padding-left:18px;">${schaetzungen.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div class="empty-note" style="padding:10px;">Keine – alle Werte sind eingegeben oder berechnet.</div>'}
                 </div>
+                <div class="form-card">
+                    <div class="form-card-title">Technischer Auslegungsbogen</div>
+                    <div style="font-size:12.5px;line-height:1.5;margin-bottom:10px;">Enthält alle Berechnungen mit Rechenweg, die verwendeten Richtwert-Schätzungen, Warnungen, Komponenten mit Quelle, Rohrleitungen mit Strömung und Druckverlust, Füllmenge und die Datenquellen.</div>
+                    <button class="btn btn-primary" onclick="app.oeffneAuslegungsbogen(${idJS(project.id)})">📄 Auslegungsbogen ansehen</button>
+                </div>
                 <div class="kl-hinweis kl-pruefen">🔴 Diese Auslegung ist eine Vorauslegung. Das Programm kann und darf nicht bestätigen, dass die Anlage normgerecht ist. Vor Bestellung und Ausführung ist eine fachliche Prüfung anhand der gültigen Vorschriften und der Herstellerdatenblätter erforderlich.</div>`;
         }
 
@@ -1692,6 +1697,20 @@
                         setz('#koLieferant', g.lieferant); setz('#koQuelle', g.quelle); setz('#koNotiz', g.notiz);
                     });
                 }, 60);
+            },
+
+            // Fenster synchron im Klick oeffnen, sonst blockiert der Browser es
+            // nach dem await beim PDF-Bauen.
+            oeffneAuslegungsbogen(projectId) {
+                app.__bogenFenster = window.open('', '_blank');
+                if (app.__bogenFenster) {
+                    try { app.__bogenFenster.document.write('<title>Auslegungsbogen…</title><p style="font-family:sans-serif;padding:24px;color:#555;">Auslegungsbogen wird erstellt…</p>'); } catch (e) { /* egal */ }
+                }
+                app.exportAuslegungsbogen(projectId).catch(e => {
+                    console.error('Auslegungsbogen fehlgeschlagen:', e);
+                    if (app.__bogenFenster) { app.__bogenFenster.close(); app.__bogenFenster = null; }
+                    showToast('Auslegungsbogen konnte nicht erstellt werden.', 'error');
+                });
             },
 
             async openMaterialZusatz(projectId) {
