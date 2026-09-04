@@ -669,3 +669,95 @@
                 ] : []
             };
         }
+
+        // ---------- Expansionsventil: Auslegung nach Ventilkapazität ----------
+        // Ein Expansionsventil wird NICHT nach der kW-Zahl der Anlage gewaehlt.
+        // Massgebend ist die Kapazitaet der Duese bei den TATSAECHLICHEN
+        // Betriebsbedingungen. Hersteller geben die Nennkapazitaet bei
+        // Referenzbedingungen an (typisch t0 -10 °C, tc +32 °C, 4 K
+        // Unterkuehlung, keine Flashgasbildung).
+        //
+        // Umrechnung Nenn -> Betrieb ueber die Physik der Drossel:
+        //   Der Massenstrom durch eine Blende folgt   m ∝ A · √(2·ρ·Δp)
+        //   Die Kaelteleistung ist                     Q = m · q0
+        //   Damit gilt fuer dieselbe Duese:
+        //     Q_betrieb = Q_nenn · (q0_betrieb / q0_nenn) · √( (Δp·ρ)_betrieb / (Δp·ρ)_nenn )
+        //
+        // Das ist die uebliche physikalische Naeherung. Sie ersetzt KEINE
+        // Korrekturtabelle des Herstellers - liegt eine vor, hat sie Vorrang.
+        // Fluessigkeitsleitungs- und Verteilerdruckverlust muessen vom
+        // verfuegbaren Δp abgezogen werden, sonst wird das Ventil zu klein.
+        const EXV_REFERENZ = { tVerdampfung: -10, tVerfluessigung: 32, unterkuehlung: 4 };
+
+        function kaelteExpansionsventil(p) {
+            const {
+                kaeltemittel, tVerdampfung, tVerfluessigung,
+                ueberhitzung = 8, unterkuehlung = 4, kaelteleistungW,
+                dpLeitungBar = 0,      // Druckverlust Flüssigkeitsleitung
+                dpVerteilerBar = 0,    // Druckverlust Verteiler/Düsenstock
+                nennkapazitaetKW = null,
+                nennBedingungen = null // {tVerdampfung, tVerfluessigung, unterkuehlung}
+            } = p;
+
+            const v = kmStoff(kaeltemittel, tVerdampfung);
+            const c = kmStoff(kaeltemittel, tVerfluessigung);
+            if (!v || !c) return { moeglich: false, hinweis: `Für ${kaeltemittel} fehlen bei diesen Temperaturen die Stoffdaten.` };
+
+            // Verfügbare Druckdifferenz am Ventil
+            const dpGesamt = c.p - v.p;
+            const dpVentil = dpGesamt - dpLeitungBar - dpVerteilerBar;
+            const cSub = kmStoff(kaeltemittel, tVerfluessigung - unterkuehlung) || c;
+            const rhoFl = cSub.rhoFl;
+
+            // spezifische Kälteleistung im Betriebspunkt
+            const h1 = v.hDa + v.cpDa * ueberhitzung;
+            const h3 = c.hFl - c.cpFl * unterkuehlung;
+            const q0 = h1 - h3;
+            const mDotKgH = q0 > 0 ? (kaelteleistungW / 1000) / q0 * 3600 : null;
+
+            const hinweise = [];
+            if (dpVentil <= 0) {
+                return { moeglich: false, dpGesamt, dpVentil,
+                    hinweis: `Am Ventil bleibt keine Druckdifferenz übrig: ${dpGesamt.toFixed(2).replace('.', ',')} bar gesamt, davon ${(dpLeitungBar + dpVerteilerBar).toFixed(2).replace('.', ',')} bar Leitungs- und Verteilerverlust.` };
+            }
+
+            // Referenzzustand für die Umrechnung
+            const ref = nennBedingungen || EXV_REFERENZ;
+            const rv = kmStoff(kaeltemittel, ref.tVerdampfung);
+            const rc = kmStoff(kaeltemittel, ref.tVerfluessigung);
+            let faktor = null, kapazitaetBetriebKW = null;
+            if (rv && rc) {
+                const rSub = kmStoff(kaeltemittel, ref.tVerfluessigung - (ref.unterkuehlung ?? 4)) || rc;
+                const q0Ref = (rv.hDa + rv.cpDa * ueberhitzung) - (rc.hFl - rc.cpFl * (ref.unterkuehlung ?? 4));
+                const dpRef = rc.p - rv.p;
+                if (q0Ref > 0 && dpRef > 0) {
+                    faktor = (q0 / q0Ref) * Math.sqrt((dpVentil * rhoFl) / (dpRef * rSub.rhoFl));
+                    if (nennkapazitaetKW) kapazitaetBetriebKW = nennkapazitaetKW * faktor;
+                }
+            }
+
+            const bedarfKW = kaelteleistungW / 1000;
+            let bewertung = null;
+            if (kapazitaetBetriebKW != null) {
+                const v2 = kapazitaetBetriebKW / bedarfKW;
+                // Uebliche Auslegung: Ventil zwischen 100 und 130 % des Bedarfs.
+                // Deutlich groesser bedeutet Pendeln und schlechte Regelung.
+                if (v2 < 1.0) { bewertung = { art: 'fehler', text: `Das Ventil leistet bei diesen Bedingungen nur ${kapazitaetBetriebKW.toFixed(2).replace('.', ',')} kW – der Bedarf beträgt ${bedarfKW.toFixed(2).replace('.', ',')} kW. Größere Düse wählen.` }; }
+                else if (v2 > 1.5) { bewertung = { art: 'warnung', text: `Das Ventil leistet ${kapazitaetBetriebKW.toFixed(2).replace('.', ',')} kW, also ${((v2 - 1) * 100).toFixed(0)} % über dem Bedarf. Zu große Düsen regeln unruhig und lassen die Überhitzung pendeln.` }; }
+                else { bewertung = { art: 'ok', text: `Das Ventil leistet ${kapazitaetBetriebKW.toFixed(2).replace('.', ',')} kW bei ${bedarfKW.toFixed(2).replace('.', ',')} kW Bedarf – ${((v2 - 1) * 100).toFixed(0)} % Reserve.` }; }
+            }
+
+            if (dpLeitungBar === 0 && dpVerteilerBar === 0) {
+                hinweise.push({ art: 'warnung', text: 'Druckverlust von Flüssigkeitsleitung und Verteiler ist mit 0 angesetzt. Beides verringert die Druckdifferenz am Ventil und damit dessen Kapazität – Werte eintragen.' });
+            }
+            hinweise.push({ art: 'pruefen', text: 'Umgerechnet mit der Drosselgleichung. Liegt eine Korrekturtabelle des Herstellers vor, hat diese Vorrang.' });
+            if (v.p < 1.013) hinweise.push({ art: 'warnung', text: `Verdampfungsdruck ${v.p.toFixed(2).replace('.', ',')} bar liegt unter Atmosphäre – MOP-Ausführung und Fühlerfüllung prüfen.` });
+
+            return {
+                moeglich: true, dpGesamt, dpVentil, rhoFl, q0, mDotKgH,
+                bedarfKW, faktor, kapazitaetBetriebKW, bewertung, hinweise,
+                referenz: ref,
+                // Was der Techniker im Datenblatt suchen muss
+                gesuchteNennkapazitaetKW: faktor ? bedarfKW / faktor : null
+            };
+        }
