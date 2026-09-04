@@ -132,6 +132,19 @@ const kpc = c2.KP({ tVerdampfung: -30, tGaskuehler: 36, kaelteleistungW: 20000 }
 pruefe('CO₂ 20 kW bei -30/36: Massenstrom [kg/h]', kpc.mDotKgH, 493, 3);
 pruefe('CO₂ 20 kW bei -30/36: Verdichterleistung [kW]', kpc.verdichterleistungKW, 19.9, 0.3);
 
+// Rohrauslegung muss auch transkritisch funktionieren (eigene Dichten)
+const rc = c2.KP({ tVerdampfung: -30, tGaskuehler: 36, kaelteleistungW: 20000 });
+pruefe('CO₂ Dichte nach Gaskühler [kg/m³]', rc.rhoFluessig, 683, 3);
+pruefe('CO₂ Verdichtungsendtemperatur [°C]', rc.tVerdichtungsende, 161, 3);
+gesamt++;
+const rHG = ctx.RA('heissgas', rc, { laenge: 15, hoehenunterschied: 0, formstuecke: { bogen90: 6 } });
+if (!rHG.empfehlung) { console.log('  ✕   Keine Heißgasdimension für CO₂ gefunden'); fehler++; }
+else {
+  const anteil = rHG.empfehlung.dpGesamtBar / rc.hochdruckBar * 100;
+  if (anteil > 2.0) { console.log(`  ✕   CO₂ Heißgas: ${anteil.toFixed(2)} % Druckverlust über der Grenze`); fehler++; }
+  else console.log(`  OK  CO₂ Heißgas ${rHG.empfehlung.rohr.bez}: ${anteil.toFixed(2)} % des Hochdrucks (Grenze 2 %)`);
+}
+
 console.log('\n— Fehlende Daten dürfen nicht erfunden werden —');
 gesamt++;
 const kpCO2 = ctx.KP({kaeltemittel:'R744',tVerdampfung:-30,tVerfluessigung:40,kaelteleistungW:10000});
