@@ -754,7 +754,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v177</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v178</span></div>
                         </div>
                     </div>`;
             })().catch(e => {
@@ -2058,8 +2058,8 @@
                                     const profitCell = p.hasData
                                         ? `<td><div class="mg-badge ${p.complete ? marginColor(p.margin) : 'mg-yellow'}" onclick="event.stopPropagation(); app.showOfferDiagnosis(${idJS(o.id)})" title="Klick für Details">${p.profit >= 0 ? '+' : ''}${formatCurrency(p.profit)}<span class="mg-pct">${p.margin.toFixed(1)}%</span></div>${!p.complete ? `<div class="mg-note mg-note--click" onclick="event.stopPropagation(); app.showMissingEkQuick(${idJS(o.id)})" title="Klick: fehlende Einkaufspreise direkt eintragen">⚠️ ${p.missingCount} × EK fehlt ›</div>` : ''}</td>`
                                         : `<td><span class="mg-na">–</span></td>`;
-                                    return `<tr>
-                                        <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong></td>
+                                    return `<tr class="offer-row" style="cursor:pointer;" title="Klick: Angebot bearbeiten" onclick="app.openOfferEdit(${idJS(o.id)})">
+                                        <td><strong>${escapeHtml(o.offerNumber || 'Angebot')}</strong><div style="font-size:10.5px;color:var(--text-muted);">✎ bearbeiten</div></td>
                                         <td>${escapeHtml(cust ? customerDisplayName(cust) : '-')}${proj ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(proj.title || '')}</div>` : ''}</td>
                                         <td>${formatDate(o.createdAt)}</td>
                                         ${(() => {
@@ -2072,7 +2072,7 @@
                                         })()}${(Number(o.depositAmount) > 0) ? `<div style="font-size:11px;color:var(--success);">Anz. ${formatCurrency(o.depositAmount)} · Rest ${formatCurrency(Math.max(0, ((o.agreedPrice != null && o.agreedPrice !== '') ? Number(o.agreedPrice) : ((typeof recomputeOffer === 'function' ? recomputeOffer(o).total : Number(o.totalPrice || 0)))) - Number(o.depositAmount)))}</div>` : ''}</td>
                                         ${profitCell}
                                         <td><span class="status-badge ${getStatusClass(o.status || 'Angebot offen')}">${escapeHtml(o.status || 'Angebot offen')}</span></td>
-                                        <td style="text-align:right;white-space:nowrap;">
+                                        <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">
                                             <button class="btn btn-sm btn-primary" onclick="app.promptExportOfferPDF(${idJS(o.id)})">${icon('pdf')} PDF</button>
                                             <button class="btn btn-sm btn-outline" onclick="app.promptExportOfferPDF(${idJS(o.id)})" title="Per WhatsApp, E-Mail o. Ä. teilen">📤 Teilen</button>
                                             <button class="btn btn-sm btn-outline" title="Variante mit anderer Klimamarke – alles andere bleibt gleich" onclick="app.createOfferVariant(${idJS(o.id)})">⇄ Variante</button>
