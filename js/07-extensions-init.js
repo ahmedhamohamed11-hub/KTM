@@ -3062,18 +3062,40 @@
                 showModal('📄 Angebot als PDF', `
                     <p style="margin-bottom:16px;font-size:14px;">Soll das PDF die Kundendaten enthalten?</p>
                     <div style="display:flex;flex-direction:column;gap:10px;">
-                        <button class="btn btn-primary" id="pdfWithCustomer">
-                            👤 Mit Kundendaten<br>
-                            <span style="font-size:11px;font-weight:400;opacity:.8;">Name, Adresse, Kontakt oben im PDF</span>
+                        <button class="btn btn-primary" id="pdfVorschauMit">
+                            👁 Vorschau mit Kundendaten<br>
+                            <span style="font-size:11px;font-weight:400;opacity:.8;">Erst ansehen, dann herunterladen oder teilen</span>
+                        </button>
+                        <button class="btn btn-outline" id="pdfVorschauOhne">
+                            👁 Vorschau ohne Kundendaten<br>
+                            <span style="font-size:11px;font-weight:400;opacity:.8;">Nur Angebot, Positionen und Preise</span>
+                        </button>
+                        <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
+                        <button class="btn btn-outline" id="pdfWithCustomer">
+                            ⬇ Direkt herunterladen (mit Kundendaten)
                         </button>
                         <button class="btn btn-outline" id="pdfWithoutCustomer">
-                            🔒 Ohne Kundendaten<br>
-                            <span style="font-size:11px;font-weight:400;opacity:.8;">Nur Angebot, Positionen und Preise</span>
+                            ⬇ Direkt herunterladen (ohne Kundendaten)
                         </button>
                     </div>
                 `, null, null, { okText: null });
                 // Buttons verdrahten (nach kurzem Timeout damit Modal im DOM ist)
                 setTimeout(() => {
+                    const vorschau = async (mitKunde) => {
+                        document.querySelector('.modal-overlay')?.remove();
+                        let layout = 'neu';
+                        try { layout = await getSetting('angebotLayout', 'neu'); } catch (e) { /* Standard */ }
+                        // Vorschau gibt es nur fuer das neue Layout. Beim alten
+                        // wird direkt heruntergeladen statt eine Vorschau
+                        // vorzutaeuschen, die es dort nicht gibt.
+                        if (layout === 'alt' || typeof app.vorschauAngebotPDF !== 'function') {
+                            showToast('Vorschau gibt es nur im neuen Angebots-Layout – Datei wird geladen.', 'info');
+                            return this.exportOfferPDF(offerId, false, mitKunde);
+                        }
+                        app.vorschauAngebotPDF(offerId, mitKunde);
+                    };
+                    document.querySelector('#pdfVorschauMit')?.addEventListener('click', () => vorschau(true));
+                    document.querySelector('#pdfVorschauOhne')?.addEventListener('click', () => vorschau(false));
                     document.querySelector('#pdfWithCustomer')?.addEventListener('click', () => {
                         document.querySelector('.modal-overlay')?.remove();
                         this.exportOfferWaehlen(offerId, true);
