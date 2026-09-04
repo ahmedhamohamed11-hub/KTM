@@ -11,6 +11,7 @@ new Function(src + `
   this.KP=kaelteKreisprozess; this.RA=kaelteRohrAuswahl; this.ST=kmStoff;
   this.KMT=KAELTEMITTEL;
   this.FG=kaelteFGase;
+  this.EX=kaelteExpansionsventil;
 `).call(ctx);
 
 let fehler = 0, gesamt = 0;
@@ -161,6 +162,33 @@ if (FG) {
   const f5 = FG('R134a', 3.2);    // 4,6 t < 5 t
   gesamt++; if (f5.pflichtig) { console.log('  ✕   4,6 t liegen unter der 5-t-Grenze'); fehler++; } else console.log('  OK  R134a 3,2 kg (4,6 t) unter der 5-t-Grenze');
 }
+
+console.log('\n— Expansionsventil nach Ventilkapazität —');
+const EX = ctx.EX;
+const ex1 = EX({ kaeltemittel: 'R449A', tVerdampfung: -27, tVerfluessigung: 40, unterkuehlung: 4,
+                 kaelteleistungW: 10000, dpLeitungBar: 0.3, dpVerteilerBar: 0.5 });
+pruefe('EXV: Δp am Ventil [bar]', ex1.dpVentil, 13.9, 0.2);
+gesamt++;
+if (ex1.dpVentil >= ex1.dpGesamt) { console.log('  ✕   Leitungsverluste wurden nicht abgezogen'); fehler++; }
+else console.log('  OK  Leitungs- und Verteilerverlust vom verfügbaren Δp abgezogen');
+// Zu kleines Ventil muss abgelehnt werden
+const ex2 = EX({ kaeltemittel: 'R449A', tVerdampfung: -27, tVerfluessigung: 40, unterkuehlung: 4,
+                 kaelteleistungW: 10000, dpLeitungBar: 0.3, dpVerteilerBar: 0.5, nennkapazitaetKW: 8 });
+gesamt++;
+if (ex2.bewertung.art !== 'fehler') { console.log('  ✕   8 kW Ventil bei 10 kW Bedarf hätte abgelehnt werden müssen'); fehler++; }
+else console.log('  OK  Zu kleines Ventil wird abgelehnt');
+// Zu großes Ventil muss gewarnt werden
+const ex3 = EX({ kaeltemittel: 'R449A', tVerdampfung: -27, tVerfluessigung: 40, unterkuehlung: 4,
+                 kaelteleistungW: 10000, dpLeitungBar: 0.3, dpVerteilerBar: 0.5, nennkapazitaetKW: 25 });
+gesamt++;
+if (ex3.bewertung.art !== 'warnung') { console.log('  ✕   25 kW Ventil bei 10 kW Bedarf hätte eine Warnung geben müssen'); fehler++; }
+else console.log('  OK  Deutlich zu großes Ventil wird als unruhig regelnd gewarnt');
+// Ohne Druckdifferenz keine Auslegung
+const ex4 = EX({ kaeltemittel: 'R449A', tVerdampfung: -27, tVerfluessigung: 40, unterkuehlung: 4,
+                 kaelteleistungW: 10000, dpLeitungBar: 20, dpVerteilerBar: 0 });
+gesamt++;
+if (ex4.moeglich) { console.log('  ✕   Ohne verbleibendes Δp darf nicht ausgelegt werden'); fehler++; }
+else console.log('  OK  Ohne verbleibende Druckdifferenz korrekt abgelehnt');
 
 console.log('\n— Fehlende Daten dürfen nicht erfunden werden —');
 gesamt++;
