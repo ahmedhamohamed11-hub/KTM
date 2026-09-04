@@ -168,6 +168,80 @@
                     ], { 0: { cellWidth: 40, fontStyle: 'bold' }, 1: { fontSize: 7.5 } });
                 }
 
+                // --- Sammlergröße ---
+                if (km && Number(km.menge) > 0) {
+                    const sa = kaelteSammler({ kaeltemittel: A.kaeltemittel, fuellmengeKg: Number(km.menge),
+                        tVerfluessigung: A.tVerfluessigung, tStillstand: A.tVerfluessigung + 10 });
+                    if (sa.moeglich) {
+                        y = platz(y, 30);
+                        y = titel(y, 'Flüssigkeitssammler');
+                        y = tabelle(y, ['Angabe', 'Wert'], [
+                            ['Abzupumpende Menge', `${sa.abzupumpenKg.toFixed(2).replace('.', ',')} kg`],
+                            ['Volumen bei Betriebstemperatur', `${sa.volBetriebL.toFixed(1).replace('.', ',')} l`],
+                            ['Kriterium Aufnahme', `${sa.nachAufnahme.toFixed(1).replace('.', ',')} l`],
+                            ['Kriterium Ausdehnung', `${sa.nachSicherheit.toFixed(1).replace('.', ',')} l`],
+                            ['Erforderlich mindestens', `${sa.erforderlichL.toFixed(1).replace('.', ',')} l`],
+                            ['Maßgebend', sa.massgebend]
+                        ], { 0: { cellWidth: 58, fontStyle: 'bold' }, 1: { halign: 'right' } });
+                    }
+                }
+
+                // --- Anlagenschema ---
+                // Wird mit jsPDF-Grundformen gezeichnet, nicht als Bild
+                // eingebettet - dadurch bleibt es scharf und die Farben
+                // folgen der Farbwahl.
+                const stellenPlan = a.ergebnisse.filter(e => e.ergebnis.moeglich);
+                if (stellenPlan.length) {
+                    y = platz(y, 96);
+                    y = titel(y, 'Anlagenschema');
+                    const kb = 44, kh = 13, mitte = pw / 2;
+                    const box = (x, yy, w, h, t1, t2) => {
+                        doc.setFillColor(...PDF_LIGHT); doc.setDrawColor(...PDF_TEAL); doc.setLineWidth(0.3);
+                        doc.roundedRect(x, yy, w, h, 1.5, 1.5, 'FD');
+                        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(...PDF_INK);
+                        doc.text(t1, x + w / 2, yy + (t2 ? h / 2 - 0.5 : h / 2 + 1.5), { align: 'center', maxWidth: w - 2 });
+                        if (t2) { doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...PDF_GRAY);
+                            doc.text(t2, x + w / 2, yy + h / 2 + 4, { align: 'center', maxWidth: w - 2 }); }
+                    };
+                    const linie = (x1, y1, x2, y2, gestrichelt) => {
+                        doc.setDrawColor(...PDF_TEAL); doc.setLineWidth(0.5);
+                        if (gestrichelt) doc.setLineDashPattern([1.5, 1], 0);
+                        doc.line(x1, y1, x2, y2);
+                        doc.setLineDashPattern([], 0);
+                    };
+                    const beschrift = (x, yy, t) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...PDF_GRAY); doc.text(t, x, yy); };
+
+                    const art = project.kaelte.anlagenart || 'einzel';
+                    box(mitte - kb - 8, y, kb, kh, art === 'einzel' ? 'Verflüssigungssatz' : 'Verdichter', `${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW`);
+                    box(mitte + 8, y, kb, kh, art === 'hdmd' ? 'Gaskühler' : 'Verflüssiger', `tc ${A.tVerfluessigung} °C`);
+                    linie(mitte - 8, y + kh / 2, mitte + 8, y + kh / 2);
+                    beschrift(mitte - 6, y + kh / 2 - 1.5, 'HD');
+                    box(mitte + 8, y + 20, kb, kh, 'Sammler', A.kaeltemittel);
+                    linie(mitte + 8 + kb / 2, y + kh, mitte + 8 + kb / 2, y + 20);
+                    box(mitte - kb - 8, y + 20, kb, kh, 'Filtertrockner', 'Schauglas · Magnetventil');
+                    linie(mitte + 8, y + 20 + kh / 2, mitte - 8, y + 20 + kh / 2);
+
+                    let py = y + 44;
+                    stellenPlan.slice(0, 4).forEach((e, i) => {
+                        const x = 20 + i * ((pw - 40) / Math.min(4, stellenPlan.length));
+                        box(x, py, kb, kh, 'Verdampfer', `${(e.ks.bezeichnung || '').slice(0, 18)} · ${(e.ergebnis.auslegung / 1000).toFixed(1).replace('.', ',')} kW`);
+                        doc.setFillColor(...PDF_TEAL);
+                        doc.circle(x + kb / 2, py - 6, 2.2, 'F');
+                        doc.setFontSize(4.5); doc.setTextColor(255, 255, 255);
+                        doc.text('EXV', x + kb / 2, py - 5, { align: 'center' });
+                        linie(mitte - kb / 2 - 8, y + 20 + kh, x + kb / 2, py - 8);
+                        linie(x + kb / 2, py + kh, mitte - kb - 8 + kb / 2, y + kh, true);
+                        const g = (e.ks.rohr || {}).saug || {};
+                        if (g.gewaehlt) beschrift(x + 1, py + kh + 4, `Saug ${g.gewaehlt}`);
+                        const gf = (e.ks.rohr || {}).fluessig || {};
+                        if (gf.gewaehlt) beschrift(x + 1, py + kh + 8, `Flüssig ${gf.gewaehlt}`);
+                    });
+                    y = py + kh + 14;
+                    doc.setFontSize(6.5); doc.setTextColor(...PDF_GRAY);
+                    doc.text('Durchgezogen: Hochdruck und Flüssigkeit · gestrichelt: Sauggas', mx, y);
+                    y += 8;
+                }
+
                 // --- Komponenten ---
                 const komp = project.kaelte.komponenten || [];
                 if (komp.length) {
