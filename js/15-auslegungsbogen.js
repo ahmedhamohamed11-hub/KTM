@@ -273,6 +273,17 @@
                     doc.text('Keine – alle Werte sind eingegeben oder berechnet.', mx, y); y += 10;
                 }
 
+                // --- Herangezogene Regelwerke ---
+                const normen = project.kaelte.normen || [];
+                if (normen.length) {
+                    y = platz(y, 30);
+                    y = titel(y, 'Herangezogene Normen und Regelwerke');
+                    y = tabelle(y, ['Regelwerk', 'Fassung', 'Betrifft', 'Zuletzt geprüft'],
+                        normen.map(n => [n.bezeichnung || '–', n.fassung || '— nicht angegeben —',
+                            n.betrifft || '–', n.geprueftAm ? new Date(n.geprueftAm).toLocaleDateString('de-AT') : '— nicht geprüft —']),
+                        { 0: { cellWidth: 44, fontStyle: 'bold' }, 1: { cellWidth: 32 }, 3: { cellWidth: 28 } });
+                }
+
                 // --- Datenquellen und Vorbehalt ---
                 y = platz(y, 46);
                 y = titel(y, 'Datenquellen und Vorbehalt');
