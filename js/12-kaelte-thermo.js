@@ -497,3 +497,50 @@
             ergebnisse.sort((x, y) => y.punkte - x.punkte);
             return { ziel, bedarfKW, reserve, minLast, varianten: ergebnisse, empfehlung: ergebnisse[0] || null };
         }
+
+        // ---------- Flüssigkeitssammler dimensionieren ----------
+        // Der Sammler muss die Fuellmenge aufnehmen koennen, die beim
+        // Abpumpen (Pump-down) in ihn hineingeht, und darf dabei nicht
+        // vollstaendig fluessig gefuellt sein - sonst gibt es keinen
+        // Dampfraum mehr und bei Erwaermung entsteht hydraulischer Druck.
+        //
+        // Zwei Kriterien, das strengere gewinnt:
+        //   1. Aufnahme: V >= abzupumpende Fluessigkeitsmenge / Fuellgrad
+        //   2. Sicherheit: bei der hoechsten zu erwartenden Temperatur darf
+        //      der Fluessigkeitsanteil den zulaessigen Fuellgrad nicht
+        //      ueberschreiten (Fluessigkeit dehnt sich beim Erwaermen aus).
+        const SAMMLER_FUELLGRAD_BETRIEB = 0.80;   // üblich zulässiger Betriebsfüllgrad
+        const SAMMLER_FUELLGRAD_MAX = 0.90;       // absolute Grenze bei Stillstandstemperatur
+
+        function kaelteSammler(p) {
+            const { kaeltemittel, fuellmengeKg, tVerfluessigung = 40, tStillstand = 50, anteilAbpumpbar = 0.85 } = p;
+            const cBetrieb = kmStoff(kaeltemittel, tVerfluessigung);
+            const cWarm = kmStoff(kaeltemittel, tStillstand);
+            if (!cBetrieb || !fuellmengeKg) return { moeglich: false, hinweis: 'Ohne Füllmenge und Stoffdaten ist keine Sammlergröße bestimmbar.' };
+
+            const abzupumpen = fuellmengeKg * anteilAbpumpbar;
+            const volBetriebL = (abzupumpen / cBetrieb.rhoFl) * 1000;
+            const nachAufnahme = volBetriebL / SAMMLER_FUELLGRAD_BETRIEB;
+
+            let nachSicherheit = nachAufnahme;
+            let warmHinweis = '';
+            if (cWarm) {
+                // Bei Stillstand ist die Fluessigkeit waermer und leichter,
+                // braucht also mehr Platz.
+                const volWarmL = (abzupumpen / cWarm.rhoFl) * 1000;
+                nachSicherheit = volWarmL / SAMMLER_FUELLGRAD_MAX;
+                warmHinweis = `Bei ${tStillstand} °C Stillstandstemperatur dehnt sich die Flüssigkeit auf ${volWarmL.toFixed(1).replace('.', ',')} l aus.`;
+            } else {
+                warmHinweis = `Für ${tStillstand} °C liegen keine Stoffdaten vor – nur das Aufnahmekriterium gerechnet.`;
+            }
+
+            const erforderlich = Math.max(nachAufnahme, nachSicherheit);
+            const massgebend = nachSicherheit >= nachAufnahme ? 'Ausdehnung bei Stillstandstemperatur' : 'Aufnahme der abgepumpten Menge';
+            return {
+                moeglich: true,
+                erforderlichL: erforderlich,
+                nachAufnahme, nachSicherheit, massgebend,
+                abzupumpenKg: abzupumpen, volBetriebL, warmHinweis,
+                hinweis: `Erforderlich mindestens ${erforderlich.toFixed(1).replace('.', ',')} l (maßgebend: ${massgebend}). ${warmHinweis} Zulässiger Füllgrad und Prüfdruck sind Herstellerangaben – der berechnete Wert ist die Untergrenze, nicht die Auswahl.`
+            };
+        }
