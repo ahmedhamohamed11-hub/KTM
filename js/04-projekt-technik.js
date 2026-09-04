@@ -61,6 +61,37 @@
 
         // Generischer Feld-Renderer für Technik-/Besichtigungsfelder
         const PIPE_DIMS = ['1/4', '3/8', '1/2', '5/8', '3/4', '7/8'];
+        // Felder, die sinnvoll negativ sein koennen: Temperaturen und
+        // Temperaturdifferenzen. Nur dort erscheint der Vorzeichen-Knopf,
+        // damit Mengenfelder nicht unnoetig zwei Bedienelemente bekommen.
+        function istVorzeichenFeld(f) {
+            const u = String(f.unit || '').trim();
+            if (u === '°C' || u === 'K' || u === '°F') return true;
+            return /temperatur|taupunkt|gleit|unterk|ueberhitz|überhitz/i.test(String(f.key || '') + ' ' + String(f.label || ''));
+        }
+
+        // Vorzeichen-Knopf: einmal global registriert, wirkt auf jedes Feld
+        // mit data-vz - auch auf spaeter erzeugte, weil ueber document delegiert.
+        if (!window.__vzKnopfAktiv) {
+            window.__vzKnopfAktiv = true;
+            document.addEventListener('click', (ev) => {
+                const knopf = ev.target.closest && ev.target.closest('.vz-knopf');
+                if (!knopf) return;
+                ev.preventDefault();
+                const feld = knopf.dataset.vz
+                    ? document.getElementById(knopf.dataset.vz)
+                    : knopf.parentElement.querySelector('input');
+                if (!feld) return;
+                const roh = String(feld.value || '').trim();
+                if (roh === '' || roh === '-') { feld.value = '-'; }
+                else if (roh.startsWith('-')) { feld.value = roh.slice(1); }
+                else { feld.value = '-' + roh; }
+                // change ausloesen, damit angebundene Berechnungen neu rechnen
+                feld.dispatchEvent(new Event('change', { bubbles: true }));
+                feld.focus();
+            });
+        }
+
         function techFieldInput(f, v, prefix) {
             const id = prefix + f.key;
             if (f.type === 'pipedim') {
@@ -82,14 +113,20 @@
                 return `<div class="form-group" style="grid-column:1/-1;"><label>${escapeHtml(f.label)}</label><textarea id="${id}" rows="3">${escapeHtml(v || '')}</textarea></div>`;
             }
             if (f.type === 'number') {
-                // type="number" mit min="0" hat auf vielen Mobil-Tastaturen (v.a.
-                // Android) die Minus-Taste ausgeblendet - bei Temperaturen wie
-                // Raumtemperatur oder Verdampfungstemperatur ein echtes Problem.
-                // type="text" + inputmode="decimal" zeigt zuverlaessig eine
-                // Zifferntastatur MIT Minus. techFieldRead() parst den Wert ohnehin
-                // selbst per parseFloat() - das Verhalten aendert sich dadurch nicht.
+                // KORREKTUR (2026-09, zweiter Anlauf): inputmode="decimal" zeigt
+                // auf Android eine Zifferntastatur OHNE Minus-Taste. Der erste
+                // Versuch (type=number -> type=text) hat das nicht behoben, weil
+                // die Tastatur dieselbe blieb.
+                // Loesung: bei Feldern, die negativ werden koennen (Temperaturen),
+                // gibt es einen Vorzeichen-Knopf direkt am Feld. Der funktioniert
+                // unabhaengig von der Tastatur des Geraets.
+                if (istVorzeichenFeld(f)) {
+                    return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' <small>(' + f.unit + ')</small>' : ''}</label>
+                        <div class="vz-feld"><input type="text" inputmode="decimal" id="${id}" value="${v ?? ''}"><button type="button" class="vz-knopf" data-vz="${id}" title="Vorzeichen wechseln">±</button></div></div>`;
+                }
                 return `<div class="form-group"><label>${escapeHtml(f.label)}${f.unit ? ' <small>(' + f.unit + ')</small>' : ''}</label><input type="text" inputmode="decimal" id="${id}" value="${v ?? ''}"></div>`;
             }
+
             if (f.type === 'date') {
                 return `<div class="form-group"><label>${escapeHtml(f.label)}</label><input type="date" id="${id}" value="${escapeHtml(v || '')}"></div>`;
             }
