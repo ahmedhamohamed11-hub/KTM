@@ -273,6 +273,27 @@
                     doc.text('Keine – alle Werte sind eingegeben oder berechnet.', mx, y); y += 10;
                 }
 
+                // --- F-Gase-Pflichten ---
+                if (km && Number(km.menge) > 0 && typeof kaelteFGase === 'function') {
+                    const fg = project.kaelte.fgase || {};
+                    const r = kaelteFGase(A.kaeltemittel, Number(km.menge),
+                        { hermetisch: !!fg.hermetisch, leckageErkennung: !!fg.les, wohngebaeude: !!fg.wohn });
+                    if (r.moeglich) {
+                        y = platz(y, 34);
+                        y = titel(y, 'F-Gase-Pflichten nach (EU) 2024/573');
+                        const zeilen = [
+                            ['Kältemittel', A.kaeltemittel],
+                            ['Füllmenge', `${Number(km.menge).toFixed(1).replace('.', ',')} kg`],
+                            ['GWP (Anhang I prüfen)', String(r.gwp)],
+                            ['CO₂-Äquivalent', `${r.co2e.toFixed(1).replace('.', ',')} t`],
+                            ['Dichtheitskontrolle', r.intervallMonate ? `alle ${r.intervallMonate} Monate` : 'nicht prüfpflichtig'],
+                            ['Leckage-Erkennungssystem', r.lesPflicht ? 'vorgeschrieben (ab 500 t)' : (fg.les ? 'vorhanden' : 'nicht vorgeschrieben')]
+                        ];
+                        r.pflichten.forEach((x, i) => zeilen.push([i === 0 ? 'Betreiberpflichten' : '', x]));
+                        y = tabelle(y, ['Angabe', 'Wert'], zeilen, { 0: { cellWidth: 50, fontStyle: 'bold' }, 1: { fontSize: 7.5 } });
+                    }
+                }
+
                 // --- Herangezogene Regelwerke ---
                 const normen = project.kaelte.normen || [];
                 if (normen.length) {
