@@ -1325,6 +1325,15 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
                 || n.includes('inbetriebnahme') || n.includes('leitungsverlegung');
         }
         function posVatRate(p, offer) {
+            // Netto-Angebot: das ganze Angebot wird OHNE Umsatzsteuer gerechnet.
+            // Ausdrueckliche Entscheidung pro Angebot (Schalter im Bearbeiten-
+            // Dialog), niemals automatisch. Beim Umschalten werden die
+            // Positionspreise einmalig umgerechnet und priceIncludesVat
+            // entfernt - deshalb reicht hier der Satz 0, es entsteht keine
+            // doppelte Umrechnung.
+            // Ohne dieses Flag bleibt alles exakt wie bisher: Material und
+            // Geraete immer 20 %, Arbeitsleistung nach Schalter.
+            if (offer && offer.netMode === true) return 0;
             if (isLaborPos(p)) return (offer && offer.vatEnabled === false) ? 0 : (Number(offer?.vatRate) || 0.20);
             return 0.20;
         }
