@@ -766,6 +766,107 @@
             return { hinweise, fortschritt: Math.round(schritteFertig / 5 * 100) };
         }
 
+
+        // ---- Varianten und Was-wäre-wenn.
+        // Eine Variante ist ein vollstaendiger Schnappschuss der Kaelteplanung.
+        // Beim Vergleich wird die gespeicherte Variante mit denselben
+        // Funktionen neu durchgerechnet wie das aktuelle Projekt - es werden
+        // keine alten Ergebnisse aufbewahrt, sondern die alten EINGABEN.
+        // Dadurch bleibt ein Vergleich auch nach einer Formelkorrektur gueltig.
+        function kaelteVariantenKennzahlen(kaelteStand) {
+            const schein = { id: 'vergleich', kaelte: kaelteStand };
+            const a = kaelteAuslegung(schein);
+            const A = kaelteAuslegungsdaten(schein);
+            const werte = {
+                kaeltelast: a.summeGesamt / 1000,
+                auslegung: a.summeAuslegung / 1000,
+                kaeltemittel: A.kaeltemittel,
+                stellen: (kaelteStand.kuehlstellen || []).length,
+                massenstrom: null, rohr: {}, fuellmenge: null, materialVK: null
+            };
+            const erste = a.ergebnisse.find(e => e.ergebnis.moeglich);
+            if (erste) {
+                const kp = kaelteKreisprozess({ kaeltemittel: A.kaeltemittel,
+                    tVerdampfung: erste.werte.verdampfungstemperatur.wert,
+                    tVerfluessigung: A.tVerfluessigung, ueberhitzung: A.ueberhitzung,
+                    unterkuehlung: A.unterkuehlung, kaelteleistungW: a.summeAuslegung });
+                if (kp.moeglich) {
+                    werte.massenstrom = kp.mDotKgH;
+                    ROHR_ARTEN.forEach(art => {
+                        const g = (erste.ks.rohr || {})[art.key] || {};
+                        if (!Number(g.laenge)) return;
+                        const geo = { laenge: Number(g.laenge), hoehenunterschied: Number(g.hoehenunterschied) || 0,
+                            formstuecke: Object.fromEntries(ROHR_FORMSTUECKE.map(([kk]) => [kk, Number(g[kk]) || 0])) };
+                        const aus = kaelteRohrAuswahl(art.key, kp, geo);
+                        if (aus.empfehlung) werte.rohr[art.key] = `${aus.empfehlung.rohr.bez} (${aus.empfehlung.w.toFixed(1).replace('.', ',')} m/s)`;
+                    });
+                }
+            }
+            try {
+                const m = kaelteMaterialListe(schein);
+                werte.materialVK = m.summeVK;
+                const km = m.pos.find(x => x.schluessel === 'kaeltemittel');
+                if (km) werte.fuellmenge = Number(km.menge) || 0;
+            } catch (e) { /* Material optional */ }
+            return werte;
+        }
+
+        function renderKaelteVarianten(project) {
+            const varianten = project.kaelte.varianten || [];
+            const jetzt = kaelteVariantenKennzahlen(project.kaelte);
+            const zahl = (v, e = 2) => v == null ? '–' : Number(v).toFixed(e).replace('.', ',');
+
+            const vergleich = varianten.map((v, i) => {
+                const k = kaelteVariantenKennzahlen(v.stand);
+                const diff = (neu, alt, e = 2) => {
+                    if (neu == null || alt == null) return '<span style="color:var(--text-muted);">–</span>';
+                    const d = neu - alt;
+                    if (Math.abs(d) < Math.pow(10, -e) / 2) return '<span style="color:var(--text-muted);">gleich</span>';
+                    const proz = alt !== 0 ? ` (${d > 0 ? '+' : ''}${(d / alt * 100).toFixed(0)} %)` : '';
+                    return `<span style="color:${d > 0 ? '#c98a12' : '#2a9d5c'};font-weight:600;">${d > 0 ? '+' : ''}${zahl(d, e)}${proz}</span>`;
+                };
+                return `
+                    <div class="form-card">
+                        <div class="detail-section-head" style="margin-top:0;">
+                            <h4>${escapeHtml(v.name)} <span style="font-weight:400;color:var(--text-muted);font-size:12px;">· ${formatDate(v.datum)}</span></h4>
+                            <div style="white-space:nowrap;">
+                                <button class="btn btn-sm btn-outline" onclick="app.kaelteVarianteLaden(${idJS(project.id)}, ${i})">Zurückladen</button>
+                                <button class="btn btn-sm btn-danger" onclick="app.kaelteVarianteLoeschen(${idJS(project.id)}, ${i})">${icon('trash')}</button>
+                            </div>
+                        </div>
+                        <div class="table-container"><table>
+                            <thead><tr><th>Kennzahl</th><th>${escapeHtml(v.name)}</th><th>Aktuell</th><th>Unterschied</th></tr></thead>
+                            <tbody>
+                                <tr><td>Gesamtkältelast</td><td class="kl-w">${zahl(k.kaeltelast)} kW</td><td class="kl-w">${zahl(jetzt.kaeltelast)} kW</td><td class="kl-w">${diff(jetzt.kaeltelast, k.kaeltelast)}</td></tr>
+                                <tr><td>Anlagenleistung</td><td class="kl-w">${zahl(k.auslegung)} kW</td><td class="kl-w">${zahl(jetzt.auslegung)} kW</td><td class="kl-w">${diff(jetzt.auslegung, k.auslegung)}</td></tr>
+                                <tr><td>Massenstrom</td><td class="kl-w">${zahl(k.massenstrom, 1)} kg/h</td><td class="kl-w">${zahl(jetzt.massenstrom, 1)} kg/h</td><td class="kl-w">${diff(jetzt.massenstrom, k.massenstrom, 1)}</td></tr>
+                                <tr><td>Kältemittel</td><td>${escapeHtml(k.kaeltemittel)}</td><td>${escapeHtml(jetzt.kaeltemittel)}</td><td>${k.kaeltemittel === jetzt.kaeltemittel ? '<span style="color:var(--text-muted);">gleich</span>' : '<strong>geändert</strong>'}</td></tr>
+                                ${ROHR_ARTEN.map(art => (k.rohr[art.key] || jetzt.rohr[art.key]) ? `
+                                    <tr><td>${escapeHtml(art.label)}</td><td>${escapeHtml(k.rohr[art.key] || '–')}</td><td>${escapeHtml(jetzt.rohr[art.key] || '–')}</td>
+                                    <td>${(k.rohr[art.key] || '') === (jetzt.rohr[art.key] || '') ? '<span style="color:var(--text-muted);">gleich</span>' : '<strong>andere Dimension</strong>'}</td></tr>` : '').join('')}
+                                <tr><td>Füllmenge</td><td class="kl-w">${zahl(k.fuellmenge, 1)} kg</td><td class="kl-w">${zahl(jetzt.fuellmenge, 1)} kg</td><td class="kl-w">${diff(jetzt.fuellmenge, k.fuellmenge, 1)}</td></tr>
+                                <tr><td>Materialsumme VK</td><td class="kl-w">${k.materialVK != null ? formatCurrency(k.materialVK) : '–'}</td><td class="kl-w">${jetzt.materialVK != null ? formatCurrency(jetzt.materialVK) : '–'}</td><td class="kl-w">${diff(jetzt.materialVK, k.materialVK)}</td></tr>
+                            </tbody>
+                        </table></div>
+                        ${v.notiz ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">${escapeHtml(v.notiz)}</div>` : ''}
+                    </div>`;
+            }).join('');
+
+            return `
+                <div class="form-card">
+                    <div class="detail-section-head" style="margin-top:0;">
+                        <h4>Varianten (${varianten.length})</h4>
+                        <button class="btn btn-sm btn-primary" onclick="app.kaelteVarianteSpeichern(${idJS(project.id)})">${icon('plus')} Aktuellen Stand sichern</button>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">
+                        Sichere den jetzigen Stand, ändere dann etwas – Paneelstärke, Türöffnungen, Außentemperatur, Rohrlänge, Kältemittel –
+                        und du siehst hier sofort, was das an Kältelast, Leistung, Massenstrom, Rohrdimension, Füllmenge und Materialkosten ausmacht.
+                        Gespeichert werden die Eingaben, nicht die Ergebnisse: der Vergleich rechnet beide Stände frisch durch.
+                    </div>
+                </div>
+                ${vergleich}`;
+        }
+
         // ---- Anlagenschema. Wird aus der tatsächlichen Konfiguration
         // gezeichnet: Anlagenart bestimmt den Aufbau, die Leitungen tragen
         // die real berechneten Werte. Kein Bild, sondern erzeugtes SVG -
@@ -1204,6 +1305,7 @@
                     <div class="form-card-title">Verwendete Richtwert-Schätzungen (${schaetzungen.length})</div>
                     ${schaetzungen.length ? `<ul style="font-size:12px;line-height:1.6;margin:0;padding-left:18px;">${schaetzungen.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div class="empty-note" style="padding:10px;">Keine – alle Werte sind eingegeben oder berechnet.</div>'}
                 </div>
+                ${renderKaelteVarianten(project)}
                 <div class="form-card">
                     <div class="form-card-title">Technischer Auslegungsbogen</div>
                     <div style="font-size:12.5px;line-height:1.5;margin-bottom:10px;">Enthält alle Berechnungen mit Rechenweg, die verwendeten Richtwert-Schätzungen, Warnungen, Komponenten mit Quelle, Rohrleitungen mit Strömung und Druckverlust, Füllmenge und die Datenquellen.</div>
@@ -1848,6 +1950,54 @@
 
             // Fenster synchron im Klick oeffnen, sonst blockiert der Browser es
             // nach dem await beim PDF-Bauen.
+            async kaelteVarianteSpeichern(projectId) {
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                const nr = (project.kaelte.varianten || []).length + 1;
+                showModal('Variante sichern', `
+                    <div class="form-group"><label>Name *</label><input type="text" id="vaName" value="Variante ${nr}"></div>
+                    <div class="form-group"><label>Was ist an dieser Variante anders?</label><textarea id="vaNotiz" rows="2" placeholder="z. B. 100 mm Paneel statt 120 mm"></textarea></div>
+                    <div style="font-size:11.5px;color:var(--text-muted);">Gesichert wird der komplette Stand der Kälteplanung: Kühlstellen, Auslegungsbedingungen, Rohrleitungen, Komponenten, Volumen und Materialanpassungen.</div>
+                `, async (overlay) => {
+                    const name = overlay.querySelector('#vaName').value.trim();
+                    if (!name) { showToast('Name ist erforderlich.', 'error'); return; }
+                    // Varianten duerfen sich nicht gegenseitig enthalten, sonst
+                    // waechst der Datensatz bei jeder Sicherung exponentiell.
+                    const stand = JSON.parse(JSON.stringify(project.kaelte));
+                    delete stand.varianten;
+                    project.kaelte.varianten = project.kaelte.varianten || [];
+                    project.kaelte.varianten.push({ name, notiz: overlay.querySelector('#vaNotiz').value.trim(),
+                        datum: new Date().toISOString(), stand });
+                    await db.put('projects', project);
+                    overlay.remove();
+                    showToast('Variante gesichert.', 'success');
+                    renderKaelteDetail(projectId);
+                });
+            },
+
+            async kaelteVarianteLaden(projectId, index) {
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                const v = (project.kaelte.varianten || [])[index];
+                if (!v) return;
+                if (!await showConfirm(`"${v.name}" zurückladen? Der aktuelle Stand wird dabei überschrieben – sichere ihn vorher, wenn du ihn behalten willst.`)) return;
+                const varianten = project.kaelte.varianten;
+                project.kaelte = JSON.parse(JSON.stringify(v.stand));
+                project.kaelte.varianten = varianten;   // Variantenliste bleibt erhalten
+                await db.put('projects', project);
+                showToast(`"${v.name}" zurückgeladen.`, 'success');
+                renderKaelteDetail(projectId);
+            },
+
+            async kaelteVarianteLoeschen(projectId, index) {
+                if (!await showConfirm('Diese Variante wirklich löschen?')) return;
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                (project.kaelte.varianten || []).splice(index, 1);
+                await db.put('projects', project);
+                renderKaelteDetail(projectId);
+            },
+
             oeffneAuslegungsbogen(projectId) {
                 app.__bogenFenster = window.open('', '_blank');
                 if (app.__bogenFenster) {
