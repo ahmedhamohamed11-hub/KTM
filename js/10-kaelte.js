@@ -496,9 +496,14 @@
                 const eingabeZeilen = editierbar.map(([key, label, unit]) => {
                     const e = w(key);
                     if (!e) return '';
+                    // Temperaturfelder brauchen den Vorzeichen-Knopf, weil die
+                    // Ziffern-Tastatur auf Android kein Minus anbietet.
+                    const negMoeglich = unit === '°C' || unit === 'K';
                     return `<tr>
                         <td>${statusChip(e.status)} ${escapeHtml(label)}</td>
-                        <td style="width:110px;"><input type="text" inputmode="decimal" value="${e.wert ?? ''}" data-ks="${ks.id}" data-feld="${key}" class="kl-input" placeholder="–"></td>
+                        <td style="width:110px;">${negMoeglich
+                            ? `<div class="vz-feld"><input type="text" inputmode="decimal" value="${e.wert ?? ''}" data-ks="${ks.id}" data-feld="${key}" class="kl-input" placeholder="–"><button type="button" class="vz-knopf" title="Vorzeichen wechseln">±</button></div>`
+                            : `<input type="text" inputmode="decimal" value="${e.wert ?? ''}" data-ks="${ks.id}" data-feld="${key}" class="kl-input" placeholder="–">`}</td>
                         <td style="width:60px;color:var(--text-muted);font-size:11.5px;">${escapeHtml(unit)}</td>
                         <td style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(e.herkunft || '')}</td>
                     </tr>`;
@@ -609,7 +614,8 @@
                                 ${km.map(k => `<option value="${k.key}" ${A.kaeltemittel === k.key ? 'selected' : ''}>${escapeHtml(k.key)} – ${escapeHtml(k.label)}${k.blend ? ' (Blend)' : ''}</option>`).join('')}
                             </select>
                         </div>
-                        <div class="form-group"><label>${A.kaeltemittel === 'R744' ? 'Gaskühleraustritt' : 'Verflüssigungstemperatur'} <small>(°C)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="tVerfluessigung" value="${A.tVerfluessigung}"></div>
+                        <div class="form-group"><label>${A.kaeltemittel === 'R744' ? 'Gaskühleraustritt' : 'Verflüssigungstemperatur'} <small>(°C)</small></label>
+                            <div class="vz-feld"><input type="text" inputmode="decimal" class="ka-in" data-feld="tVerfluessigung" value="${A.tVerfluessigung}"><button type="button" class="vz-knopf" title="Vorzeichen wechseln">±</button></div></div>
                         <div class="form-group"><label>Sauggasüberhitzung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="ueberhitzung" value="${A.ueberhitzung}"></div>
                         <div class="form-group"><label>Unterkühlung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="unterkuehlung" value="${A.unterkuehlung}"></div>
                         <div class="form-group"><label>Druckeinheit <small>– nur die Anzeige, gerechnet wird immer in bar</small></label>
@@ -1075,7 +1081,7 @@
                             <div class="rohr-kopf">${escapeHtml(art.label)}${geo.hoehenunterschied > 0.5 ? ' <span class="rohr-tag">Steigleitung</span>' : ''}</div>
                             <div class="rohr-eingaben">
                                 <label>Länge (m)<input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="laenge" value="${g.laenge ?? ''}"></label>
-                                <label>Höhenunterschied (m)<input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="hoehenunterschied" value="${g.hoehenunterschied ?? ''}"></label>
+                                <label>Höhenunterschied (m)<div class="vz-feld"><input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="hoehenunterschied" value="${g.hoehenunterschied ?? ''}"><button type="button" class="vz-knopf" title="Vorzeichen wechseln – minus für fallende Leitung">±</button></div></label>
                                 ${ROHR_FORMSTUECKE.map(([k, l]) => `<label>${escapeHtml(l)}<input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="${k}" value="${g[k] ?? ''}"></label>`).join('')}
                             </div>
                             ${!geo.laenge ? '<div class="empty-note" style="padding:8px;font-size:12px;">Länge eintragen, dann wird dimensioniert.</div>' : !emp ? '<div class="kl-hinweis kl-fehler">✕ Keine der verfügbaren Kupferdimensionen erfüllt alle Kriterien. Massenstrom, Leitungsführung oder Auslegungsbedingungen prüfen.</div>' : `
