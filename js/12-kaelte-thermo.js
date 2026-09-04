@@ -556,3 +556,38 @@
                 hinweis: `Erforderlich mindestens ${erforderlich.toFixed(1).replace('.', ',')} l (maßgebend: ${massgebend}). ${warmHinweis} Zulässiger Füllgrad und Prüfdruck sind Herstellerangaben – der berechnete Wert ist die Untergrenze, nicht die Auswahl.`
             };
         }
+
+        // ---------- Einheiten ----------
+        // Gerechnet wird IMMER in bar, m/s, kW, °C. Umgerechnet wird nur bei
+        // der Ausgabe. Dadurch kann eine Einheitenumstellung die Berechnung
+        // nicht verfaelschen - ein haeufiger Fehler in solchen Programmen.
+        const DRUCK_EINHEITEN = {
+            bar: { name: 'bar', faktor: 1, stellen: 2 },
+            kPa: { name: 'kPa', faktor: 100, stellen: 0 },
+            MPa: { name: 'MPa', faktor: 0.1, stellen: 3 },
+            psi: { name: 'psi', faktor: 14.5038, stellen: 1 }
+        };
+        const LAENGE_EINHEITEN = {
+            m: { name: 'm', faktor: 1, stellen: 1 },
+            ft: { name: 'ft', faktor: 3.28084, stellen: 1 }
+        };
+
+        // Druck aus bar in die gewaehlte Einheit. dp=true fuer Druck-
+        // DIFFERENZEN, die feiner aufgeloest werden muessen.
+        function fmtDruck(bar, einheit = 'bar', dp = false) {
+            if (bar == null || !Number.isFinite(Number(bar))) return '–';
+            const e = DRUCK_EINHEITEN[einheit] || DRUCK_EINHEITEN.bar;
+            const wert = Number(bar) * e.faktor;
+            const stellen = dp ? e.stellen + 2 : e.stellen;
+            return `${wert.toFixed(stellen).replace('.', ',')} ${e.name}`;
+        }
+        function fmtLaenge(m, einheit = 'm') {
+            if (m == null || !Number.isFinite(Number(m))) return '–';
+            const e = LAENGE_EINHEITEN[einheit] || LAENGE_EINHEITEN.m;
+            return `${(Number(m) * e.faktor).toFixed(e.stellen).replace('.', ',')} ${e.name}`;
+        }
+        // Temperaturdifferenz: K und R sind gleich gross wie °C bzw. °F-Grad
+        function fmtTempDiff(k, einheit = 'K') {
+            if (k == null || !Number.isFinite(Number(k))) return '–';
+            return einheit === 'R' ? `${(Number(k) * 1.8).toFixed(2).replace('.', ',')} °R` : `${Number(k).toFixed(2).replace('.', ',')} K`;
+        }
