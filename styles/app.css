@@ -1958,3 +1958,11 @@
 .kat-zeile { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
 .kat-zeile:first-of-type { border-top: none; }
 .kat-detail { font-size: 10.5px; color: var(--text-muted); line-height: 1.4; margin-top: 2px; }
+
+/* ---- Vorzeichen-Knopf für Temperaturfelder ----
+   Android-Zifferntastaturen bieten kein Minus an. */
+.vz-feld { display: flex; gap: 4px; align-items: stretch; }
+.vz-feld input { flex: 1; min-width: 0; }
+.vz-knopf { flex: 0 0 auto; width: 34px; border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); color: var(--text-primary); font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer; padding: 0; }
+.vz-knopf:hover { border-color: var(--accent); color: var(--accent); }
+.vz-knopf:active { background: var(--accent); color: #fff; }
