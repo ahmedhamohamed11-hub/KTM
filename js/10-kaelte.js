@@ -608,7 +608,7 @@
                                 ${km.map(k => `<option value="${k.key}" ${A.kaeltemittel === k.key ? 'selected' : ''}>${escapeHtml(k.key)} – ${escapeHtml(k.label)}${k.blend ? ' (Blend)' : ''}</option>`).join('')}
                             </select>
                         </div>
-                        <div class="form-group"><label>Verflüssigungstemperatur <small>(°C)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="tVerfluessigung" value="${A.tVerfluessigung}"></div>
+                        <div class="form-group"><label>${A.kaeltemittel === 'R744' ? 'Gaskühleraustritt' : 'Verflüssigungstemperatur'} <small>(°C)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="tVerfluessigung" value="${A.tVerfluessigung}"></div>
                         <div class="form-group"><label>Sauggasüberhitzung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="ueberhitzung" value="${A.ueberhitzung}"></div>
                         <div class="form-group"><label>Unterkühlung <small>(K)</small></label><input type="text" inputmode="decimal" class="ka-in" data-feld="unterkuehlung" value="${A.unterkuehlung}"></div>
                     </div>
@@ -646,6 +646,31 @@
             const bloecke = a.ergebnisse.map(({ ks, werte, ergebnis }) => {
                 if (!ergebnis.moeglich) return `<div class="form-card"><div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')}</div><div class="empty-note" style="padding:10px;">Kältelast noch nicht berechenbar.</div></div>`;
                 const tVerd = werte.verdampfungstemperatur ? werte.verdampfungstemperatur.wert : null;
+                // CO2 oberhalb der kritischen Temperatur: eigener Rechenweg.
+                // Die Saettigungstabelle waere hier physikalisch falsch.
+                const co2 = (A.kaeltemittel === 'R744' && typeof kaelteCO2Kreisprozess === 'function' && A.tVerfluessigung >= 26)
+                    ? kaelteCO2Kreisprozess({ tVerdampfung: tVerd, tGaskuehler: A.tVerfluessigung, kaelteleistungW: ergebnis.auslegung })
+                    : null;
+                if (co2) {
+                    if (!co2.moeglich) return `<div class="form-card"><div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')}</div><div class="kl-hinweis kl-fehler">✕ ${escapeHtml(co2.hinweise[0])}</div></div>`;
+                    return `
+                        <div class="form-card">
+                            <div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')} ${co2.ueberkritisch ? '<span class="rohr-tag">transkritisch</span>' : ''}</div>
+                            <table class="kl-ergebnis"><tbody>
+                                <tr><td>Kälteleistung</td><td class="kl-w">${(ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW</td></tr>
+                                <tr><td>Verdampfungstemperatur</td><td class="kl-w">${tVerd} °C</td></tr>
+                                <tr><td>Verdampfungsdruck</td><td class="kl-w">${co2.pVerdampfung.toFixed(2).replace('.', ',')} bar</td></tr>
+                                <tr class="kl-sum"><td>Optimaler Hochdruck</td><td class="kl-w">${co2.hochdruckBar.toFixed(1).replace('.', ',')} bar</td></tr>
+                                <tr class="kl-formel"><td colspan="2">Hochdruck ist bei CO₂ Regelgröße – dieser Wert ergibt die beste Leistungszahl, vorgerechnet über den gesamten Druckbereich</td></tr>
+                                <tr><td>Druckverhältnis</td><td class="kl-w">${co2.druckverhaeltnis.toFixed(2).replace('.', ',')}</td></tr>
+                                <tr><td>spez. Kälteleistung q₀</td><td class="kl-w">${co2.q0.toFixed(1).replace('.', ',')} kJ/kg</td></tr>
+                                <tr><td>Leistungszahl COP</td><td class="kl-w">${co2.cop.toFixed(2).replace('.', ',')}</td></tr>
+                                <tr><td>Verdichterleistung</td><td class="kl-w">${co2.verdichterleistungKW.toFixed(2).replace('.', ',')} kW</td></tr>
+                                <tr class="kl-sum"><td>Massenstrom</td><td class="kl-w">${co2.mDotKgH.toFixed(1).replace('.', ',')} kg/h</td></tr>
+                            </tbody></table>
+                            ${co2.hinweise.map(h => `<div class="kl-hinweis kl-${h.art}">${h.art === 'pruefen' ? '🔴' : 'ℹ'} ${escapeHtml(h.text)}</div>`).join('')}
+                        </div>`;
+                }
                 const kp = kaelteKreisprozess({
                     kaeltemittel: A.kaeltemittel, tVerdampfung: tVerd, tVerfluessigung: A.tVerfluessigung,
                     ueberhitzung: A.ueberhitzung, unterkuehlung: A.unterkuehlung, kaelteleistungW: ergebnis.auslegung
