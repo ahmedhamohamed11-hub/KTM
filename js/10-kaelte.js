@@ -636,7 +636,103 @@
                         ${(kp.hinweise || []).map(h => `<div class="kl-hinweis kl-${h.art}">${escapeHtml(h.text)}</div>`).join('')}
                     </div>`;
             }).join('');
-            return kopf + volumenKarte + bloecke;
+            const schema = kaelteSchemaSvg(project);
+            const schemaKarte = schema ? `
+                <div class="form-card">
+                    <div class="form-card-title">Anlagenschema</div>
+                    <div class="schema-flaeche">${schema}</div>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Wird aus der gewählten Anlagenart und den tatsächlich eingetragenen Leitungen gezeichnet. Durchgezogen = Flüssigkeit und Heißgas, gestrichelt = Sauggas. Ändert sich eine Dimension, ändert sich das Schema mit.</div>
+                </div>` : '';
+            return kopf + volumenKarte + schemaKarte + bloecke;
+        }
+
+
+        // ---- Anlagenschema. Wird aus der tatsächlichen Konfiguration
+        // gezeichnet: Anlagenart bestimmt den Aufbau, die Leitungen tragen
+        // die real berechneten Werte. Kein Bild, sondern erzeugtes SVG -
+        // aendert sich eine Rohrdimension, aendert sich das Schema mit.
+        function kaelteSchemaSvg(project) {
+            const A = kaelteAuslegungsdaten(project);
+            const a = kaelteAuslegung(project);
+            const art = project.kaelte.anlagenart || 'einzel';
+            const stellen = a.ergebnisse.filter(e => e.ergebnis.moeglich);
+            if (!stellen.length) return '';
+
+            // Leitungsbeschriftung aus den echten Berechnungswerten
+            const leitungInfo = (ks, artKey) => {
+                const g = (ks.rohr || {})[artKey] || {};
+                if (!g.laenge) return null;
+                const zeilen = [];
+                if (g.gewaehlt) zeilen.push(g.gewaehlt);
+                zeilen.push(`${g.laenge} m`);
+                return zeilen;
+            };
+
+            const F = { linie: 'var(--accent)', kasten: 'var(--bg-secondary)', rand: 'var(--border)', text: 'var(--text-primary)', klein: 'var(--text-muted)' };
+            const kasten = (x, y, w, h, titel, unter) => `
+                <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="${F.kasten}" stroke="${F.rand}" stroke-width="1.5"/>
+                <text x="${x + w / 2}" y="${y + (unter ? h / 2 - 2 : h / 2 + 4)}" text-anchor="middle" font-size="11" font-weight="600" fill="${F.text}">${escapeHtml(titel)}</text>
+                ${unter ? `<text x="${x + w / 2}" y="${y + h / 2 + 10}" text-anchor="middle" font-size="8.5" fill="${F.klein}">${escapeHtml(unter)}</text>` : ''}`;
+            const pfeil = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${F.linie}" stroke-width="2" marker-end="url(#kpfeil)"/>`;
+            const beschriftung = (x, y, zeilen, anker = 'middle') => (zeilen || []).map((z, i) =>
+                `<text x="${x}" y="${y + i * 10}" text-anchor="${anker}" font-size="8.5" fill="${F.klein}">${escapeHtml(z)}</text>`).join('');
+
+            const teile = [];
+            const B = 132, H = 34;          // Kastengroesse
+            const mitte = 300;
+            let hoehe = 0;
+
+            // Aggregat oben
+            const aggTitel = art === 'einzel' ? 'Verflüssigungssatz' : (art === 'hdmd' ? 'Verdichterverbund HD/MD' : 'Verdichterverbund');
+            teile.push(kasten(mitte - B / 2, 10, B, H, aggTitel, `${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW · ${A.kaeltemittel}`));
+
+            // Verfluessiger / Gaskuehler rechts
+            teile.push(kasten(mitte + B / 2 + 40, 10, B, H, art === 'hdmd' ? 'Gaskühler' : 'Verflüssiger', `tc ${A.tVerfluessigung} °C`));
+            teile.push(pfeil(mitte + B / 2, 27, mitte + B / 2 + 38, 27));
+            teile.push(beschriftung(mitte + B / 2 + 19, 20, ['Druckleitung'], 'middle'));
+
+            // Sammler unter dem Verfluessiger
+            teile.push(kasten(mitte + B / 2 + 40, 70, B, H, 'Sammler', 'Flüssigkeit'));
+            teile.push(pfeil(mitte + B / 2 + 40 + B / 2, 44, mitte + B / 2 + 40 + B / 2, 68));
+
+            // Armaturenstrang links vom Sammler
+            teile.push(kasten(mitte - B / 2, 70, B, H, 'Filtertrockner · Schauglas', 'Magnetventil'));
+            teile.push(pfeil(mitte + B / 2 + 38, 87, mitte + B / 2 + 2, 87));
+            teile.push(beschriftung(mitte + B / 2 + 20, 80, ['Flüssigkeit'], 'middle'));
+
+            hoehe = 120;
+            // Verbraucher nebeneinander
+            const proReihe = Math.min(stellen.length, 3);
+            const breiteGes = proReihe * B + (proReihe - 1) * 22;
+            const startX = mitte - breiteGes / 2;
+            stellen.forEach((e, i) => {
+                const reihe = Math.floor(i / 3), spalte = i % 3;
+                const x = startX + spalte * (B + 22);
+                const y = 140 + reihe * 78;
+                const ks = e.ks;
+                const tv = e.werte.verdampfungstemperatur.wert;
+                teile.push(kasten(x, y + 26, B, H, 'Verdampfer', `${escapeHtml(ks.bezeichnung || '')} · ${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW`));
+                // Expansionsventil darueber
+                teile.push(`<rect x="${x + B / 2 - 22}" y="${y - 2}" width="44" height="20" rx="3" fill="${F.kasten}" stroke="${F.rand}" stroke-width="1.2"/>
+                            <text x="${x + B / 2}" y="${y + 11}" text-anchor="middle" font-size="9" font-weight="600" fill="${F.text}">EXV</text>`);
+                teile.push(pfeil(x + B / 2, 104, x + B / 2, y - 4));
+                teile.push(pfeil(x + B / 2, y + 18, x + B / 2, y + 24));
+                const fl = leitungInfo(ks, 'fluessig');
+                if (fl) teile.push(beschriftung(x + B / 2 + 6, y - 30, fl, 'start'));
+                // Saugleitung zurueck zum Aggregat
+                const sx = x + B / 2, sy = y + 26 + H;
+                teile.push(`<path d="M ${sx} ${sy} L ${sx} ${sy + 16} L ${mitte - B / 2 - 30} ${sy + 16} L ${mitte - B / 2 - 30} 27 L ${mitte - B / 2 - 2} 27" fill="none" stroke="${F.linie}" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#kpfeil)"/>`);
+                const sl = leitungInfo(ks, 'saug');
+                if (sl) teile.push(beschriftung(sx + 6, sy + 12, sl.concat([`t₀ ${tv} °C`]), 'start'));
+                hoehe = Math.max(hoehe, sy + 40);
+            });
+
+            return `
+                <svg viewBox="0 0 600 ${hoehe + 20}" style="width:100%;height:auto;" xmlns="http://www.w3.org/2000/svg">
+                    <defs><marker id="kpfeil" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+                        <path d="M0,0 L0,6 L7,3 z" fill="var(--accent)"/></marker></defs>
+                    ${teile.join('\n')}
+                </svg>`;
         }
 
         // ---- Rohrleitungen-Tab
