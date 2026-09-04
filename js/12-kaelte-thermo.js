@@ -142,6 +142,7 @@
 
             return {
                 moeglich: true, hinweise,
+                kaeltemittel, tSat: tVerdampfung, tSatHoch: tVerfluessigung,
                 q0, mDot, mDotKgH: mDot * 3600,
                 pVerdampfung: v.p, pVerfluessigung: c.p, druckverhaeltnis: c.p / v.p,
                 rhoSaug, rhoFluessig, rhoHeissgas,
@@ -261,8 +262,36 @@
         const STROEMUNG_GRENZEN = {
             saug:     { min: 4, minSteig: 8, max: 15, opt: [6, 12] },
             heissgas: { min: 4, minSteig: 8, max: 18, opt: [8, 15] },
-            fluessig: { min: 0, minSteig: 0, max: 1.5, opt: [0.4, 1.2] }
+            // Fluessigkeitsleitung: enger gefasst (2026-09). Ueber etwa
+            // 1,2 m/s steigt der Druckverlust so stark, dass die Unterkuehlung
+            // aufgezehrt wird und vor dem Expansionsventil Flashgas entsteht -
+            // die Leitung ist dann zu klein, auch wenn "es fliesst".
+            fluessig: { min: 0, minSteig: 0, max: 1.2, opt: [0.3, 1.0] }
         };
+
+        // Rechnet einen Druckverlust in den zugehoerigen Verlust an
+        // Saettigungstemperatur um. Das ist das Mass, das in der Kaeltetechnik
+        // zaehlt: 0,3 bar sind bei CO2 kaum etwas, bei R134a viel.
+        // Wird aus der Stofftabelle gelesen, nicht ueber eine Faustformel.
+        function kaelteDruckverlustK(kaeltemittel, tSat, dpBar, seiteSaug = true) {
+            const s = kmStoff(kaeltemittel, tSat);
+            if (!s || !(dpBar > 0)) return 0;
+            const km = KAELTEMITTEL[kaeltemittel];
+            const zielP = seiteSaug ? s.p - dpBar : s.p + dpBar;
+            if (zielP <= 0) return null;
+            const tab = km.tabelle;
+            for (let i = 0; i < tab.length - 1; i++) {
+                const a = tab[i], b = tab[i + 1];
+                if ((a[1] - zielP) * (b[1] - zielP) <= 0 && a[1] !== b[1]) {
+                    const f = (zielP - a[1]) / (b[1] - a[1]);
+                    return Math.abs(tSat - (a[0] + (b[0] - a[0]) * f));
+                }
+            }
+            return null;   // ausserhalb der Tabelle - nicht extrapolieren
+        }
+
+        // Zulaessiger Temperaturverlust je Leitung [K]. Uebliche Auslegung.
+        const DRUCKVERLUST_GRENZE_K = { saug: 1.5, heissgas: 1.0, fluessig: 1.0 };
 
         // Vergleicht alle Rohrdimensionen und empfiehlt eine.
         function kaelteRohrAuswahl(art, kp, geo) {
@@ -285,10 +314,118 @@
                     // Teillast-Reserve: bei halber Leistung halbiert sich die Geschwindigkeit.
                     if (ok && e.w / 2 < oel.wMin) bewertung.push({ art: 'info', text: `Bei 50 % Teillast fällt die Strömung auf ${(e.w / 2).toFixed(1)} m/s und liegt damit unter ${oel.wMin.toFixed(1)} m/s. Für geregelte Anlagen Doppelsteigleitung prüfen.` });
                 } else if (e.w > g.opt[1]) bewertung.push({ art: 'warnung', text: `Flüssigkeitsgeschwindigkeit ${e.w.toFixed(2)} m/s über dem üblichen Bereich (${g.opt[0]}–${g.opt[1]} m/s) – Druckverlust erhöht die Flashgas-Gefahr vor dem Expansionsventil. Unterkühlung prüfen oder größere Dimension wählen.` });
-                return { ...e, ok, bewertung, oel };
+                // Druckverlust in Temperaturverlust umrechnen und bewerten.
+                // Eine Leitung, die den Oeltransport schafft, aber 1 bar
+                // Druckverlust hat, ist trotzdem zu klein.
+                let dTv = null;
+                if (kp.kaeltemittel && kp.tSat != null) {
+                    dTv = kaelteDruckverlustK(kp.kaeltemittel, art === 'saug' ? kp.tSat : kp.tSatHoch, e.dpGesamtBar, art === 'saug');
+                    const grenze = DRUCKVERLUST_GRENZE_K[art];
+                    if (dTv != null && dTv > grenze) {
+                        bewertung.push({ art: 'fehler', text: `Druckverlust ${e.dpGesamtBar.toFixed(3).replace('.', ',')} bar entspricht ${dTv.toFixed(1).replace('.', ',')} K Temperaturverlust – zulässig sind ${grenze.toFixed(1).replace('.', ',')} K. Das kostet Leistung, ${art === 'fluessig' ? 'zehrt die Unterkühlung auf und erzeugt Flashgas' : 'die Leitung ist zu klein'}.` });
+                        ok = false;
+                    } else if (dTv != null && dTv > grenze * 0.7) {
+                        bewertung.push({ art: 'warnung', text: `Temperaturverlust ${dTv.toFixed(1).replace('.', ',')} K liegt nahe an der Grenze von ${grenze.toFixed(1).replace('.', ',')} K.` });
+                    }
+                }
+                return { ...e, ok, bewertung, oel, dTverlustK: dTv };
             });
             // Empfehlung: kleinste Dimension, die alle harten Kriterien erfuellt
             const geeignet = varianten.filter(v => v.ok);
             const empfehlung = geeignet.length ? geeignet[0] : null;
             return { moeglich: true, art, steigend, varianten, empfehlung, hinweise: kp.hinweise };
+        }
+
+        // ---------- Isolierstärke gegen Kondensat ----------
+        // Kriterium: die Oberflaeche der Daemmung muss waermer bleiben als der
+        // Taupunkt der Umgebungsluft, sonst schwitzt die Leitung.
+        //   R_daemm  = ln(da/di) / (2·π·λ)          [mK/W]
+        //   R_ober   = 1 / (π·da·h)                  [mK/W]
+        //   q        = (t_umg − t_rohr) / (R_daemm + R_ober)
+        //   t_ober   = t_umg − q · R_ober
+        // Gefordert: t_ober ≥ Taupunkt + Sicherheitsabstand.
+        // λ und h sind Katalog- bzw. Erfahrungswerte und stehen hier oben,
+        // damit sie nachvollziehbar bleiben.
+        const DAEMM_LAMBDA = { 'Elastomer (Armaflex o. ä.)': 0.036, 'PE-Schaum': 0.040, 'Kautschuk hochwertig': 0.033 };
+        const DAEMM_STAERKEN = [9, 13, 19, 25, 32, 40, 50, 60];
+        const DAEMM_H_AUSSEN = 9;      // W/m²K, ruhende Innenluft inkl. Strahlung
+        const DAEMM_SICHERHEIT_K = 1;  // K Abstand zum Taupunkt
+
+        function kaelteIsolierung(p) {
+            const { rohrAussenMm, tRohr, tUmgebung = 25, rhUmgebung = 70, material = 'Elastomer (Armaflex o. ä.)' } = p;
+            const lambda = DAEMM_LAMBDA[material] ?? 0.036;
+            const taupunkt = kaelteTaupunkt(tUmgebung, rhUmgebung);
+            const di = rohrAussenMm / 1000;
+            const dT = tUmgebung - tRohr;
+
+            const varianten = DAEMM_STAERKEN.map(s => {
+                const da = di + 2 * (s / 1000);
+                const rDaemm = Math.log(da / di) / (2 * Math.PI * lambda);
+                const rOber = 1 / (Math.PI * da * DAEMM_H_AUSSEN);
+                const q = dT / (rDaemm + rOber);            // W/m
+                const tOber = tUmgebung - q * rOber;
+                return {
+                    staerke: s, waermestromWm: q, oberflaeche: tOber,
+                    trocken: tOber >= taupunkt + DAEMM_SICHERHEIT_K,
+                    reserve: tOber - taupunkt
+                };
+            });
+            const empfehlung = varianten.find(v => v.trocken) || null;
+            return {
+                taupunkt, lambda, material, varianten, empfehlung,
+                hinweis: empfehlung
+                    ? `Bei ${tUmgebung} °C und ${rhUmgebung} % rel. Feuchte liegt der Taupunkt bei ${taupunkt.toFixed(1)} °C. ${empfehlung.staerke} mm halten die Oberfläche auf ${empfehlung.oberflaeche.toFixed(1)} °C – ${empfehlung.reserve.toFixed(1)} K über dem Taupunkt.`
+                    : `Auch ${DAEMM_STAERKEN[DAEMM_STAERKEN.length - 1]} mm reichen bei ${tUmgebung} °C und ${rhUmgebung} % nicht aus. Umgebungsfeuchte senken, Doppeldämmung oder Begleitheizung prüfen.`
+            };
+        }
+
+        // ---------- Kältemittelfüllmenge ----------
+        // Wird aus der tatsaechlichen Anlagengeometrie gerechnet, nicht
+        // geschaetzt: je Leitung Innenvolumen × Dichte im jeweiligen Zustand.
+        // Fuer Verdampfer, Verflüssiger und Sammler gibt es KEINE Schaetzung -
+        // deren Innenvolumen steht nur im Herstellerdatenblatt. Fehlt es,
+        // wird das offen ausgewiesen statt eine Zahl zu erfinden.
+        function kaelteFuellmenge(leitungen, kp, bauteilVolumenL = {}) {
+            const teile = [];
+            const offen = [];
+            let gesamt = 0;
+
+            const dichte = { fluessig: kp.rhoFluessig, saug: kp.rhoSaug, heissgas: kp.rhoHeissgas };
+            const label = { fluessig: 'Flüssigkeitsleitung', saug: 'Saugleitung', heissgas: 'Druckleitung' };
+
+            (leitungen || []).forEach(l => {
+                if (!l.diMm || !l.laenge) return;
+                const di = l.diMm / 1000;
+                const volL = (Math.PI * di * di / 4) * l.laenge * 1000;   // Liter
+                const rho = dichte[l.art] || 0;
+                // Die Saugleitung fuehrt Dampf, dort ist die Fuellmenge klein.
+                // Die Fluessigkeitsleitung dominiert die Fuellmenge deutlich.
+                const kg = volL / 1000 * rho;
+                gesamt += kg;
+                teile.push({ name: `${label[l.art] || l.art}${l.bez ? ' ' + l.bez : ''}`, volumenL: volL, dichte: rho, kg,
+                    formel: `${volL.toFixed(2)} l × ${rho.toFixed(1)} kg/m³` });
+            });
+
+            // Bauteile: nur rechnen, wenn ein Innenvolumen bekannt ist.
+            [['verdampfer', 'Verdampfer', 'fluessig'], ['verfluessiger', 'Verflüssiger / Gaskühler', 'fluessig'],
+             ['sammler', 'Flüssigkeitssammler', 'fluessig'], ['sonstige', 'Sonstige Bauteile', 'fluessig']].forEach(([key, name, zustand]) => {
+                const v = Number(bauteilVolumenL[key]);
+                if (!v) { offen.push(name); return; }
+                // Verdampfer und Verfluessiger sind im Betrieb nur teilweise
+                // fluessig gefuellt. Ohne Herstellerangabe zum Fuellgrad wird
+                // mit einem klar benannten Fuellgrad gerechnet.
+                const fuellgrad = (key === 'sammler') ? 0.6 : (key === 'sonstige' ? 1.0 : 0.35);
+                const kg = v / 1000 * kp.rhoFluessig * fuellgrad;
+                gesamt += kg;
+                teile.push({ name, volumenL: v, dichte: kp.rhoFluessig, kg,
+                    formel: `${v} l × ${kp.rhoFluessig.toFixed(1)} kg/m³ × ${(fuellgrad * 100).toFixed(0)} % Füllgrad` });
+            });
+
+            return {
+                teile, gesamt, offen,
+                sicher: offen.length === 0,
+                hinweis: offen.length
+                    ? `Für ${offen.join(', ')} ist kein Innenvolumen hinterlegt. Diese Anteile fehlen in der Summe – Innenvolumen aus dem Herstellerdatenblatt eintragen.`
+                    : 'Alle Anteile aus tatsächlichen Volumina gerechnet. Füllgrade von Verdampfer und Verflüssiger sind Annahmen – Herstellerangabe hat Vorrang.'
+            };
         }
