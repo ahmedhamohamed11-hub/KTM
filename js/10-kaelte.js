@@ -263,6 +263,26 @@
                     });
                 });
 
+                // Arbeitsleistung und Umgebungsbedingungen
+                contentArea.querySelectorAll('.ar-in, .au-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        const ziel = el.classList.contains('ar-in')
+                            ? (p.kaelte.arbeit = p.kaelte.arbeit || {})
+                            : (p.kaelte.auslegung = p.kaelte.auslegung || {});
+                        const f = el.dataset.feld;
+                        const roh = el.value.trim();
+                        if (f === 'pauschal') ziel.pauschal = roh === '1';
+                        else if (f === 'pauschalText') ziel.pauschalText = roh;
+                        else {
+                            if (roh === '') delete ziel[f];
+                            else { const n = parseFloat(roh.replace(',', '.')); if (!Number.isFinite(n)) { showToast('Bitte eine Zahl eingeben.', 'error'); return; } ziel[f] = n; }
+                        }
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
                 // Verbund: Sauggruppen-Zuordnung und Gleichzeitigkeitsfaktor
                 contentArea.querySelectorAll('.vb-in').forEach(el => {
                     el.addEventListener('change', async () => {
@@ -974,6 +994,11 @@
             const a = kaelteAuslegung(project);
             const pos = [];
             const eigen = project.kaelte.materialEigen || {};   // Überschreibungen je Schlüssel
+            // Umgebungsbedingungen am Montageort - bestimmen Taupunkt und
+            // damit die Daemmstaerke. Aenderbar unter Auslegungsbedingungen.
+            const umgebungT = Number((project.kaelte.auslegung || {}).umgebungT) || 25;
+            const umgebungRH = Number((project.kaelte.auslegung || {}).umgebungRH) || 70;
+            const leitungenFuerFuellmenge = [];
 
             const add = (schluessel, kategorie, name, beschreibung, menge, einheit, herkunft) => {
                 const o = eigen[schluessel] || {};
@@ -1017,12 +1042,37 @@
                     add(`${pre}_rohr`, 'Rohr', `Kupferrohr ${dim}`, `${kurz}`,
                         Math.ceil(laenge * MAT_VERSCHNITT), 'm', `${laenge} m + 5 % Verschnitt`);
 
+                    // Fuer die Fuellmengenberechnung merken (Innendurchmesser
+                    // aus der gewaehlten Dimension "Ø 35 × 1.5 mm").
+                    const mm = /([\d.,]+)\s*[×x]\s*([\d.,]+)/.exec(String(dim));
+                    if (mm) {
+                        const da = parseFloat(mm[1].replace(',', '.'));
+                        const wand = parseFloat(mm[2].replace(',', '.'));
+                        if (da && wand) leitungenFuerFuellmenge.push({ art: art.key, diMm: da - 2 * wand, laenge, bez: dim });
+                    }
+
                     // Isolierung nur bei kalten Leitungen - Heissgas wird nicht
                     // gegen Kondensat gedaemmt, hoechstens als Beruehrschutz.
                     if (art.key !== 'heissgas') {
-                        add(`${pre}_iso`, 'Isolierung', `Isolierung für ${dim}`,
-                            `${kurz}${tVerd != null && tVerd < 0 ? ' · Tiefkühlung – Dämmstärke gegen Kondensat prüfen' : ''}`,
-                            Math.ceil(laenge * MAT_VERSCHNITT), 'm', `${laenge} m + 5 % Verschnitt`);
+                        // Daemmstaerke gegen Kondensat rechnen statt "prüfen"
+                        // zu schreiben. Rohraussendurchmesser aus der gewaehlten
+                        // Dimension, Rohrtemperatur = Verdampfung (Saugleitung)
+                        // bzw. Fluessigkeitstemperatur.
+                        const daMm = parseFloat(String(dim).replace(/[^0-9.,]/, '').replace(',', '.')) || 0;
+                        const tRohr = art.key === 'saug' ? tVerd : Math.min(tVerd != null ? tVerd + 10 : 5, 15);
+                        let isoText = kurz, isoBez = `Isolierung für ${dim}`;
+                        if (daMm && tRohr != null) {
+                            const iso = kaelteIsolierung({ rohrAussenMm: daMm, tRohr,
+                                tUmgebung: umgebungT, rhUmgebung: umgebungRH });
+                            if (iso.empfehlung) {
+                                isoBez = `Isolierung ${iso.empfehlung.staerke} mm für ${dim}`;
+                                isoText = `${kurz} · Oberfläche ${iso.empfehlung.oberflaeche.toFixed(1).replace('.', ',')} °C bei Taupunkt ${iso.taupunkt.toFixed(1).replace('.', ',')} °C`;
+                            } else {
+                                isoText = `${kurz} · ⚠ keine Standardstärke reicht bei ${umgebungT} °C / ${umgebungRH} %`;
+                            }
+                        }
+                        add(`${pre}_iso`, 'Isolierung', isoBez, isoText,
+                            Math.ceil(laenge * MAT_VERSCHNITT), 'm', `${laenge} m + 5 % Verschnitt · Dämmstärke gegen Taupunkt berechnet`);
                     }
 
                     add(`${pre}_schellen`, 'Befestigung', `Rohrschellen ${dim}`, kurz,
@@ -1043,13 +1093,98 @@
 
             // 3) Anlagenweite Verbrauchsmaterialien
             if (pos.length) {
+                // Fuellmenge aus der tatsaechlichen Geometrie. Bauteilvolumina
+                // kommen aus den eingetragenen Komponenten, sofern vorhanden.
+                let fmMenge = 0, fmHerkunft = 'Leitungslängen fehlen', fmText = '';
+                const erste = a.ergebnisse.find(e => e.ergebnis.moeglich);
+                if (erste && leitungenFuerFuellmenge.length) {
+                    const kp = kaelteKreisprozess({
+                        kaeltemittel: A.kaeltemittel,
+                        tVerdampfung: erste.werte.verdampfungstemperatur.wert,
+                        tVerfluessigung: A.tVerfluessigung, ueberhitzung: A.ueberhitzung,
+                        unterkuehlung: A.unterkuehlung, kaelteleistungW: erste.ergebnis.auslegung
+                    });
+                    if (kp.moeglich) {
+                        const bv = project.kaelte.bauteilVolumen || {};
+                        const fm = kaelteFuellmenge(leitungenFuerFuellmenge, kp, bv);
+                        fmMenge = Math.ceil(fm.gesamt * 10) / 10;
+                        fmHerkunft = fm.teile.map(t => `${t.name} ${t.kg.toFixed(2).replace('.', ',')} kg`).join(' · ');
+                        fmText = fm.sicher ? 'aus Leitungs- und Bauteilvolumen berechnet'
+                                           : `⚠ unvollständig: ${fm.offen.join(', ')} ohne Innenvolumen`;
+                    }
+                }
                 add('kaeltemittel', 'Verbrauchsmaterial', `Kältemittel ${A.kaeltemittel}`,
-                    'Füllmenge noch nicht berechnet – Menge selbst eintragen', 0, 'kg',
-                    '🔴 Füllmengenberechnung ist noch nicht umgesetzt');
+                    fmText || 'Menge selbst eintragen', fmMenge, 'kg', fmHerkunft);
                 add('stickstoff', 'Verbrauchsmaterial', 'Formiergas / Stickstoff', 'Spülen und Druckprobe', 1, 'Fl', 'Erfahrungswert');
+
+                // --- Elektro: Laengen aus den Rohrwegen abgeleitet, weil
+                // Steuer- und Versorgungsleitungen denselben Weg nehmen.
+                const rohrweg = leitungenFuerFuellmenge.reduce((m, l) => Math.max(m, l.laenge), 0);
+                const leistungKW = a.summeAuslegung / 1000;
+                const querschnitt = leistungKW <= 3 ? '3 × 1,5 mm²' : leistungKW <= 6 ? '5 × 2,5 mm²' : leistungKW <= 12 ? '5 × 4 mm²' : '5 × 6 mm²';
+                if (rohrweg > 0) {
+                    add('el_zuleitung', 'Elektro', `Zuleitung ${querschnitt}`,
+                        `Versorgung Aggregat · Querschnitt nach ${leistungKW.toFixed(1).replace('.', ',')} kW Kälteleistung`,
+                        Math.ceil(rohrweg * 1.2), 'm', `${rohrweg} m Rohrweg + 20 % Zuschlag – Querschnitt vor Ausführung elektrotechnisch prüfen`);
+                    add('el_steuer', 'Elektro', 'Steuerleitung 5 × 1,5 mm²', 'Verdampfer, Regelung, Fühler',
+                        Math.ceil(rohrweg * 1.2), 'm', `${rohrweg} m Rohrweg + 20 % Zuschlag`);
+                    add('el_kanal', 'Elektro', 'Kabelkanal', 'Verlegung entlang der Leitungsführung',
+                        Math.ceil(rohrweg), 'm', `entspricht dem Rohrweg`);
+                    add('el_klein', 'Elektro', 'Elektroinstallationsmaterial', 'Dosen, Klemmen, Verschraubungen, Befestigung',
+                        1, 'Pausch', 'Erfahrungswert');
+                }
             }
 
-            // 4) Frei ergänzte Eigenposten
+            // 4) Arbeitsleistung. Entweder als Pauschale oder als einzelne
+            // Positionen mit Richtwert-Stunden, die sich an der Anlagengroesse
+            // orientieren. Beides jederzeit ueberschreibbar.
+            const arbeit = project.kaelte.arbeit || {};
+            if (pos.length) {
+                const stundensatz = Number(arbeit.stundensatz) || 75;
+                if (arbeit.pauschal) {
+                    const o = eigen['arbeit_pauschal'] || {};
+                    pos.push({
+                        schluessel: 'arbeit_pauschal', kategorie: 'Arbeit',
+                        name: 'Arbeitsleistung',
+                        beschreibung: arbeit.pauschalText || 'Montage, Inbetriebnahme und Entsorgung Altgeräte',
+                        einheit: 'Pausch',
+                        menge: o.menge != null ? Number(o.menge) : 1,
+                        ekPreis: o.ekPreis != null ? Number(o.ekPreis) : null,
+                        vkPreis: o.vkPreis != null ? Number(o.vkPreis) : (Number(arbeit.pauschalPreis) || null),
+                        herkunft: 'Pauschalpreis', arbeitPauschal: true
+                    });
+                } else {
+                    // Richtwert-Stunden: Grundaufwand plus Anteile nach
+                    // Anlagengroesse und Rohrweg. Praxis-Erfahrungswerte.
+                    const kw = a.summeAuslegung / 1000;
+                    const rohrweg = leitungenFuerFuellmenge.reduce((sm, l) => sm + l.laenge, 0);
+                    const stellen = Math.max(1, (project.kaelte.kuehlstellen || []).length);
+                    const aufgaben = [
+                        ['montage', 'Montage der Anlage', 'Aufstellung und Befestigung der Geräte', 4 + kw * 0.4],
+                        ['rohr', 'Rohrleitungsverlegung', 'Verlegen, Löten und Anschluss der Kältemittelleitungen', 0.35 * rohrweg + 2],
+                        ['iso', 'Isolierarbeiten', 'Dämmung der Kältemittelleitungen', 0.1 * rohrweg],
+                        ['elektro', 'Elektroinstallation', 'Verdrahtung, Regelung, Fühler', 3 + stellen * 1.5],
+                        ['dicht', 'Dichtheitsprüfung und Evakuierung', 'Druckprobe, Vakuum, Kältemittelfüllung', 3],
+                        ['ibn', 'Inbetriebnahme', 'Einstellen, Messen, Funktionsprüfung, Protokoll', 3 + stellen * 0.5]
+                    ];
+                    aufgaben.forEach(([key, name, beschr, std]) => {
+                        const sl = `arbeit_${key}`;
+                        const o = eigen[sl] || {};
+                        const stunden = o.menge != null ? Number(o.menge) : Math.round(std * 2) / 2;
+                        if (stunden <= 0) return;
+                        pos.push({
+                            schluessel: sl, kategorie: 'Arbeit', name, beschreibung: beschr, einheit: 'h',
+                            menge: stunden,
+                            ekPreis: o.ekPreis != null ? Number(o.ekPreis) : null,
+                            vkPreis: o.vkPreis != null ? Number(o.vkPreis) : stundensatz,
+                            herkunft: `Richtwert aus ${kw.toFixed(1).replace('.', ',')} kW, ${rohrweg} m Rohrweg, ${stellen} Kühlstelle(n)`,
+                            geaendert: o.menge != null
+                        });
+                    });
+                }
+            }
+
+            // 5) Frei ergänzte Eigenposten
             (project.kaelte.materialZusatz || []).forEach((z, i) => {
                 pos.push({ schluessel: `zusatz_${i}`, kategorie: z.kategorie || 'Sonstiges', name: z.name,
                     beschreibung: z.beschreibung || '', einheit: z.einheit || 'Stk',
@@ -1065,6 +1200,8 @@
 
         function renderKaelteTabMaterial(project) {
             const m = kaelteMaterialListe(project);
+            const arb = project.kaelte.arbeit || {};
+            const aus = project.kaelte.auslegung || {};
             if (!m.pos.length) return `<div class="empty-note" style="padding:14px;">Noch nichts abzuleiten – erst Komponenten eintragen oder Rohrleitungen dimensionieren.</div>`;
 
             const zeilen = m.pos.map(p => `
@@ -1086,6 +1223,26 @@
             return `
                 <div class="kl-hinweis kl-info">Mengen sind aus deinen Eingaben abgeleitet (Rohrlängen, Formstücke, Verlegeabstand, 5 % Verschnitt). Alles ist überschreibbar – geänderte Zeilen bleiben gespeichert, auch wenn du oben weiterrechnest.</div>
                 ${m.ohnePreis ? `<div class="kl-hinweis kl-warnung">⚠ ${m.ohnePreis} Position(en) ohne Verkaufspreis. Die fehlen dann im Angebot.</div>` : ''}
+                <div class="form-card">
+                    <div class="form-card-title">Arbeitsleistung &amp; Umgebung</div>
+                    <div class="survey-grid">
+                        <div class="form-group"><label>Abrechnung</label>
+                            <select class="ar-in" data-feld="pauschal">
+                                <option value="0" ${!arb.pauschal ? 'selected' : ''}>Einzelne Positionen nach Stunden</option>
+                                <option value="1" ${arb.pauschal ? 'selected' : ''}>Pauschalpreis</option>
+                            </select>
+                        </div>
+                        ${arb.pauschal ? `
+                            <div class="form-group"><label>Pauschalpreis (€)</label><input type="text" inputmode="decimal" class="ar-in" data-feld="pauschalPreis" value="${arb.pauschalPreis ?? ''}"></div>
+                            <div class="form-group" style="grid-column:1/-1;"><label>Text der Pauschale</label><input type="text" class="ar-in" data-feld="pauschalText" value="${escapeHtml(arb.pauschalText || 'Montage, Inbetriebnahme und Entsorgung Altgeräte')}"></div>
+                        ` : `
+                            <div class="form-group"><label>Stundensatz (€)</label><input type="text" inputmode="decimal" class="ar-in" data-feld="stundensatz" value="${arb.stundensatz ?? 75}"></div>
+                        `}
+                        <div class="form-group"><label>Umgebungstemperatur (°C) <small>– für die Dämmstärke</small></label><input type="text" inputmode="decimal" class="au-in" data-feld="umgebungT" value="${aus.umgebungT ?? 25}"></div>
+                        <div class="form-group"><label>rel. Luftfeuchte (%)</label><input type="text" inputmode="decimal" class="au-in" data-feld="umgebungRH" value="${aus.umgebungRH ?? 70}"></div>
+                    </div>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">Die Dämmstärke wird aus Umgebungstemperatur und Feuchte gegen den Taupunkt gerechnet. Feuchtere Umgebung heißt dickere Dämmung.</div>
+                </div>
                 <div class="form-card">
                     <div class="detail-section-head" style="margin-top:0;">
                         <h4>Materialliste (${m.pos.length} Positionen)</h4>
