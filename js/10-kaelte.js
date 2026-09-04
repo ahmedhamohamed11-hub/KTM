@@ -263,6 +263,23 @@
                     });
                 });
 
+                // Innenvolumen der Bauteile (Füllmenge)
+                contentArea.querySelectorAll('.bv-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        p.kaelte.bauteilVolumen = p.kaelte.bauteilVolumen || {};
+                        const roh = el.value.trim();
+                        if (roh === '') delete p.kaelte.bauteilVolumen[el.dataset.feld];
+                        else {
+                            const n = parseFloat(roh.replace(',', '.'));
+                            if (!Number.isFinite(n) || n <= 0) { showToast('Bitte ein Volumen in Litern eingeben.', 'error'); return; }
+                            p.kaelte.bauteilVolumen[el.dataset.feld] = n;
+                        }
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
                 // Arbeitsleistung und Umgebungsbedingungen
                 contentArea.querySelectorAll('.ar-in, .au-in').forEach(el => {
                     el.addEventListener('change', async () => {
@@ -578,7 +595,18 @@
                     ${km.find(k => k.key === A.kaeltemittel && k.blend) ? '<div class="kl-hinweis kl-pruefen">🔴 Gemisch (Blend): Stoffdaten aus einem Gemischmodell, Temperaturgleit nicht berücksichtigt. Für die endgültige Auslegung das Herstellerdatenblatt verwenden.</div>' : ''}
                 </div>`;
 
-            if (a.anzahlGesamt === 0) return kopf + `<div class="empty-note" style="padding:14px;">Noch keine Kühlstelle erfasst – ohne Kältelast kein Kreisprozess.</div>`;
+                            const bv = project.kaelte.bauteilVolumen || {};
+                const volumenKarte = `
+                    <div class="form-card">
+                        <div class="form-card-title">Innenvolumen der Bauteile <small style="font-weight:400;color:var(--text-muted);">– für die Kältemittelfüllmenge</small></div>
+                        <div class="survey-grid">
+                            ${[['verdampfer', 'Verdampfer'], ['verfluessiger', 'Verflüssiger / Gaskühler'], ['sammler', 'Flüssigkeitssammler'], ['sonstige', 'Sonstige Bauteile']]
+                                .map(([k, l]) => `<div class="form-group"><label>${escapeHtml(l)} <small>(Liter)</small></label><input type="text" inputmode="decimal" class="bv-in" data-feld="${k}" value="${bv[k] ?? ''}" placeholder="aus Datenblatt"></div>`).join('')}
+                        </div>
+                        <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">Diese Werte stehen im Herstellerdatenblatt. Was hier leer bleibt, fehlt in der Füllmenge – es wird nichts geschätzt.</div>
+                    </div>`;
+
+                if (a.anzahlGesamt === 0) return kopf + volumenKarte + `<div class="empty-note" style="padding:14px;">Noch keine Kühlstelle erfasst – ohne Kältelast kein Kreisprozess.</div>`;
 
             const bloecke = a.ergebnisse.map(({ ks, werte, ergebnis }) => {
                 if (!ergebnis.moeglich) return `<div class="form-card"><div class="form-card-title">🧊 ${escapeHtml(ks.bezeichnung || 'Unbenannt')}</div><div class="empty-note" style="padding:10px;">Kältelast noch nicht berechenbar.</div></div>`;
@@ -608,7 +636,7 @@
                         ${(kp.hinweise || []).map(h => `<div class="kl-hinweis kl-${h.art}">${escapeHtml(h.text)}</div>`).join('')}
                     </div>`;
             }).join('');
-            return kopf + bloecke;
+            return kopf + volumenKarte + bloecke;
         }
 
         // ---- Rohrleitungen-Tab
@@ -678,7 +706,21 @@
                                     <tr class="kl-sum"><td>Δp gesamt</td><td class="kl-w">${zeile.dpGesamtBar.toFixed(4).replace('.', ',')} bar</td></tr>
                                     <tr class="kl-formel"><td colspan="2">Darcy-Weisbach, Rohrreibungszahl nach Colebrook-White (λ = ${zeile.f.toFixed(4)})</td></tr>
                                 </tbody></table>
-                                ${zeile.bewertung.map(b => `<div class="kl-hinweis kl-${b.art}">${b.art === 'fehler' ? '✕' : '⚠'} ${escapeHtml(b.text)}</div>`).join('')}` : ''}
+                                ${zeile.bewertung.map(b => `<div class="kl-hinweis kl-${b.art}">${b.art === 'fehler' ? '✕' : b.art === 'warnung' ? '⚠' : 'ℹ'} ${escapeHtml(b.text)}</div>`).join('')}
+                                ${art.key !== 'heissgas' && tVerd != null ? (() => {
+                                    // Daemmstaerke fuer genau diese Leitung, mit den
+                                    // Umgebungsbedingungen aus den Auslegungsdaten.
+                                    const tRohr = art.key === 'saug' ? tVerd : Math.min(tVerd + 10, 15);
+                                    const uT = Number((project.kaelte.auslegung || {}).umgebungT) || 25;
+                                    const uRH = Number((project.kaelte.auslegung || {}).umgebungRH) || 70;
+                                    const iso = kaelteIsolierung({ rohrAussenMm: zeile.rohr.da, tRohr, tUmgebung: uT, rhUmgebung: uRH });
+                                    if (!iso.empfehlung) return `<div class="kl-hinweis kl-fehler">✕ ${escapeHtml(iso.hinweis)}</div>`;
+                                    return `<div class="iso-block">
+                                        <div class="iso-kopf">Isolierung: <strong>${iso.empfehlung.staerke} mm</strong> <span style="color:var(--text-muted);font-weight:400;">bei ${uT} °C / ${uRH} % · Rohr ${tRohr} °C</span></div>
+                                        <div class="iso-text">${escapeHtml(iso.hinweis)}</div>
+                                        <div class="iso-varianten">${iso.varianten.slice(0, 6).map(v => `<span class="iso-var ${v.trocken ? 'ok' : 'nein'}">${v.staerke} mm · ${v.oberflaeche.toFixed(1).replace('.', ',')} °C</span>`).join('')}</div>
+                                    </div>`;
+                                })() : ''}` : ''}
                             `}
                         </div>`;
                 }).join('');
