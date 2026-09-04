@@ -318,7 +318,19 @@
                 // Eine Leitung, die den Oeltransport schafft, aber 1 bar
                 // Druckverlust hat, ist trotzdem zu klein.
                 let dTv = null;
-                if (kp.kaeltemittel && kp.tSat != null) {
+                // Transkritisch: oberhalb der kritischen Temperatur gibt es
+                // keinen Saettigungsdruck und damit keinen Temperaturverlust.
+                // Massgebend ist dann der Anteil am absoluten Hochdruck.
+                if (kp.transkritisch && art !== 'saug') {
+                    const anteil = e.dpGesamtBar / kp.hochdruckBar * 100;
+                    const grenzeProz = art === 'fluessig' ? 1.5 : 2.0;
+                    if (anteil > grenzeProz) {
+                        bewertung.push({ art: 'fehler', text: `Druckverlust ${e.dpGesamtBar.toFixed(2).replace('.', ',')} bar sind ${anteil.toFixed(1).replace('.', ',')} % des Hochdrucks von ${kp.hochdruckBar.toFixed(0)} bar – zulässig sind ${grenzeProz.toFixed(1).replace('.', ',')} %. Bei CO₂ zählt der Anteil am Absolutdruck, nicht der Temperaturverlust.` });
+                        ok = false;
+                    } else if (anteil > grenzeProz * 0.7) {
+                        bewertung.push({ art: 'warnung', text: `Druckverlust liegt bei ${anteil.toFixed(1).replace('.', ',')} % des Hochdrucks – nahe der Grenze von ${grenzeProz.toFixed(1).replace('.', ',')} %.` });
+                    }
+                } else if (kp.kaeltemittel && kp.tSat != null) {
                     dTv = kaelteDruckverlustK(kp.kaeltemittel, art === 'saug' ? kp.tSat : kp.tSatHoch, e.dpGesamtBar, art === 'saug');
                     const grenze = DRUCKVERLUST_GRENZE_K[art];
                     if (dTv != null && dTv > grenze) {
