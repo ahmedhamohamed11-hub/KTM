@@ -1953,3 +1953,8 @@
 .assistent-problem .assistent-ikon { color: #d24545; }
 .assistent-naechster { font-weight: 600; }
 .assistent-mehr { font-size: 11px; color: var(--text-muted); padding-top: 6px; }
+.kat-vorschlag { background: var(--bg-primary); border: 1px dashed var(--accent); border-radius: 7px; padding: 9px 11px; margin: 8px 0; }
+.kat-titel { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--accent); margin-bottom: 7px; }
+.kat-zeile { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+.kat-zeile:first-of-type { border-top: none; }
+.kat-detail { font-size: 10.5px; color: var(--text-muted); line-height: 1.4; margin-top: 2px; }
