@@ -10,6 +10,7 @@ new Function(src + `
   this.AF=kaelteAbsolutFeuchte; this.PS=kaelteSaettigungsdruck;
   this.KP=kaelteKreisprozess; this.RA=kaelteRohrAuswahl; this.ST=kmStoff;
   this.KMT=KAELTEMITTEL;
+  this.FG=kaelteFGase;
 `).call(ctx);
 
 let fehler = 0, gesamt = 0;
@@ -143,6 +144,22 @@ else {
   const anteil = rHG.empfehlung.dpGesamtBar / rc.hochdruckBar * 100;
   if (anteil > 2.0) { console.log(`  ✕   CO₂ Heißgas: ${anteil.toFixed(2)} % Druckverlust über der Grenze`); fehler++; }
   else console.log(`  OK  CO₂ Heißgas ${rHG.empfehlung.rohr.bez}: ${anteil.toFixed(2)} % des Hochdrucks (Grenze 2 %)`);
+}
+
+console.log('\n— F-Gase-Prüfintervalle (EU) 2024/573 —');
+const FG = ctx.FG || null;
+if (FG) {
+  const f1 = FG('R404A', 14.6);   // 57,3 t -> 6 Monate
+  pruefe('R404A 14,6 kg: CO₂-Äquivalent [t]', f1.co2e, 57.3, 0.2);
+  gesamt++; if (f1.intervallMonate !== 6) { console.log('  ✕   erwartet 6 Monate, ist ' + f1.intervallMonate); fehler++; } else console.log('  OK  R404A 14,6 kg -> alle 6 Monate');
+  const f2 = FG('R404A', 130);    // > 500 t -> 3 Monate + LES
+  gesamt++; if (f2.intervallMonate !== 3 || !f2.lesPflicht) { console.log('  ✕   erwartet 3 Monate mit LES-Pflicht'); fehler++; } else console.log('  OK  R404A 130 kg -> 3 Monate, LES vorgeschrieben');
+  const f3 = FG('R404A', 130, { leckageErkennung: true });
+  gesamt++; if (f3.intervallMonate !== 6) { console.log('  ✕   mit LES erwartet 6 Monate'); fehler++; } else console.log('  OK  mit LES verdoppelt sich das Intervall auf 6 Monate');
+  const f4 = FG('R744', 20);
+  gesamt++; if (f4.pflichtig) { console.log('  ✕   CO₂ ist kein F-Gas, darf nicht prüfpflichtig sein'); fehler++; } else console.log('  OK  R744 korrekt als nicht prüfpflichtig erkannt');
+  const f5 = FG('R134a', 3.2);    // 4,6 t < 5 t
+  gesamt++; if (f5.pflichtig) { console.log('  ✕   4,6 t liegen unter der 5-t-Grenze'); fehler++; } else console.log('  OK  R134a 3,2 kg (4,6 t) unter der 5-t-Grenze');
 }
 
 console.log('\n— Fehlende Daten dürfen nicht erfunden werden —');
