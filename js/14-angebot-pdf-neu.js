@@ -196,8 +196,11 @@
                 if (co.logo) {
                     try {
                         const ip = doc.getImageProperties(co.logo);
-                        let h = 18, w = (ip.width / ip.height) * h;
-                        if (w > 62) { w = 62; h = (ip.height / ip.width) * w; }
+                        // Seitenverhaeltnis bleibt immer erhalten. Erst auf
+                        // die Zielhoehe skalieren, dann bei zu breiten Logos
+                        // ueber die Breite begrenzen - so wird nie verzerrt.
+                        let h = 24, w = (ip.width / ip.height) * h;
+                        if (w > 70) { w = 70; h = (ip.height / ip.width) * w; }
                         doc.addImage(co.logo, ip.fileType || 'PNG', mx, kopfOben, w, h);
                         logoUnten = kopfOben + h;
                     } catch (e) { /* Logo optional */ }
@@ -406,57 +409,66 @@
                 doc.save(datei);
             },
 
-            // Vorschau vor dem Herunterladen. Zeigt dasselbe Dokument, das
-            // auch gespeichert wird - es wird nicht zweimal gebaut, sondern
-            // dieselbe Instanz weiterverwendet.
-            async vorschauAngebotPDF(offerId, withCustomer = true) {
-                if (typeof window.jspdf === 'undefined') { showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error'); return; }
+            // Vorschau: oeffnet das PDF im PDF-Betrachter des Geraets,
+            // ohne es herunterzuladen.
+            //
+            // WICHTIG: das Fenster muss SYNCHRON im Klick geoeffnet werden.
+            // Wird erst das PDF gebaut (await) und danach window.open
+            // aufgerufen, ist die Benutzergeste verloren und der Browser
+            // blockiert das Fenster. Deshalb bekommt diese Funktion ein
+            // bereits geoeffnetes Fenster uebergeben.
+            //
+            // Ein eingebettetes <iframe> wird bewusst NICHT mehr verwendet:
+            // Android-Browser zeigen Blob-PDFs darin nicht an, die Vorschau
+            // blieb dort leer.
+            async vorschauAngebotPDF(offerId, withCustomer = true, fenster = null) {
+                if (typeof window.jspdf === 'undefined') {
+                    if (fenster) fenster.close();
+                    showToast('PDF-Bibliothek konnte nicht geladen werden.', 'error');
+                    return;
+                }
                 let gebaut;
                 try {
                     gebaut = await app.angebotPdfBauen(offerId, withCustomer);
                 } catch (e) {
                     console.error('Vorschau fehlgeschlagen:', e);
+                    if (fenster) fenster.close();
                     showToast('Vorschau konnte nicht erstellt werden.', 'error');
                     return;
                 }
                 const blob = gebaut.doc.output('blob');
                 const url = URL.createObjectURL(blob);
 
-                const overlay = showModal('Angebot – Vorschau', `
-                    <div class="pdf-vorschau">
-                        <iframe id="pdfVorschauRahmen" src="${url}#toolbar=0&navpanes=0" title="Angebotsvorschau"></iframe>
-                        <div class="pdf-vorschau-fallback">
-                            Falls hier nichts angezeigt wird, kann dein Gerät PDFs nicht direkt einbetten.
-                            <button class="btn btn-sm btn-outline" id="pdfVorschauTab" style="margin-top:8px;">In neuem Tab öffnen</button>
-                        </div>
-                    </div>
+                if (fenster && !fenster.closed) {
+                    fenster.location.href = url;
+                    setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    return;
+                }
+
+                // Fenster blockiert: Teilen anbieten - das oeffnet auf dem Handy
+                // die Auswahl "Oeffnen mit", ebenfalls ohne Download.
+                try {
+                    const file = new File([blob], gebaut.datei, { type: 'application/pdf' });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: `Angebot ${gebaut.nummer}` });
+                        URL.revokeObjectURL(url);
+                        return;
+                    }
+                } catch (e) { /* abgebrochen */ }
+
+                showModal('Angebot – Vorschau', `
+                    <p style="font-size:13px;line-height:1.5;">Das Vorschaufenster wurde vom Browser blockiert.</p>
                     <div class="pdf-vorschau-leiste">
                         <div><strong>${escapeHtml(gebaut.nummer)}</strong> · ${formatCurrency(gebaut.total)}</div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <button class="btn btn-outline" id="pdfVorschauShare">📤 Teilen</button>
+                            <button class="btn btn-outline" id="pdfVorschauTab">👁 Öffnen</button>
                             <button class="btn btn-primary" id="pdfVorschauLaden">⬇ Herunterladen</button>
                         </div>
                     </div>
-                `, null, null, { wide: true, okText: null });
-
+                `, null, null, { okText: null });
                 setTimeout(() => {
                     document.querySelector('#pdfVorschauTab')?.addEventListener('click', () => window.open(url, '_blank'));
-                    document.querySelector('#pdfVorschauLaden')?.addEventListener('click', () => {
-                        gebaut.doc.save(gebaut.datei);
-                    });
-                    document.querySelector('#pdfVorschauShare')?.addEventListener('click', async () => {
-                        try {
-                            const file = new File([blob], gebaut.datei, { type: 'application/pdf' });
-                            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                                await navigator.share({ files: [file], title: `Angebot ${gebaut.nummer}` });
-                            } else { gebaut.doc.save(gebaut.datei); }
-                        } catch (e) { /* Teilen abgebrochen - nichts tun */ }
-                    });
-                    // Speicher wieder freigeben, sobald die Vorschau zugeht
-                    const beobachter = new MutationObserver(() => {
-                        if (overlay && !document.body.contains(overlay)) { URL.revokeObjectURL(url); beobachter.disconnect(); }
-                    });
-                    beobachter.observe(document.body, { childList: true, subtree: true });
+                    document.querySelector('#pdfVorschauLaden')?.addEventListener('click', () => gebaut.doc.save(gebaut.datei));
                 }, 80);
             }
         });
