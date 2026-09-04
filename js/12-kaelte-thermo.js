@@ -591,3 +591,81 @@
             if (k == null || !Number.isFinite(Number(k))) return '–';
             return einheit === 'R' ? `${(Number(k) * 1.8).toFixed(2).replace('.', ',')} °R` : `${Number(k).toFixed(2).replace('.', ',')} K`;
         }
+
+        // ---------- F-Gase: CO₂-Äquivalent und Prüfintervalle ----------
+        // Grundlage: Verordnung (EU) 2024/573, in Kraft seit 11.03.2024,
+        // ersetzt (EU) 517/2014. Intervalle nach Art. 5:
+        //   < 50 t CO₂e ...... 12 Monate (24 mit Leckage-Erkennungssystem)
+        //   50 bis < 500 t ...  6 Monate (12 mit LES)
+        //   ab 500 t .........  3 Monate ( 6 mit LES)
+        // Untergrenze der Prüfpflicht: 5 t CO₂e bei HFKW, 10 t bei hermetisch
+        // geschlossenen Anlagen. Bei HFO/HFKW-Gemischen nach Anhang II Gruppe 1
+        // greift zusätzlich eine Mengenschwelle ab 1 kg (2 kg hermetisch,
+        // 3 kg in Wohngebäuden) - deshalb kann ein Gemisch auch unter 5 t
+        // prüfpflichtig sein. Ab 500 t ist ein LES vorgeschrieben (Art. 6).
+        // R744 (CO₂), R290, R600a und R1270 sind keine F-Gase und fallen
+        // nicht unter die Dichtheitskontrollpflicht.
+        //
+        // ACHTUNG zu den GWP-Werten: maßgebend ist ausschließlich Anhang I
+        // der Verordnung. Die hier hinterlegten Werte sind die gängig
+        // veröffentlichten und dienen der Vorabschätzung - vor einer
+        // rechtsverbindlichen Aussage sind sie gegen den Anhang zu prüfen.
+        const KAELTEMITTEL_GWP = {
+            R404A: 3922, R507A: 3985, R452A: 2140, R134a: 1430,
+            R449A: 1397, R448A: 1387, R513A: 631, R32: 675,
+            R744: 1, R290: 3, R600a: 3, R1270: 2
+        };
+        // Kältemittel, die HFO-Anteile nach Anhang II Gruppe 1 enthalten und
+        // deshalb zusätzlich der 1-kg-Mengenschwelle unterliegen können.
+        const KAELTEMITTEL_MIT_HFO = ['R449A', 'R448A', 'R452A', 'R513A'];
+
+        function kaelteFGase(kaeltemittel, fuellmengeKg, opts = {}) {
+            const hermetisch = !!opts.hermetisch;
+            const les = !!opts.leckageErkennung;
+            const wohngebaeude = !!opts.wohngebaeude;
+            const gwp = KAELTEMITTEL_GWP[kaeltemittel];
+            const kg = Number(fuellmengeKg) || 0;
+
+            if (gwp == null) return { moeglich: false, hinweis: `Für ${kaeltemittel} ist kein GWP hinterlegt – Anhang I der Verordnung heranziehen.` };
+            if (gwp <= 10) {
+                return {
+                    moeglich: true, gwp, co2e: kg * gwp / 1000, pflichtig: false,
+                    intervallMonate: null,
+                    hinweis: `${kaeltemittel} ist kein fluoriertes Treibhausgas im Sinne der Verordnung (GWP ${gwp}). Es besteht keine Pflicht zur Dichtheitskontrolle nach (EU) 2024/573. Sicherheits- und Wartungsvorgaben des Herstellers gelten unabhängig davon.`
+                };
+            }
+
+            const co2e = kg * gwp / 1000;            // Tonnen CO₂-Äquivalent
+            const untergrenze = hermetisch ? 10 : 5;
+            const hfo = KAELTEMITTEL_MIT_HFO.includes(kaeltemittel);
+            const mengenschwelle = wohngebaeude ? 3 : (hermetisch ? 2 : 1);
+
+            let pflichtig = co2e >= untergrenze;
+            let ausloeser = pflichtig ? `${co2e.toFixed(1).replace('.', ',')} t CO₂-Äquivalent ab ${untergrenze} t` : '';
+            if (!pflichtig && hfo && kg >= mengenschwelle) {
+                pflichtig = true;
+                ausloeser = `${kg.toFixed(1).replace('.', ',')} kg – ${kaeltemittel} enthält HFO-Anteile, dort greift die Mengenschwelle ab ${mengenschwelle} kg`;
+            }
+
+            let monate = null;
+            if (pflichtig) {
+                if (co2e >= 500) monate = les ? 6 : 3;
+                else if (co2e >= 50) monate = les ? 12 : 6;
+                else monate = les ? 24 : 12;
+            }
+            const lesPflicht = co2e >= 500;
+
+            return {
+                moeglich: true, gwp, co2e, pflichtig, intervallMonate: monate,
+                lesPflicht, ausloeser,
+                hinweis: pflichtig
+                    ? `Dichtheitskontrolle mindestens alle ${monate} Monate${les ? ' (mit Leckage-Erkennungssystem)' : ''}. Ausgelöst durch ${ausloeser}.`
+                    : `Keine Pflicht zur Dichtheitskontrolle: ${co2e.toFixed(1).replace('.', ',')} t CO₂-Äquivalent liegen unter ${untergrenze} t${hfo ? ` und ${kg.toFixed(1).replace('.', ',')} kg unter der Mengenschwelle von ${mengenschwelle} kg` : ''}.`,
+                pflichten: pflichtig ? [
+                    `Dichtheitskontrolle alle ${monate} Monate durch zertifiziertes Personal`,
+                    'Anlagenbuch führen und mindestens 5 Jahre aufbewahren (Art. 7)',
+                    'Nach Reparatur einer Leckage erneute Kontrolle innerhalb eines Monats, frühestens nach 24 Betriebsstunden',
+                    ...(lesPflicht ? ['Automatisches Leckage-Erkennungssystem vorgeschrieben, jährlich auf Funktion prüfen (Art. 6)'] : [])
+                ] : []
+            };
+        }
