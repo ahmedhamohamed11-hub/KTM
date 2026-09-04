@@ -429,3 +429,71 @@
                     : 'Alle Anteile aus tatsächlichen Volumina gerechnet. Füllgrade von Verdampfer und Verflüssiger sind Annahmen – Herstellerangabe hat Vorrang.'
             };
         }
+
+        // ---------- Verdichterkombinationen ----------
+        // Vergleicht, wie sich die Gesamtlast auf mehrere Verdichter aufteilen
+        // laesst. Rechnet KEINE Herstellerdaten - es geht um Stufigkeit,
+        // Regelbereich und Reserve. Welcher konkrete Verdichter das leistet,
+        // entscheidet das Datenblatt.
+        //
+        // Zwei Bauformen werden verglichen:
+        //   gleich   alle Verdichter gleich gross
+        //   gestuft  ein kleinerer Grundlastverdichter (halbe Groesse)
+        //            -> feinere unterste Stufe, besseres Teillastverhalten
+        function kaelteVerdichterKombinationen(bedarfKW, opts = {}) {
+            const reserve = opts.reserve != null ? opts.reserve : 0.10;   // 10 % Auslegungsreserve
+            const minLast = opts.minLastKW != null ? opts.minLastKW : bedarfKW * 0.25;
+            const ziel = bedarfKW * (1 + reserve);
+            const ergebnisse = [];
+
+            for (let n = 1; n <= 4; n++) {
+                // a) gleich grosse Verdichter
+                const einzel = ziel / n;
+                const stufenGleich = Array.from({ length: n }, (_, i) => (i + 1) * einzel);
+                ergebnisse.push(bewerte('gleich', n, stufenGleich, einzel, ziel, bedarfKW, minLast));
+
+                // b) gestuft: erster Verdichter halb so gross
+                if (n >= 2) {
+                    const gross = ziel / (n - 0.5);
+                    const klein = gross / 2;
+                    const stufen = [];
+                    // alle erreichbaren Kombinationen aufsteigend
+                    for (let k = 0; k <= 1; k++) {
+                        for (let g = 0; g <= n - 1; g++) {
+                            const s = k * klein + g * gross;
+                            if (s > 0) stufen.push(Math.round(s * 100) / 100);
+                        }
+                    }
+                    stufen.sort((x, y) => x - y);
+                    ergebnisse.push(bewerte('gestuft', n, [...new Set(stufen)], klein, ziel, bedarfKW, minLast));
+                }
+            }
+
+            function bewerte(bauform, anzahl, stufen, kleinsteStufe, ziel, bedarf, minLast) {
+                const max = Math.max(...stufen);
+                const min = Math.min(...stufen);
+                const regelbereich = max > 0 ? (1 - min / max) * 100 : 0;
+                const auslastung = max > 0 ? (bedarf / max) * 100 : 0;
+                const bewertung = [];
+                let punkte = 100;
+                if (min > minLast * 1.15) {
+                    bewertung.push({ art: 'warnung', text: `Kleinste Stufe ${min.toFixed(2).replace('.', ',')} kW liegt über der erwarteten Mindestlast von ${minLast.toFixed(2).replace('.', ',')} kW – bei schwacher Last taktet die Anlage.` });
+                    punkte -= 30;
+                }
+                if (auslastung > 98) { bewertung.push({ art: 'fehler', text: 'Keine Reserve – die Anlage läuft dauerhaft am Anschlag.' }); punkte -= 50; }
+                else if (auslastung < 55) { bewertung.push({ art: 'warnung', text: `Nur ${auslastung.toFixed(0)} % Auslastung – deutlich überdimensioniert.` }); punkte -= 25; }
+                if (anzahl === 1) { bewertung.push({ art: 'warnung', text: 'Ein einzelner Verdichter: keine Redundanz, bei Ausfall steht die Anlage.' }); punkte -= 15; }
+                if (anzahl >= 4) { bewertung.push({ art: 'info', text: 'Vier Verdichter bedeuten mehr Regelgüte, aber auch mehr Wartung, Ölmanagement und Kosten.' }); punkte -= 10; }
+                punkte += Math.min(20, regelbereich / 5);
+                return {
+                    bauform, anzahl, stufen, kleinsteStufe, maxLeistung: max, minStufe: min,
+                    regelbereich, auslastung, reserveKW: max - bedarf, bewertung, punkte,
+                    beschreibung: bauform === 'gleich'
+                        ? `${anzahl} × ${(ziel / anzahl).toFixed(2).replace('.', ',')} kW`
+                        : `1 × ${(kleinsteStufe).toFixed(2).replace('.', ',')} kW + ${anzahl - 1} × ${(kleinsteStufe * 2).toFixed(2).replace('.', ',')} kW`
+                };
+            }
+
+            ergebnisse.sort((x, y) => y.punkte - x.punkte);
+            return { ziel, bedarfKW, reserve, minLast, varianten: ergebnisse, empfehlung: ergebnisse[0] || null };
+        }
