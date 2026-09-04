@@ -604,6 +604,21 @@
                                 .map(([k, l]) => `<div class="form-group"><label>${escapeHtml(l)} <small>(Liter)</small></label><input type="text" inputmode="decimal" class="bv-in" data-feld="${k}" value="${bv[k] ?? ''}" placeholder="aus Datenblatt"></div>`).join('')}
                         </div>
                         <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">Diese Werte stehen im Herstellerdatenblatt. Was hier leer bleibt, fehlt in der Füllmenge – es wird nichts geschätzt.</div>
+                        ${(() => {
+                            // Erforderliche Sammlergroesse aus der berechneten Fuellmenge
+                            const mm = kaelteMaterialListe(project);
+                            const kmPos = mm.pos.find(x => x.schluessel === 'kaeltemittel');
+                            if (!kmPos || !(Number(kmPos.menge) > 0)) return '';
+                            const sa = kaelteSammler({ kaeltemittel: A.kaeltemittel, fuellmengeKg: Number(kmPos.menge),
+                                tVerfluessigung: A.tVerfluessigung, tStillstand: A.tVerfluessigung + 10 });
+                            if (!sa.moeglich) return '';
+                            const eingetragen = Number(bv.sammler) || 0;
+                            const passt = eingetragen >= sa.erforderlichL;
+                            return `<div class="kl-hinweis ${eingetragen ? (passt ? 'kl-info' : 'kl-fehler') : 'kl-warnung'}" style="margin-top:10px;">
+                                ${eingetragen ? (passt ? '✓' : '✕') : '⚠'} <strong>Sammler mindestens ${sa.erforderlichL.toFixed(1).replace('.', ',')} l</strong> – ${escapeHtml(sa.hinweis)}
+                                ${eingetragen ? `<br>Eingetragen sind ${eingetragen.toFixed(1).replace('.', ',')} l.` : ''}
+                            </div>`;
+                        })()}
                     </div>`;
 
                 if (a.anzahlGesamt === 0) return kopf + volumenKarte + `<div class="empty-note" style="padding:14px;">Noch keine Kühlstelle erfasst – ohne Kältelast kein Kreisprozess.</div>`;
