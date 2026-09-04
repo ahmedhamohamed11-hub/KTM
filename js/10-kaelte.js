@@ -2272,7 +2272,10 @@
                     anschluss: a.anschluss || '',
                     menge: 1, einheit: 'Stk',
                     ekPreis: a.ekNetto != null ? a.ekNetto : null,
-                    vkPreis: null,           // Verkaufspreis kalkulierst du selbst
+                    // Verkaufspreis nur uebernehmen, wenn er im Katalog steht
+                    // (eigene Preisliste). Bei Haendlerartikeln bleibt er leer -
+                    // dort ist nur der Einkauf bekannt.
+                    vkPreis: a.vkNetto != null ? a.vkNetto : null,
                     volumenL: a.volumenL != null ? a.volumenL : null,
                     lieferant: a.haendler || '',
                     quelle: [a.quelle, a.datenstand ? 'Stand ' + a.datenstand : ''].filter(Boolean).join(' · '),
