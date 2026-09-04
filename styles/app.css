@@ -1931,3 +1931,10 @@
 .pdf-vorschau-fallback { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 12.5px; color: var(--text-muted); padding: 20px; z-index: 0; }
 .pdf-vorschau-leiste { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; }
 @media (max-width: 620px) { .pdf-vorschau iframe { height: 52vh; } }
+.iso-block { background: var(--bg-secondary); border-radius: 7px; padding: 9px 11px; margin-top: 8px; }
+.iso-kopf { font-size: 13px; margin-bottom: 3px; }
+.iso-text { font-size: 11.5px; color: var(--text-secondary); line-height: 1.45; }
+.iso-varianten { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.iso-var { font-size: 10.5px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+.iso-var.ok { background: rgba(40,160,90,0.16); color: var(--text-primary); }
+.iso-var.nein { background: rgba(220,60,60,0.13); color: var(--text-muted); text-decoration: line-through; }
