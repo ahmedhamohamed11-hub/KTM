@@ -1241,6 +1241,30 @@
                                 </div>
                             </div>`;
                         }).join('') : ''}
+                        ${(() => {
+                            // Katalogvorschlaege: nur echte Haendlerartikel,
+                            // bewertet gegen den berechneten Bedarf.
+                            if (typeof kaelteKatalogSuche !== 'function' || !sl.kw) return '';
+                            const tRaum = (project.kaelte.kuehlstellen || [])[0];
+                            const treffer = kaelteKatalogSuche(sl.typ, sl.kw, {
+                                kaeltemittel: bedarf.A.kaeltemittel,
+                                raumtemperatur: tRaum ? Number(tRaum.raumtemperatur) : null
+                            }).filter(t => t.geeignet !== false).slice(0, 3);
+                            if (!treffer.length) return '';
+                            return `<div class="kat-vorschlag">
+                                <div class="kat-titel">Aus dem Händlerkatalog</div>
+                                ${treffer.map(t => `
+                                    <div class="kat-zeile">
+                                        <div>
+                                            <strong>${escapeHtml(t.artikel.name || '')}</strong>
+                                            ${t.geeignet === true ? '<span class="komp-urteil komp-gut">✓ passt</span>' : '<span class="komp-urteil komp-warn">? Leistung prüfen</span>'}
+                                            <div class="kat-detail">${escapeHtml([t.artikel.hersteller, t.artikel.artikelnummer].filter(Boolean).join(' · '))}${t.artikel.ekNetto ? ' · EK ' + formatCurrency(t.artikel.ekNetto) : ''}${t.artikel.datenstand ? ' · Stand ' + escapeHtml(t.artikel.datenstand) : ''}</div>
+                                            <div class="kat-detail">${escapeHtml(t.gruende.join(' · '))}</div>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline" onclick="app.katalogUebernehmen(${idJS(project.id)}, ${idJS(t.artikel.id)}, ${idJS(sl.typ)})">Übernehmen</button>
+                                    </div>`).join('')}
+                            </div>`;
+                        })()}
                         <button class="btn btn-sm ${eingetragen.length ? 'btn-outline' : 'btn-primary'}" onclick="app.openKomponenteModal(${idJS(project.id)}, null, ${idJS(sl.typ)}, ${sl.kw})">${icon('plus')} ${eingetragen.length ? 'Weiteres Gerät' : 'Gerät eintragen'}</button>
                     </div>`;
             }).join('');
@@ -2222,6 +2246,38 @@
                 await db.add('offers', entwurf);
                 showToast(`Angebot ${entwurf.offerNumber} erstellt – ${formatCurrency(R.total)}.`, 'success');
                 app.navigate('offers');
+            },
+
+            // Katalogartikel als Komponente uebernehmen. Es werden nur Werte
+            // uebernommen, die im Katalog wirklich stehen - fehlende Felder
+            // bleiben leer statt mit Annahmen gefuellt zu werden.
+            async katalogUebernehmen(projectId, artikelId, typ) {
+                const project = await db.get('projects', projectId);
+                if (!project || !project.kaelte) return;
+                const a = KAELTE_KATALOG.find(x => x.id === artikelId);
+                if (!a) { showToast('Artikel nicht gefunden.', 'error'); return; }
+                project.kaelte.komponenten = project.kaelte.komponenten || [];
+                project.kaelte.komponenten.push({
+                    typ: typ || a.typ,
+                    hersteller: a.hersteller || '',
+                    modell: a.name || '',
+                    artikelnummer: a.artikelnummer || '',
+                    leistungKW: a.leistungKW != null ? a.leistungKW : null,
+                    anschluss: a.anschluss || '',
+                    menge: 1, einheit: 'Stk',
+                    ekPreis: a.ekNetto != null ? a.ekNetto : null,
+                    vkPreis: null,           // Verkaufspreis kalkulierst du selbst
+                    volumenL: a.volumenL != null ? a.volumenL : null,
+                    lieferant: a.haendler || '',
+                    quelle: [a.quelle, a.datenstand ? 'Stand ' + a.datenstand : ''].filter(Boolean).join(' · '),
+                    notiz: [a.temperaturbereich ? 'Temperaturbereich ' + a.temperaturbereich : '',
+                            a.kaeltemittel ? 'Kältemittel ' + a.kaeltemittel : '',
+                            a.abtauung ? 'Abtauung ' + a.abtauung : '',
+                            a.merkmale || ''].filter(Boolean).join(' · ')
+                });
+                await db.put('projects', project);
+                showToast(`${a.name || 'Artikel'} übernommen – Verkaufspreis noch eintragen.`, 'success');
+                renderKaelteDetail(projectId);
             },
 
             async deleteKomponente(projectId, index) {
