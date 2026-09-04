@@ -975,10 +975,66 @@
                 ${vergleich}`;
         }
 
-        // ---- Anlagenschema. Wird aus der tatsächlichen Konfiguration
-        // gezeichnet: Anlagenart bestimmt den Aufbau, die Leitungen tragen
-        // die real berechneten Werte. Kein Bild, sondern erzeugtes SVG -
-        // aendert sich eine Rohrdimension, aendert sich das Schema mit.
+        // ---- Anlagenschema.
+        // Wird vollstaendig aus der Konfiguration erzeugt: Anlagenart bestimmt
+        // den Aufbau, die Leitungen tragen die real berechneten Betriebsdaten,
+        // jedes Bauteil bekommt eine Positionsnummer. Das Layout waechst mit
+        // der Anzahl der Kuehlstellen mit - es bricht nicht ab.
+        //
+        // Bei Hochdruck-/Mitteldruck-Anlagen wird ein EIGENES Schema
+        // gezeichnet, nicht das der normalen Verbundanlage. Diese Systeme
+        // haben eine Mitteldruckebene, ein Hochdruckventil und ein
+        // Flashgas-Management - das darf nicht unterschlagen werden.
+
+        const SCHEMA_F = {
+            linie: 'var(--accent)', kasten: 'var(--bg-secondary)', rand: 'var(--border)',
+            text: 'var(--text-primary)', klein: 'var(--text-muted)'
+        };
+
+        // Symbolbibliothek nach der ueblichen Kaeltetechnik-Darstellung.
+        // Alle Symbole sind an ihrem Mittelpunkt ausgerichtet.
+        const SCHEMA_SYM = (() => {
+            const F = SCHEMA_F;
+            const doppeldreieck = (x, y) => `M ${x - 6} ${y - 5} L ${x - 6} ${y + 5} L ${x} ${y} Z M ${x + 6} ${y - 5} L ${x + 6} ${y + 5} L ${x} ${y} Z`;
+            const bez = (x, y, t) => t ? `<text x="${x}" y="${y}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : '';
+            return {
+                absperr: (x, y, t) => `<g><path d="${doppeldreieck(x, y)}" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x}" y1="${y - 5}" x2="${x}" y2="${y - 9}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 4}" y1="${y - 9}" x2="${x + 4}" y2="${y - 9}" stroke="${F.linie}" stroke-width="1.4"/>${bez(x, y + 15, t)}</g>`,
+                magnet: (x, y, t) => `<g><path d="${doppeldreieck(x, y)}" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <rect x="${x - 4}" y="${y - 14}" width="8" height="7" fill="${F.linie}"/>
+                    <line x1="${x}" y1="${y - 7}" x2="${x}" y2="${y - 5}" stroke="${F.linie}" stroke-width="1.4"/>${bez(x, y + 15, t)}</g>`,
+                exv: (x, y, t) => `<g><path d="${doppeldreieck(x, y)}" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 8}" y1="${y + 9}" x2="${x + 8}" y2="${y - 11}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <path d="M ${x + 8} ${y - 11} l -4 1 l 2 3 z" fill="${F.linie}"/>${bez(x, y + 16, t)}</g>`,
+                rueck: (x, y, t) => `<g><circle cx="${x - 2}" cy="${y}" r="3.5" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.3"/>
+                    <line x1="${x + 2}" y1="${y - 5}" x2="${x + 2}" y2="${y + 5}" stroke="${F.linie}" stroke-width="1.6"/>${bez(x, y + 15, t)}</g>`,
+                sicherheit: (x, y, t) => `<g><path d="${doppeldreieck(x, y)}" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <path d="M ${x} ${y - 5} l 0 -6 l -5 0 l 5 -5 l 5 5 l -5 0" fill="none" stroke="${F.linie}" stroke-width="1.3"/>${bez(x, y + 15, t)}</g>`,
+                schauglas: (x, y, t) => `<g><circle cx="${x}" cy="${y}" r="6" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <circle cx="${x}" cy="${y}" r="2" fill="${F.linie}"/>${bez(x, y + 16, t)}</g>`,
+                filter: (x, y, t) => `<g><rect x="${x - 8}" y="${y - 5}" width="16" height="10" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 8}" y1="${y + 5}" x2="${x + 8}" y2="${y - 5}" stroke="${F.linie}" stroke-width="1.2"/>${bez(x, y + 16, t)}</g>`,
+                sensor: (x, y, b, t) => `<g><circle cx="${x}" cy="${y}" r="6.5" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.3"/>
+                    <text x="${x}" y="${y + 3}" text-anchor="middle" font-size="8" font-weight="700" fill="${F.linie}">${escapeHtml(b)}</text>${bez(x, y + 16, t)}</g>`,
+                behaelter: (x, y, t, w = 34) => `<g><rect x="${x - w / 2}" y="${y - 8}" width="${w}" height="16" rx="8" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.5"/>
+                    <line x1="${x - w / 2 + 6}" y1="${y + 2}" x2="${x + w / 2 - 6}" y2="${y + 2}" stroke="${F.linie}" stroke-width="1"/>${bez(x, y + 19, t)}</g>`,
+                // Ölabscheider: stehender Behälter mit Ölstand und Rückführung
+                oel: (x, y, t) => `<g><rect x="${x - 9}" y="${y - 12}" width="18" height="24" rx="4" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 9}" y1="${y + 5}" x2="${x + 9}" y2="${y + 5}" stroke="${F.linie}" stroke-width="1"/>
+                    <text x="${x}" y="${y + 11}" text-anchor="middle" font-size="6" fill="${F.linie}">ÖL</text>${bez(x, y + 22, t)}</g>`,
+                // Verteiler / Düsenstock: Aufteilung auf mehrere Kreise
+                verteiler: (x, y, t) => `<g><path d="M ${x - 7} ${y} L ${x + 5} ${y - 7} L ${x + 5} ${y + 7} Z" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.3"/>
+                    <line x1="${x + 5}" y1="${y - 4}" x2="${x + 11}" y2="${y - 7}" stroke="${F.linie}" stroke-width="1.1"/>
+                    <line x1="${x + 5}" y1="${y}" x2="${x + 11}" y2="${y}" stroke="${F.linie}" stroke-width="1.1"/>
+                    <line x1="${x + 5}" y1="${y + 4}" x2="${x + 11}" y2="${y + 7}" stroke="${F.linie}" stroke-width="1.1"/>${bez(x, y + 17, t)}</g>`,
+                // Interner Wärmetauscher: gekreuzte Ströme im Rechteck
+                wt: (x, y, t) => `<g><rect x="${x - 11}" y="${y - 8}" width="22" height="16" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 11}" y1="${y - 8}" x2="${x + 11}" y2="${y + 8}" stroke="${F.linie}" stroke-width="1.1"/>
+                    <line x1="${x - 11}" y1="${y + 8}" x2="${x + 11}" y2="${y - 8}" stroke="${F.linie}" stroke-width="1.1"/>${bez(x, y + 19, t)}</g>`
+            };
+        })();
+
         function kaelteSchemaSvg(project) {
             const A = kaelteAuslegungsdaten(project);
             const a = kaelteAuslegung(project);
@@ -986,125 +1042,214 @@
             const stellen = a.ergebnisse.filter(e => e.ergebnis.moeglich);
             if (!stellen.length) return '';
 
-            // Leitungsbeschriftung aus den echten Berechnungswerten
-            const leitungInfo = (ks, artKey) => {
+            const F = SCHEMA_F, S = SCHEMA_SYM;
+            const teile = [];
+            let pos = 0;
+            const nr = () => String(++pos).padStart(2, '0');
+
+            // Bauteilkasten mit Positionsnummer
+            const kasten = (x, y, w, h, titel, unter) => {
+                const n = nr();
+                teile.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.6"/>
+                    <circle cx="${x + 9}" cy="${y + 9}" r="7" fill="${F.linie}"/>
+                    <text x="${x + 9}" y="${y + 12}" text-anchor="middle" font-size="8" font-weight="700" fill="#fff">${n}</text>
+                    <text x="${x + w / 2}" y="${y + (unter ? h / 2 : h / 2 + 4)}" text-anchor="middle" font-size="10.5" font-weight="600" fill="${F.text}">${escapeHtml(titel)}</text>
+                    ${unter ? `<text x="${x + w / 2}" y="${y + h / 2 + 11}" text-anchor="middle" font-size="8" fill="${F.klein}">${escapeHtml(unter)}</text>` : ''}`);
+                return n;
+            };
+            // Symbol mit Positionsnummer
+            const sym = (svg, x, y) => {
+                const n = nr();
+                teile.push(svg);
+                teile.push(`<circle cx="${x + 10}" cy="${y - 10}" r="5.5" fill="${F.linie}"/>
+                    <text x="${x + 10}" y="${y - 7.5}" text-anchor="middle" font-size="6.5" font-weight="700" fill="#fff">${n}</text>`);
+                return n;
+            };
+            const linie = (x1, y1, x2, y2, gestrichelt, pfeil) =>
+                teile.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${F.linie}" stroke-width="2"${gestrichelt ? ' stroke-dasharray="6 3"' : ''}${pfeil ? ' marker-end="url(#kpfeil)"' : ''}/>`);
+            const weg = (d, gestrichelt) =>
+                teile.push(`<path d="${d}" fill="none" stroke="${F.linie}" stroke-width="2"${gestrichelt ? ' stroke-dasharray="6 3"' : ''}/>`);
+            const text = (x, y, zeilen, anker = 'start', groesse = 8) =>
+                (Array.isArray(zeilen) ? zeilen : [zeilen]).forEach((z, i) =>
+                    teile.push(`<text x="${x}" y="${y + i * 9.5}" text-anchor="${anker}" font-size="${groesse}" fill="${F.klein}">${escapeHtml(z)}</text>`));
+
+            // Betriebsdaten einer Leitung: Dimension, Länge, Massenstrom,
+            // Strömung und Druckverlust - alles aus der echten Berechnung.
+            const leitungsdaten = (ks, artKey, kp) => {
                 const g = (ks.rohr || {})[artKey] || {};
-                if (!g.laenge) return null;
+                if (!Number(g.laenge)) return null;
                 const zeilen = [];
                 if (g.gewaehlt) zeilen.push(g.gewaehlt);
-                zeilen.push(`${g.laenge} m`);
+                zeilen.push(`L = ${g.laenge} m`);
+                if (kp && kp.moeglich) {
+                    try {
+                        const geo = { laenge: Number(g.laenge), hoehenunterschied: Number(g.hoehenunterschied) || 0,
+                            formstuecke: Object.fromEntries(ROHR_FORMSTUECKE.map(([k]) => [k, Number(g[k]) || 0])) };
+                        const aus = kaelteRohrAuswahl(artKey, kp, geo);
+                        const z = aus.varianten.find(v => v.rohr.bez === g.gewaehlt) || aus.empfehlung;
+                        if (z) {
+                            zeilen.push(`w = ${z.w.toFixed(1).replace('.', ',')} m/s`);
+                            zeilen.push(`Δp = ${z.dpGesamtBar.toFixed(3).replace('.', ',')} bar`);
+                        }
+                        zeilen.push(`ṁ = ${kp.mDotKgH.toFixed(0)} kg/h`);
+                    } catch (e) { /* Betriebsdaten optional */ }
+                }
                 return zeilen;
             };
 
-            const F = { linie: 'var(--accent)', kasten: 'var(--bg-secondary)', rand: 'var(--border)', text: 'var(--text-primary)', klein: 'var(--text-muted)' };
-            const kasten = (x, y, w, h, titel, unter) => `
-                <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="${F.kasten}" stroke="${F.rand}" stroke-width="1.5"/>
-                <text x="${x + w / 2}" y="${y + (unter ? h / 2 - 2 : h / 2 + 4)}" text-anchor="middle" font-size="11" font-weight="600" fill="${F.text}">${escapeHtml(titel)}</text>
-                ${unter ? `<text x="${x + w / 2}" y="${y + h / 2 + 10}" text-anchor="middle" font-size="8.5" fill="${F.klein}">${escapeHtml(unter)}</text>` : ''}`;
-            const pfeil = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${F.linie}" stroke-width="2" marker-end="url(#kpfeil)"/>`;
-            const beschriftung = (x, y, zeilen, anker = 'middle') => (zeilen || []).map((z, i) =>
-                `<text x="${x}" y="${y + i * 10}" text-anchor="${anker}" font-size="8.5" fill="${F.klein}">${escapeHtml(z)}</text>`).join('');
+            // Kreisprozess der maßgebenden (tiefsten) Kühlstelle
+            const tiefste = Math.min(...stellen.map(e => e.werte.verdampfungstemperatur.wert));
+            let kp = null;
+            try {
+                kp = (A.kaeltemittel === 'R744' && A.tVerfluessigung >= 26 && typeof kaelteCO2Kreisprozess === 'function')
+                    ? kaelteCO2Kreisprozess({ tVerdampfung: tiefste, tGaskuehler: A.tVerfluessigung, kaelteleistungW: a.summeAuslegung })
+                    : kaelteKreisprozess({ kaeltemittel: A.kaeltemittel, tVerdampfung: tiefste,
+                        tVerfluessigung: A.tVerfluessigung, ueberhitzung: A.ueberhitzung,
+                        unterkuehlung: A.unterkuehlung, kaelteleistungW: a.summeAuslegung });
+            } catch (e) { kp = null; }
 
-            // ---- Symbole nach der üblichen Kältetechnik-Darstellung.
-            // Alle sitzen auf der Leitung und sind an ihrem Mittelpunkt
-            // ausgerichtet, damit sie sich beliebig platzieren lassen.
-            const S = {
-                // Absperrventil: die klassische Doppeldreieck-Form
-                absperr: (x, y, t) => `<g><path d="M ${x - 6} ${y - 5} L ${x - 6} ${y + 5} L ${x} ${y} Z M ${x + 6} ${y - 5} L ${x + 6} ${y + 5} L ${x} ${y} Z" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
-                    <line x1="${x}" y1="${y - 5}" x2="${x}" y2="${y - 9}" stroke="${F.linie}" stroke-width="1.4"/>
-                    <line x1="${x - 4}" y1="${y - 9}" x2="${x + 4}" y2="${y - 9}" stroke="${F.linie}" stroke-width="1.4"/>
-                    ${t ? `<text x="${x}" y="${y + 15}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
-                // Magnetventil: Absperrsymbol mit Spulenkasten darüber
-                magnet: (x, y, t) => `<g><path d="M ${x - 6} ${y - 5} L ${x - 6} ${y + 5} L ${x} ${y} Z M ${x + 6} ${y - 5} L ${x + 6} ${y + 5} L ${x} ${y} Z" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
-                    <rect x="${x - 4}" y="${y - 14}" width="8" height="7" fill="${F.linie}"/>
-                    <line x1="${x}" y1="${y - 7}" x2="${x}" y2="${y - 5}" stroke="${F.linie}" stroke-width="1.4"/>
-                    ${t ? `<text x="${x}" y="${y + 15}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
-                // Expansionsventil: Doppeldreieck mit Verstellpfeil
-                exv: (x, y, t) => `<g><path d="M ${x - 6} ${y - 5} L ${x - 6} ${y + 5} L ${x} ${y} Z M ${x + 6} ${y - 5} L ${x + 6} ${y + 5} L ${x} ${y} Z" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
-                    <line x1="${x - 8}" y1="${y + 9}" x2="${x + 8}" y2="${y - 11}" stroke="${F.linie}" stroke-width="1.4"/>
-                    <path d="M ${x + 8} ${y - 11} l -4 1 l 2 3 z" fill="${F.linie}"/>
-                    ${t ? `<text x="${x}" y="${y + 17}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
-                // Rückschlagventil: Kugel gegen Sitz
-                rueck: (x, y) => `<g><circle cx="${x - 2}" cy="${y}" r="3.5" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.3"/>
-                    <line x1="${x + 2}" y1="${y - 5}" x2="${x + 2}" y2="${y + 5}" stroke="${F.linie}" stroke-width="1.6"/></g>`,
-                // Schauglas: Kreis mit Punkt
-                schauglas: (x, y, t) => `<g><circle cx="${x}" cy="${y}" r="6" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
-                    <circle cx="${x}" cy="${y}" r="2" fill="${F.linie}"/>
-                    ${t ? `<text x="${x}" y="${y + 16}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
-                // Filtertrockner: Rechteck mit Diagonale
-                filter: (x, y, t) => `<g><rect x="${x - 8}" y="${y - 5}" width="16" height="10" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
-                    <line x1="${x - 8}" y1="${y + 5}" x2="${x + 8}" y2="${y - 5}" stroke="${F.linie}" stroke-width="1.2"/>
-                    ${t ? `<text x="${x}" y="${y + 16}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
-                // Sensoren: Kreis mit Buchstabe (P Druck, T Temperatur)
-                sensor: (x, y, buchstabe, t) => `<g><circle cx="${x}" cy="${y}" r="6.5" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.3"/>
-                    <text x="${x}" y="${y + 3}" text-anchor="middle" font-size="8" font-weight="700" fill="${F.linie}">${escapeHtml(buchstabe)}</text>
-                    ${t ? `<text x="${x}" y="${y + 16}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
-                // Sammler: liegender Behälter
-                sammler: (x, y, t) => `<g><rect x="${x - 16}" y="${y - 7}" width="32" height="14" rx="7" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.5"/>
-                    <line x1="${x - 10}" y1="${y + 2}" x2="${x + 10}" y2="${y + 2}" stroke="${F.linie}" stroke-width="1"/>
-                    ${t ? `<text x="${x}" y="${y + 18}" text-anchor="middle" font-size="7.5" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`
-            };
+            // ---------- Layout ----------
+            const B = 900;                              // Zeichenbreite
+            const kb = 118, kh = 34;                    // Bauteilkasten
+            const proReihe = Math.min(stellen.length, 4);
+            const reihen = Math.ceil(stellen.length / 4);
+            const hdmd = art === 'hdmd';
 
-            const teile = [];
-            const B = 132, H = 34;          // Kastengroesse
-            const mitte = 300;
-            let hoehe = 0;
+            let y = 26;
+            const linkeSpalte = 70, rechteSpalte = B - 70 - kb;
 
-            // Aggregat oben
-            const aggTitel = art === 'einzel' ? 'Verflüssigungssatz' : (art === 'hdmd' ? 'Verdichterverbund HD/MD' : 'Verdichterverbund');
-            teile.push(kasten(mitte - B / 2, 10, B, H, aggTitel, `${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW · ${A.kaeltemittel}`));
+            // --- Verdichterebene ---
+            const verdichterTitel = art === 'einzel' ? 'Verflüssigungssatz' : (hdmd ? 'Verdichter MT' : 'Verdichterverbund');
+            kasten(linkeSpalte, y, kb, kh, verdichterTitel, `${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW · ${A.kaeltemittel}`);
+            const vdMitte = linkeSpalte + kb / 2, vdY = y + kh / 2;
 
-            // Verfluessiger / Gaskuehler rechts
-            teile.push(kasten(mitte + B / 2 + 40, 10, B, H, art === 'hdmd' ? 'Gaskühler' : 'Verflüssiger', `tc ${A.tVerfluessigung} °C`));
-            teile.push(pfeil(mitte + B / 2, 27, mitte + B / 2 + 38, 27));
-            teile.push(beschriftung(mitte + B / 2 + 19, 14, ['Druckleitung'], 'middle'));
-            teile.push(S.sensor(mitte + B / 2 + 19, 44, 'P', 'Hochdruck'));
-            teile.push(S.sensor(mitte - B / 2 - 30, 44, 'P', 'Niederdruck'));
+            // Bei HD/MD zusätzlich LT-Verdichter und Parallelverdichter
+            if (hdmd) {
+                kasten(linkeSpalte, y + 52, kb, kh, 'Verdichter LT', `t₀ ${tiefste} °C`);
+                kasten(linkeSpalte, y + 104, kb, kh, 'Parallelverdichter', 'Flashgas');
+            }
 
-            // Sammler unter dem Verfluessiger
-            teile.push(S.sammler(mitte + B / 2 + 40 + B / 2, 87, 'Sammler'));
-            teile.push(pfeil(mitte + B / 2 + 40 + B / 2, 44, mitte + B / 2 + 40 + B / 2, 68));
+            // Druckleitung nach rechts, mit Absperr-, Rückschlagventil und Ölabscheider
+            const dlY = vdY;
+            linie(linkeSpalte + kb, dlY, rechteSpalte, dlY, false, true);
+            sym(S.absperr(linkeSpalte + kb + 26, dlY, 'Absperr'), linkeSpalte + kb + 26, dlY);
+            if (art !== 'einzel') {
+                sym(S.rueck(linkeSpalte + kb + 62, dlY, 'Rückschlag'), linkeSpalte + kb + 62, dlY);
+                sym(S.oel(linkeSpalte + kb + 108, dlY, 'Ölabscheider'), linkeSpalte + kb + 108, dlY);
+                // Ölrückführung zum Verdichter
+                weg(`M ${linkeSpalte + kb + 108} ${dlY + 12} L ${linkeSpalte + kb + 108} ${dlY + 30} L ${vdMitte + 18} ${dlY + 30} L ${vdMitte + 18} ${dlY + kh / 2}`, true);
+                text(linkeSpalte + kb + 40, dlY + 42, ['Ölrückführung']);
+            }
+            sym(S.sensor(rechteSpalte - 26, dlY - 22, 'P', 'Hochdruck'), rechteSpalte - 26, dlY - 22);
+            linie(rechteSpalte - 26, dlY - 15, rechteSpalte - 26, dlY);
+            sym(S.sicherheit(rechteSpalte - 62, dlY - 22, 'Sicherheitsventil'), rechteSpalte - 62, dlY - 22);
+            linie(rechteSpalte - 62, dlY - 15, rechteSpalte - 62, dlY);
+            text((linkeSpalte + kb + rechteSpalte) / 2, dlY - 8, ['Druckleitung'], 'middle');
 
-            // Armaturenstrang: echte Symbole auf der Flüssigkeitsleitung
-            const strangY = 87, strangVon = mitte + B / 2 + 38, strangBis = mitte - B / 2 - 30;
-            teile.push(`<line x1="${strangVon}" y1="${strangY}" x2="${strangBis}" y2="${strangY}" stroke="${F.linie}" stroke-width="2"/>`);
-            teile.push(S.absperr(strangVon - 22, strangY, 'Absperr'));
-            teile.push(S.filter(strangVon - 58, strangY, 'Filtertrockner'));
-            teile.push(S.schauglas(strangVon - 92, strangY, 'Schauglas'));
-            teile.push(S.magnet(strangVon - 124, strangY, 'Magnetventil'));
-            teile.push(beschriftung(mitte, 76, ['Flüssigkeitsleitung'], 'middle'));
+            // --- Verflüssiger / Gaskühler ---
+            kasten(rechteSpalte, y, kb, kh, hdmd ? 'Gaskühler' : 'Verflüssiger',
+                hdmd ? `Austritt ${A.tVerfluessigung} °C` : `tc ${A.tVerfluessigung} °C`);
 
-            hoehe = 120;
-            // Verbraucher nebeneinander
-            const proReihe = Math.min(stellen.length, 3);
-            const breiteGes = proReihe * B + (proReihe - 1) * 22;
-            const startX = mitte - breiteGes / 2;
+            // --- Hochdruckventil und Mitteldrucksammler (nur HD/MD) ---
+            let flY = y + 74;                        // Höhe der Flüssigkeitsleitung
+            if (hdmd) {
+                sym(S.exv(rechteSpalte + kb / 2, y + kh + 16, 'Hochdruckventil'), rechteSpalte + kb / 2, y + kh + 16);
+                linie(rechteSpalte + kb / 2, y + kh, rechteSpalte + kb / 2, y + kh + 10);
+                flY = y + 104;
+                kasten(rechteSpalte - 20, flY - kh / 2, kb + 20, kh, 'Mitteldrucksammler', 'Flashgas-Abscheidung');
+                linie(rechteSpalte + kb / 2, y + kh + 24, rechteSpalte + kb / 2, flY - kh / 2);
+                // Flashgas zum Parallelverdichter
+                weg(`M ${rechteSpalte - 20} ${flY - 8} L ${rechteSpalte - 54} ${flY - 8} L ${rechteSpalte - 54} ${y + 121} L ${linkeSpalte + kb} ${y + 121}`, true);
+                sym(S.magnet(rechteSpalte - 54, flY - 30, 'Flashgas-Ventil'), rechteSpalte - 54, flY - 30);
+                text(rechteSpalte - 150, y + 117, ['Flashgas zum Parallelverdichter']);
+            } else {
+                sym(S.behaelter(rechteSpalte + kb / 2, flY, 'Sammler'), rechteSpalte + kb / 2, flY);
+                linie(rechteSpalte + kb / 2, y + kh, rechteSpalte + kb / 2, flY - 8);
+            }
+
+            // --- Flüssigkeitsleitung mit Armaturenstrang nach links ---
+            const flVon = rechteSpalte + kb / 2 - (hdmd ? kb / 2 + 20 : 17);
+            const flBis = linkeSpalte + kb / 2;
+            linie(flVon, flY, flBis, flY);
+            const abstand = (flVon - flBis) / 5;
+            sym(S.absperr(flVon - abstand * 0.6, flY, 'Absperr'), flVon - abstand * 0.6, flY);
+            sym(S.filter(flVon - abstand * 1.6, flY, 'Filtertrockner'), flVon - abstand * 1.6, flY);
+            sym(S.schauglas(flVon - abstand * 2.6, flY, 'Schauglas'), flVon - abstand * 2.6, flY);
+            sym(S.magnet(flVon - abstand * 3.6, flY, 'Magnetventil'), flVon - abstand * 3.6, flY);
+            if (!hdmd) sym(S.wt(flVon - abstand * 4.4, flY, 'int. WT'), flVon - abstand * 4.4, flY);
+            text((flVon + flBis) / 2, flY - 12, ['Flüssigkeitsleitung'], 'middle');
+
+            // --- Verteilerschiene zu den Verdampfern ---
+            const busY = flY + 40;
+            const spaltenBreite = (B - 100) / proReihe;
+            const startX = 50 + spaltenBreite / 2;
+            linie(flBis, flY, flBis, busY);
+            const letzteX = startX + (proReihe - 1) * spaltenBreite;
+            linie(Math.min(flBis, startX), busY, Math.max(flBis, letzteX), busY);
+
+            const saugBusY = busY + 46 + reihen * 132;
             stellen.forEach((e, i) => {
-                const reihe = Math.floor(i / 3), spalte = i % 3;
-                const x = startX + spalte * (B + 22);
-                const y = 140 + reihe * 78;
+                const reihe = Math.floor(i / 4), spalte = i % 4;
+                const x = startX + spalte * spaltenBreite;
+                const yy = busY + 46 + reihe * 132;
                 const ks = e.ks;
                 const tv = e.werte.verdampfungstemperatur.wert;
-                teile.push(kasten(x, y + 26, B, H, 'Verdampfer', `${escapeHtml(ks.bezeichnung || '')} · ${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW`));
-                // Expansionsventil darueber
-                teile.push(S.exv(x + B / 2, y + 8, 'Expansionsventil'));
-                teile.push(pfeil(x + B / 2, 104, x + B / 2, y - 4));
-                teile.push(pfeil(x + B / 2, y + 18, x + B / 2, y + 24));
-                const fl = leitungInfo(ks, 'fluessig');
-                if (fl) teile.push(beschriftung(x + B / 2 + 6, y - 30, fl, 'start'));
-                // Saugleitung zurueck zum Aggregat
-                const sx = x + B / 2, sy = y + 26 + H;
-                teile.push(`<path d="M ${sx} ${sy} L ${sx} ${sy + 16} L ${mitte - B / 2 - 30} ${sy + 16} L ${mitte - B / 2 - 30} 27 L ${mitte - B / 2 - 2} 27" fill="none" stroke="${F.linie}" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#kpfeil)"/>`);
-                teile.push(S.sensor(sx, sy + 16, 'T', ''));      // Überhitzungsfühler
-                const sl = leitungInfo(ks, 'saug');
-                if (sl) teile.push(beschriftung(sx + 12, sy + 12, sl.concat([`t₀ ${tv} °C`]), 'start'));
-                hoehe = Math.max(hoehe, sy + 40);
+
+                // Abzweig von der Verteilerschiene
+                linie(x, busY, x, yy - 34);
+                sym(S.exv(x, yy - 22, 'EXV'), x, yy - 22);
+                // Verteiler nur zeigen, wenn dafür auch ein Druckverlust
+                // angesetzt wurde - sonst wäre er im Schema erfunden.
+                const dpVert = Number((project.kaelte.exv || {}).dpVerteiler) || 0;
+                if (dpVert > 0) sym(S.verteiler(x, yy - 6, 'Verteiler'), x, yy - 6);
+                linie(x, yy - 12, x, yy);
+                kasten(x - kb / 2, yy, kb, kh, 'Verdampfer',
+                    `${String(ks.bezeichnung || '').slice(0, 20)} · ${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW`);
+                text(x, yy + kh + 12, [`t₀ ${tv} °C · tRaum ${e.werte.raumtemperatur.wert} °C`], 'middle', 7.5);
+
+                // Flüssigkeitsdaten links am Abzweig
+                const fd = leitungsdaten(ks, 'fluessig', kp);
+                if (fd) text(x + 10, yy - 44, fd, 'start', 7);
+
+                // Saugleitung nach unten zur Sammelschiene
+                sym(S.sensor(x, yy + kh + 22, 'T', ''), x, yy + kh + 22);
+                weg(`M ${x} ${yy + kh} L ${x} ${saugBusY}`, true);
+                const sd = leitungsdaten(ks, 'saug', kp);
+                if (sd) text(x + 10, yy + kh + 34, sd, 'start', 7);
             });
 
+            // --- Saugsammelschiene zurück zum Verdichter ---
+            weg(`M ${letzteX} ${saugBusY} L ${vdMitte - 22} ${saugBusY} L ${vdMitte - 22} ${vdY + kh / 2}`, true);
+            sym(S.absperr(vdMitte - 22, saugBusY - 26, 'Saugabsperr'), vdMitte - 22, saugBusY - 26);
+            sym(S.sensor(vdMitte - 52, saugBusY - 26, 'P', 'Niederdruck'), vdMitte - 52, saugBusY - 26);
+            linie(vdMitte - 52, saugBusY - 19, vdMitte - 52, saugBusY);
+            text(vdMitte + 6, saugBusY - 8, ['Saugleitung']);
+
+            // --- Legende ---
+            const legY = saugBusY + 40;
+            teile.push(`<line x1="40" y1="${legY - 14}" x2="${B - 40}" y2="${legY - 14}" stroke="${F.rand}" stroke-width="1"/>`);
+            teile.push(`<text x="40" y="${legY}" font-size="9" font-weight="700" fill="${F.text}">LEGENDE</text>`);
+            const legende = [
+                ['linie', 'Hochdruck / Flüssigkeit'], ['gestrichelt', 'Sauggas / Flashgas / Öl'],
+                ['absperr', 'Absperrventil'], ['magnet', 'Magnetventil'], ['exv', 'Expansionsventil'],
+                ['filter', 'Filtertrockner'], ['schauglas', 'Schauglas'], ['sicherheit', 'Sicherheitsventil'],
+                ['sensorP', 'Druckfühler'], ['sensorT', 'Temperaturfühler']
+            ];
+            legende.forEach((l, i) => {
+                const lx = 50 + (i % 5) * ((B - 100) / 5), ly = legY + 22 + Math.floor(i / 5) * 30;
+                if (l[0] === 'linie') teile.push(`<line x1="${lx - 8}" y1="${ly}" x2="${lx + 8}" y2="${ly}" stroke="${F.linie}" stroke-width="2"/>`);
+                else if (l[0] === 'gestrichelt') teile.push(`<line x1="${lx - 8}" y1="${ly}" x2="${lx + 8}" y2="${ly}" stroke="${F.linie}" stroke-width="2" stroke-dasharray="5 3"/>`);
+                else if (l[0] === 'sensorP') teile.push(S.sensor(lx, ly, 'P', ''));
+                else if (l[0] === 'sensorT') teile.push(S.sensor(lx, ly, 'T', ''));
+                else teile.push(S[l[0]](lx, ly, ''));
+                teile.push(`<text x="${lx + 18}" y="${ly + 3}" font-size="8" fill="${F.klein}">${escapeHtml(l[1])}</text>`);
+            });
+            const hoehe = legY + 22 + Math.ceil(legende.length / 5) * 30 + 16;
+
             return `
-                <svg viewBox="0 0 600 ${hoehe + 20}" style="width:100%;height:auto;" xmlns="http://www.w3.org/2000/svg">
+                <svg viewBox="0 0 ${B} ${hoehe}" style="width:100%;height:auto;" xmlns="http://www.w3.org/2000/svg">
                     <defs><marker id="kpfeil" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
-                        <path d="M0,0 L0,6 L7,3 z" fill="var(--accent)"/></marker></defs>
+                        <path d="M0,0 L0,6 L7,3 z" fill="${F.linie}"/></marker></defs>
                     ${teile.join('\n')}
                 </svg>`;
         }
