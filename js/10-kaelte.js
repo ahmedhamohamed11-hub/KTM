@@ -173,6 +173,25 @@
                         `).join('')}
                     </div>`;
 
+                // Assistent: prueft bei jedem Aufruf den aktuellen Stand
+                const ass = kaelteAssistent(project);
+                const assIkon = { fehlt: '📋', problem: '✕', erkannt: '💡', naechster: '→' };
+                const assHtml = ass.hinweise.length ? `
+                    <div class="assistent">
+                        <div class="assistent-kopf">
+                            <span>Assistent</span>
+                            <div class="assistent-balken"><i style="width:${ass.fortschritt}%"></i></div>
+                            <span class="assistent-prozent">${ass.fortschritt} %</span>
+                        </div>
+                        ${ass.hinweise.slice(0, 6).map(h => `
+                            <div class="assistent-zeile assistent-${h.art}" ${h.ziel ? `onclick="app.kaelteSetTab(${idJS(projectId)}, '${h.ziel}')" style="cursor:pointer;"` : ''}>
+                                <span class="assistent-ikon">${assIkon[h.art] || '·'}</span>
+                                <span>${escapeHtml(h.text)}</span>
+                            </div>`).join('')}
+                        ${ass.hinweise.length > 6 ? `<div class="assistent-mehr">+ ${ass.hinweise.length - 6} weitere Hinweise</div>` : ''}
+                    </div>` : '';
+                const assistentHtml = assHtml;
+
                 let tabHtml = '';
                 if (tab === 'projekt') tabHtml = renderKaelteTabProjekt(project, customer);
                 else if (tab === 'kuehlstellen') tabHtml = renderKaelteTabKuehlstellen(project);
@@ -214,6 +233,7 @@
                             </div>
                             <button class="btn btn-sm btn-outline" onclick="app.openProjectModal(${idJS(projectId)})">${icon('edit')} Projekt/Kunde bearbeiten</button>
                         </div>
+                        ${assistentHtml}
                         ${stepsHtml}
                         ${tabHtml}
                     </div>
@@ -661,6 +681,90 @@
             return kopf + volumenKarte + schemaKarte + bloecke;
         }
 
+
+
+        // ---- Assistent. Läuft komplett im Programm, ohne Online-Dienst und
+        // ohne API. Kein Sprachmodell, sondern Regeln über die tatsächlich
+        // vorhandenen Daten: er sagt im Klartext, was fehlt, was nicht
+        // zusammenpasst und was der sinnvolle nächste Schritt ist.
+        // Erfindet nichts - jeder Hinweis nennt den Wert, auf dem er beruht.
+        function kaelteAssistent(project) {
+            const k = project.kaelte;
+            const A = kaelteAuslegungsdaten(project);
+            const a = kaelteAuslegung(project);
+            const stellen = k.kuehlstellen || [];
+            const hinweise = [];
+            const sag = (art, text, ziel) => hinweise.push({ art, text, ziel });
+
+            // --- Was fehlt, um überhaupt weiterzukommen ---
+            if (!stellen.length) {
+                sag('fehlt', 'Es ist noch keine Kühlstelle angelegt. Ohne Raummaße und Raumtemperatur kann nichts berechnet werden.', 'kuehlstellen');
+                return { hinweise, fortschritt: 0 };
+            }
+            stellen.forEach(x => {
+                const fehlt = [];
+                if (!(x.laenge && x.breite && x.hoehe) && !x.volumen) fehlt.push('Raummaße');
+                if (x.raumtemperatur === undefined || x.raumtemperatur === '') fehlt.push('Raumtemperatur');
+                if (fehlt.length) sag('fehlt', `${x.bezeichnung || 'Kühlstelle'}: ${fehlt.join(' und ')} fehlen.`, 'kuehlstellen');
+            });
+
+            // --- Was rechnerisch nicht zusammenpasst ---
+            a.ergebnisse.forEach(e => {
+                (e.meldungen || []).forEach(m => {
+                    if (m.art === 'fehler') sag('problem', `${e.ks.bezeichnung}: ${m.text}`, 'kaeltelast');
+                });
+                if (!e.ergebnis.moeglich) return;
+
+                // Produktlast dominiert -> das ist eine Gefrieranlage, keine Lagerung
+                const prod = (e.ergebnis.teile || []).find(t => t.name === 'Produktlast');
+                if (prod && prod.watt > e.ergebnis.nutzlast * 0.6) {
+                    sag('erkannt', `${e.ks.bezeichnung}: ${Math.round(prod.watt / e.ergebnis.nutzlast * 100)} % der Last kommt vom Produkt. Das ist keine Lagerung, sondern eine Gefrier- bzw. Abkühlanlage – Verdampfer und Luftführung entsprechend auslegen.`, 'kaeltelast');
+                }
+                // Sehr hohe latente Last -> Türen prüfen
+                const lat = (e.ergebnis.teile || []).find(t => t.name && t.name.includes('latent'));
+                const sen = (e.ergebnis.teile || []).find(t => t.name && t.name.includes('sensibel'));
+                if (lat && sen && lat.watt > sen.watt * 1.4) {
+                    sag('erkannt', `${e.ks.bezeichnung}: der Feuchteeintrag über die Tür ist größer als der Wärmeeintrag. Türluftschleier oder Schnelllauftor sparen hier spürbar Leistung.`, 'kaeltelast');
+                }
+            });
+
+            // --- Nächster sinnvoller Schritt ---
+            const rechenbar = a.anzahlRechenbar > 0;
+            const hatRohr = a.ergebnisse.some(e => e.ks.rohr && Object.values(e.ks.rohr).some(r => Number(r.laenge) > 0));
+            const komp = (k.komponenten || []).length;
+            const bv = k.bauteilVolumen || {};
+            const hatVolumen = ['verdampfer', 'verfluessiger', 'sammler'].some(x => Number(bv[x]) > 0);
+
+            if (rechenbar && !hatRohr) sag('naechster', `Die Kältelast steht (${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW). Als Nächstes die Leitungslängen eintragen – daraus kommen Dimension, Druckverlust, Isolierung und das Rohrmaterial.`, 'rohrleitungen');
+            else if (rechenbar && hatRohr && !komp) sag('naechster', 'Die Leitungen sind dimensioniert. Jetzt fehlen noch die Geräte – trage ein, was du beim Hersteller gefunden hast, dann prüft das Programm die Leistung gegen den Betriebspunkt.', 'komponenten');
+            else if (komp && !hatVolumen) sag('naechster', 'Für die Kältemittelfüllmenge fehlen die Innenvolumen von Verdampfer, Verflüssiger und Sammler. Die stehen im Datenblatt – ohne sie bleibt die Füllmenge unvollständig.', 'anlage');
+            else if (komp && hatVolumen) sag('naechster', 'Alles Wesentliche steht. Im Schritt Material die Preise ergänzen, dann kann das Angebot erzeugt werden.', 'material');
+
+            // --- Betriebspunkt-Prüfungen ---
+            if (rechenbar) {
+                const tiefste = Math.min(...a.ergebnisse.filter(e => e.ergebnis.moeglich).map(e => e.werte.verdampfungstemperatur.wert));
+                const st = kmStoff(A.kaeltemittel, tiefste);
+                if (!st) sag('problem', `${A.kaeltemittel} liefert bei ${tiefste} °C keine Stoffdaten. Bei CO₂ über 31 °C Verflüssigung ist der Prozess transkritisch und braucht eine andere Rechnung.`, 'anlage');
+                else if (st.p < 1.013) sag('erkannt', `Bei ${tiefste} °C liegt der Verdampfungsdruck mit ${st.p.toFixed(2).replace('.', ',')} bar unter dem Luftdruck. Eine Undichtheit zieht dann Luft und Feuchte in die Anlage – Dichtheit besonders sorgfältig prüfen.`, 'anlage');
+
+                if (KAELTEMITTEL[A.kaeltemittel] && KAELTEMITTEL[A.kaeltemittel].blend) {
+                    const gl = kaelteGlideK(A.kaeltemittel, tiefste);
+                    if (gl != null && gl > 3) sag('erkannt', `${A.kaeltemittel} hat bei ${tiefste} °C rund ${gl.toFixed(1).replace('.', ',')} K Temperaturgleit. Die Überhitzung ist auf den Taupunkt zu beziehen, sonst wird der Verdampfer zu klein ausgelegt.`, 'anlage');
+                }
+                const spanne = A.tVerfluessigung - tiefste;
+                if (spanne > 70) sag('erkannt', `Zwischen Verdampfung (${tiefste} °C) und Verflüssigung (${A.tVerfluessigung} °C) liegen ${spanne.toFixed(0)} K. Das ist für einen einstufigen Verdichter viel – zweistufige Verdichtung oder Zwischeneinspritzung prüfen.`, 'anlage');
+            }
+
+            // --- Verbund: Gruppen mit sehr unterschiedlicher Verdampfung ---
+            if ((k.anlagenart || 'einzel') !== 'einzel' && a.anzahlRechenbar > 1) {
+                const tvs = a.ergebnisse.filter(e => e.ergebnis.moeglich).map(e => e.werte.verdampfungstemperatur.wert);
+                const spanneG = Math.max(...tvs) - Math.min(...tvs);
+                if (spanneG > 12) sag('erkannt', `Die Verdampfungstemperaturen liegen ${spanneG.toFixed(0)} K auseinander. Auf einer gemeinsamen Sauggruppe zwingt das alle Stellen auf die tiefste Temperatur – zwei Gruppen (MT und LT) sind hier meist wirtschaftlicher.`, 'verbund');
+            }
+
+            const schritteFertig = [stellen.length > 0, rechenbar, hatRohr, komp > 0, hatVolumen].filter(Boolean).length;
+            return { hinweise, fortschritt: Math.round(schritteFertig / 5 * 100) };
+        }
 
         // ---- Anlagenschema. Wird aus der tatsächlichen Konfiguration
         // gezeichnet: Anlagenart bestimmt den Aufbau, die Leitungen tragen
