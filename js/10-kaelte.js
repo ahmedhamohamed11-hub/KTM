@@ -1014,9 +1014,37 @@
                     </div>`;
             }).join('');
 
+            // Verdichterkombinationen fuer die groesste Sauggruppe
+            const groesste = Object.entries(gruppen).map(([name, mit]) => ({
+                name, kw: mit.reduce((sm, e) => sm + e.ergebnis.auslegung, 0) / 1000 * (gz[name] != null ? Number(gz[name]) : 1)
+            })).sort((x, y) => y.kw - x.kw)[0];
+            let kombiKarte = '';
+            if (groesste && groesste.kw > 0) {
+                const vk = kaelteVerdichterKombinationen(groesste.kw);
+                kombiKarte = `
+                    <div class="form-card">
+                        <div class="form-card-title">Verdichterkombinationen – Gruppe ${escapeHtml(groesste.name)} (${groesste.kw.toFixed(2).replace('.', ',')} kW)</div>
+                        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px;">Verglichen wird die Stufigkeit, nicht ein konkretes Fabrikat. Ziel inkl. 10 % Reserve: ${vk.ziel.toFixed(2).replace('.', ',')} kW.</div>
+                        <div class="table-container"><table>
+                            <thead><tr><th>Aufbau</th><th>kleinste Stufe</th><th>Regelbereich</th><th>Auslastung</th><th>Reserve</th></tr></thead>
+                            <tbody>${vk.varianten.slice(0, 6).map((v, i) => `
+                                <tr${i === 0 ? ' style="background:var(--accent-light);"' : ''}>
+                                    <td>${i === 0 ? '<strong>★ ' + escapeHtml(v.beschreibung) + '</strong>' : escapeHtml(v.beschreibung)}</td>
+                                    <td class="kl-w">${v.minStufe.toFixed(2).replace('.', ',')} kW</td>
+                                    <td class="kl-w">${v.regelbereich.toFixed(0)} %</td>
+                                    <td class="kl-w">${v.auslastung.toFixed(0)} %</td>
+                                    <td class="kl-w">${v.reserveKW.toFixed(2).replace('.', ',')} kW</td>
+                                </tr>`).join('')}</tbody>
+                        </table></div>
+                        ${(vk.empfehlung.bewertung || []).map(b => `<div class="kl-hinweis kl-${b.art}">${b.art === 'fehler' ? '✕' : b.art === 'warnung' ? '⚠' : 'ℹ'} ${escapeHtml(b.text)}</div>`).join('')}
+                        <div class="kl-hinweis kl-pruefen">🔴 Die Bewertung betrifft nur Stufigkeit und Reserve. Ob ein Verdichter im gewählten Betriebspunkt zugelassen ist, steht ausschließlich im Herstellerdatenblatt.</div>
+                    </div>`;
+            }
+
             return `
                 <div class="kl-hinweis kl-pruefen">🔴 Der Gleichzeitigkeitsfaktor steht bewusst auf 1,00 (volle Summe). Einen kleineren Wert darf nur setzen, wer das Lastprofil der Anlage kennt – ein geschätzter Faktor unterdimensioniert die Anlage. Diese App schlägt hier absichtlich keinen Wert vor.</div>
-                ${bloecke}`;
+                ${bloecke}
+                ${kombiKarte}`;
         }
 
         // ---- Technische Prüfung: sammelt alles Offene an einer Stelle.
