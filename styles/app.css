@@ -1940,3 +1940,16 @@
 .iso-var.nein { background: rgba(220,60,60,0.13); color: var(--text-muted); text-decoration: line-through; }
 .schema-flaeche { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; }
 .schema-flaeche svg { min-width: 480px; display: block; }
+
+/* ---- Assistent Kälteauslegung ---- */
+.assistent { border: 1.5px solid var(--accent); border-radius: 10px; padding: 11px 13px; margin: 14px 0 4px; background: var(--bg-secondary); }
+.assistent-kopf { display: flex; align-items: center; gap: 10px; font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--accent); margin-bottom: 9px; }
+.assistent-balken { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.assistent-balken i { display: block; height: 100%; background: var(--accent); }
+.assistent-prozent { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 0; }
+.assistent-zeile { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; padding: 5px 0; border-top: 1px solid var(--border); }
+.assistent-zeile:first-of-type { border-top: none; }
+.assistent-ikon { flex-shrink: 0; font-size: 12px; }
+.assistent-problem .assistent-ikon { color: #d24545; }
+.assistent-naechster { font-weight: 600; }
+.assistent-mehr { font-size: 11px; color: var(--text-muted); padding-top: 6px; }
