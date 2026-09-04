@@ -283,6 +283,17 @@
                     });
                 });
 
+                // F-Gase-Optionen
+                contentArea.querySelectorAll('.fg-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        p.kaelte.fgase = p.kaelte.fgase || {};
+                        p.kaelte.fgase[el.dataset.feld] = el.checked;
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
                 // Innenvolumen der Bauteile (Füllmenge)
                 contentArea.querySelectorAll('.bv-in').forEach(el => {
                     el.addEventListener('change', async () => {
@@ -1410,6 +1421,35 @@
                     <div class="form-card-title">Verwendete Richtwert-Schätzungen (${schaetzungen.length})</div>
                     ${schaetzungen.length ? `<ul style="font-size:12px;line-height:1.6;margin:0;padding-left:18px;">${schaetzungen.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div class="empty-note" style="padding:10px;">Keine – alle Werte sind eingegeben oder berechnet.</div>'}
                 </div>
+                ${(() => {
+                    // F-Gase-Pflichten aus der berechneten Fuellmenge
+                    if (typeof kaelteFGase !== 'function') return '';
+                    const mm = kaelteMaterialListe(project);
+                    const kmPos = mm.pos.find(x => x.schluessel === 'kaeltemittel');
+                    const menge = kmPos ? Number(kmPos.menge) || 0 : 0;
+                    if (!menge) return `<div class="form-card"><div class="form-card-title">F-Gase-Pflichten</div>
+                        <div class="empty-note" style="padding:12px;">Erst die Füllmenge berechnen – dann steht hier, ob und wie oft die Anlage auf Dichtheit zu prüfen ist.</div></div>`;
+                    const fg = project.kaelte.fgase || {};
+                    const r = kaelteFGase(A.kaeltemittel, menge, { hermetisch: !!fg.hermetisch, leckageErkennung: !!fg.les, wohngebaeude: !!fg.wohn });
+                    if (!r.moeglich) return `<div class="form-card"><div class="kl-hinweis kl-warnung">⚠ ${escapeHtml(r.hinweis)}</div></div>`;
+                    return `<div class="form-card">
+                        <div class="form-card-title">F-Gase-Pflichten nach (EU) 2024/573</div>
+                        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;">
+                            <label class="ae-check"><input type="checkbox" class="fg-in" data-feld="hermetisch" ${fg.hermetisch ? 'checked' : ''}> hermetisch geschlossen</label>
+                            <label class="ae-check"><input type="checkbox" class="fg-in" data-feld="les" ${fg.les ? 'checked' : ''}> Leckage-Erkennungssystem</label>
+                            <label class="ae-check"><input type="checkbox" class="fg-in" data-feld="wohn" ${fg.wohn ? 'checked' : ''}> in einem Wohngebäude</label>
+                        </div>
+                        <table class="kl-ergebnis"><tbody>
+                            <tr><td>Kältemittel und Füllmenge</td><td class="kl-w">${escapeHtml(A.kaeltemittel)} · ${menge.toFixed(1).replace('.', ',')} kg</td></tr>
+                            <tr><td>GWP</td><td class="kl-w">${r.gwp}</td></tr>
+                            <tr class="kl-sum"><td>CO₂-Äquivalent</td><td class="kl-w">${r.co2e.toFixed(1).replace('.', ',')} t</td></tr>
+                            ${r.intervallMonate ? `<tr class="kl-total"><td>Dichtheitskontrolle</td><td class="kl-w">alle ${r.intervallMonate} Monate</td></tr>` : ''}
+                        </tbody></table>
+                        <div class="kl-hinweis ${r.pflichtig ? 'kl-warnung' : 'kl-info'}">${r.pflichtig ? '⚠' : 'ℹ'} ${escapeHtml(r.hinweis)}</div>
+                        ${r.pflichten.length ? `<ul style="font-size:12px;line-height:1.6;margin:8px 0 0;padding-left:18px;">${r.pflichten.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : ''}
+                        <div class="kl-hinweis kl-pruefen">🔴 Maßgebend für den GWP-Wert ist Anhang I der Verordnung. Die hier hinterlegten Werte dienen der Vorabschätzung und sind vor einer verbindlichen Aussage dagegen zu prüfen.</div>
+                    </div>`;
+                })()}
                 ${renderKaelteNormen(project)}
                 ${renderKaelteVarianten(project)}
                 <div class="form-card">
