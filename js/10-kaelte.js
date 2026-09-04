@@ -283,6 +283,19 @@
                     });
                 });
 
+                // Expansionsventil-Eingaben
+                contentArea.querySelectorAll('.exv-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        p.kaelte.exv = p.kaelte.exv || {};
+                        const roh = el.value.trim();
+                        if (roh === '') delete p.kaelte.exv[el.dataset.feld];
+                        else { const n = parseFloat(roh.replace(',', '.')); if (!Number.isFinite(n) || n < 0) { showToast('Bitte eine Zahl eingeben.', 'error'); return; } p.kaelte.exv[el.dataset.feld] = n; }
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
                 // F-Gase-Optionen
                 contentArea.querySelectorAll('.fg-in').forEach(el => {
                     el.addEventListener('change', async () => {
@@ -989,6 +1002,46 @@
             const beschriftung = (x, y, zeilen, anker = 'middle') => (zeilen || []).map((z, i) =>
                 `<text x="${x}" y="${y + i * 10}" text-anchor="${anker}" font-size="8.5" fill="${F.klein}">${escapeHtml(z)}</text>`).join('');
 
+            // ---- Symbole nach der üblichen Kältetechnik-Darstellung.
+            // Alle sitzen auf der Leitung und sind an ihrem Mittelpunkt
+            // ausgerichtet, damit sie sich beliebig platzieren lassen.
+            const S = {
+                // Absperrventil: die klassische Doppeldreieck-Form
+                absperr: (x, y, t) => `<g><path d="M ${x - 6} ${y - 5} L ${x - 6} ${y + 5} L ${x} ${y} Z M ${x + 6} ${y - 5} L ${x + 6} ${y + 5} L ${x} ${y} Z" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x}" y1="${y - 5}" x2="${x}" y2="${y - 9}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 4}" y1="${y - 9}" x2="${x + 4}" y2="${y - 9}" stroke="${F.linie}" stroke-width="1.4"/>
+                    ${t ? `<text x="${x}" y="${y + 15}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
+                // Magnetventil: Absperrsymbol mit Spulenkasten darüber
+                magnet: (x, y, t) => `<g><path d="M ${x - 6} ${y - 5} L ${x - 6} ${y + 5} L ${x} ${y} Z M ${x + 6} ${y - 5} L ${x + 6} ${y + 5} L ${x} ${y} Z" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <rect x="${x - 4}" y="${y - 14}" width="8" height="7" fill="${F.linie}"/>
+                    <line x1="${x}" y1="${y - 7}" x2="${x}" y2="${y - 5}" stroke="${F.linie}" stroke-width="1.4"/>
+                    ${t ? `<text x="${x}" y="${y + 15}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
+                // Expansionsventil: Doppeldreieck mit Verstellpfeil
+                exv: (x, y, t) => `<g><path d="M ${x - 6} ${y - 5} L ${x - 6} ${y + 5} L ${x} ${y} Z M ${x + 6} ${y - 5} L ${x + 6} ${y + 5} L ${x} ${y} Z" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 8}" y1="${y + 9}" x2="${x + 8}" y2="${y - 11}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <path d="M ${x + 8} ${y - 11} l -4 1 l 2 3 z" fill="${F.linie}"/>
+                    ${t ? `<text x="${x}" y="${y + 17}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
+                // Rückschlagventil: Kugel gegen Sitz
+                rueck: (x, y) => `<g><circle cx="${x - 2}" cy="${y}" r="3.5" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.3"/>
+                    <line x1="${x + 2}" y1="${y - 5}" x2="${x + 2}" y2="${y + 5}" stroke="${F.linie}" stroke-width="1.6"/></g>`,
+                // Schauglas: Kreis mit Punkt
+                schauglas: (x, y, t) => `<g><circle cx="${x}" cy="${y}" r="6" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <circle cx="${x}" cy="${y}" r="2" fill="${F.linie}"/>
+                    ${t ? `<text x="${x}" y="${y + 16}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
+                // Filtertrockner: Rechteck mit Diagonale
+                filter: (x, y, t) => `<g><rect x="${x - 8}" y="${y - 5}" width="16" height="10" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.4"/>
+                    <line x1="${x - 8}" y1="${y + 5}" x2="${x + 8}" y2="${y - 5}" stroke="${F.linie}" stroke-width="1.2"/>
+                    ${t ? `<text x="${x}" y="${y + 16}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
+                // Sensoren: Kreis mit Buchstabe (P Druck, T Temperatur)
+                sensor: (x, y, buchstabe, t) => `<g><circle cx="${x}" cy="${y}" r="6.5" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.3"/>
+                    <text x="${x}" y="${y + 3}" text-anchor="middle" font-size="8" font-weight="700" fill="${F.linie}">${escapeHtml(buchstabe)}</text>
+                    ${t ? `<text x="${x}" y="${y + 16}" text-anchor="middle" font-size="7" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`,
+                // Sammler: liegender Behälter
+                sammler: (x, y, t) => `<g><rect x="${x - 16}" y="${y - 7}" width="32" height="14" rx="7" fill="${F.kasten}" stroke="${F.linie}" stroke-width="1.5"/>
+                    <line x1="${x - 10}" y1="${y + 2}" x2="${x + 10}" y2="${y + 2}" stroke="${F.linie}" stroke-width="1"/>
+                    ${t ? `<text x="${x}" y="${y + 18}" text-anchor="middle" font-size="7.5" fill="${F.klein}">${escapeHtml(t)}</text>` : ''}</g>`
+            };
+
             const teile = [];
             const B = 132, H = 34;          // Kastengroesse
             const mitte = 300;
@@ -1001,16 +1054,22 @@
             // Verfluessiger / Gaskuehler rechts
             teile.push(kasten(mitte + B / 2 + 40, 10, B, H, art === 'hdmd' ? 'Gaskühler' : 'Verflüssiger', `tc ${A.tVerfluessigung} °C`));
             teile.push(pfeil(mitte + B / 2, 27, mitte + B / 2 + 38, 27));
-            teile.push(beschriftung(mitte + B / 2 + 19, 20, ['Druckleitung'], 'middle'));
+            teile.push(beschriftung(mitte + B / 2 + 19, 14, ['Druckleitung'], 'middle'));
+            teile.push(S.sensor(mitte + B / 2 + 19, 44, 'P', 'Hochdruck'));
+            teile.push(S.sensor(mitte - B / 2 - 30, 44, 'P', 'Niederdruck'));
 
             // Sammler unter dem Verfluessiger
-            teile.push(kasten(mitte + B / 2 + 40, 70, B, H, 'Sammler', 'Flüssigkeit'));
+            teile.push(S.sammler(mitte + B / 2 + 40 + B / 2, 87, 'Sammler'));
             teile.push(pfeil(mitte + B / 2 + 40 + B / 2, 44, mitte + B / 2 + 40 + B / 2, 68));
 
-            // Armaturenstrang links vom Sammler
-            teile.push(kasten(mitte - B / 2, 70, B, H, 'Filtertrockner · Schauglas', 'Magnetventil'));
-            teile.push(pfeil(mitte + B / 2 + 38, 87, mitte + B / 2 + 2, 87));
-            teile.push(beschriftung(mitte + B / 2 + 20, 80, ['Flüssigkeit'], 'middle'));
+            // Armaturenstrang: echte Symbole auf der Flüssigkeitsleitung
+            const strangY = 87, strangVon = mitte + B / 2 + 38, strangBis = mitte - B / 2 - 30;
+            teile.push(`<line x1="${strangVon}" y1="${strangY}" x2="${strangBis}" y2="${strangY}" stroke="${F.linie}" stroke-width="2"/>`);
+            teile.push(S.absperr(strangVon - 22, strangY, 'Absperr'));
+            teile.push(S.filter(strangVon - 58, strangY, 'Filtertrockner'));
+            teile.push(S.schauglas(strangVon - 92, strangY, 'Schauglas'));
+            teile.push(S.magnet(strangVon - 124, strangY, 'Magnetventil'));
+            teile.push(beschriftung(mitte, 76, ['Flüssigkeitsleitung'], 'middle'));
 
             hoehe = 120;
             // Verbraucher nebeneinander
@@ -1025,8 +1084,7 @@
                 const tv = e.werte.verdampfungstemperatur.wert;
                 teile.push(kasten(x, y + 26, B, H, 'Verdampfer', `${escapeHtml(ks.bezeichnung || '')} · ${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW`));
                 // Expansionsventil darueber
-                teile.push(`<rect x="${x + B / 2 - 22}" y="${y - 2}" width="44" height="20" rx="3" fill="${F.kasten}" stroke="${F.rand}" stroke-width="1.2"/>
-                            <text x="${x + B / 2}" y="${y + 11}" text-anchor="middle" font-size="9" font-weight="600" fill="${F.text}">EXV</text>`);
+                teile.push(S.exv(x + B / 2, y + 8, 'Expansionsventil'));
                 teile.push(pfeil(x + B / 2, 104, x + B / 2, y - 4));
                 teile.push(pfeil(x + B / 2, y + 18, x + B / 2, y + 24));
                 const fl = leitungInfo(ks, 'fluessig');
@@ -1034,8 +1092,9 @@
                 // Saugleitung zurueck zum Aggregat
                 const sx = x + B / 2, sy = y + 26 + H;
                 teile.push(`<path d="M ${sx} ${sy} L ${sx} ${sy + 16} L ${mitte - B / 2 - 30} ${sy + 16} L ${mitte - B / 2 - 30} 27 L ${mitte - B / 2 - 2} 27" fill="none" stroke="${F.linie}" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#kpfeil)"/>`);
+                teile.push(S.sensor(sx, sy + 16, 'T', ''));      // Überhitzungsfühler
                 const sl = leitungInfo(ks, 'saug');
-                if (sl) teile.push(beschriftung(sx + 6, sy + 12, sl.concat([`t₀ ${tv} °C`]), 'start'));
+                if (sl) teile.push(beschriftung(sx + 12, sy + 12, sl.concat([`t₀ ${tv} °C`]), 'start'));
                 hoehe = Math.max(hoehe, sy + 40);
             });
 
@@ -1220,6 +1279,7 @@
 
         function renderKaelteTabKomponenten(project) {
             const bedarf = kaelteKomponentenBedarf(project);
+            const dEinheitK = (project.kaelte.auslegung || {}).druckEinheit || 'bar';
             const liste = project.kaelte.komponenten || [];
 
             if (!bedarf.moeglich) {
@@ -1300,6 +1360,39 @@
                         ${bedarf.kp.moeglich ? `<div class="survey-chip"><span>Massenstrom</span><strong>${bedarf.kp.mDotKgH.toFixed(1).replace('.', ',')} kg/h</strong></div>` : ''}
                     </div>
                 </div>
+                ${(() => {
+                    // Expansionsventil-Auslegung nach Ventilkapazitaet
+                    if (typeof kaelteExpansionsventil !== 'function' || !bedarf.kp.moeglich) return '';
+                    const e = project.kaelte.exv || {};
+                    const r = kaelteExpansionsventil({
+                        kaeltemittel: bedarf.A.kaeltemittel, tVerdampfung: bedarf.tVerd,
+                        tVerfluessigung: bedarf.A.tVerfluessigung, ueberhitzung: bedarf.A.ueberhitzung,
+                        unterkuehlung: bedarf.A.unterkuehlung, kaelteleistungW: bedarf.q0KW * 1000,
+                        dpLeitungBar: Number(e.dpLeitung) || 0, dpVerteilerBar: Number(e.dpVerteiler) || 0,
+                        nennkapazitaetKW: Number(e.nennkapazitaet) || null
+                    });
+                    if (!r.moeglich) return `<div class="form-card"><div class="form-card-title">Expansionsventil</div><div class="kl-hinweis kl-fehler">✕ ${escapeHtml(r.hinweis)}</div></div>`;
+                    return `
+                    <div class="form-card">
+                        <div class="form-card-title">Expansionsventil – Auslegung nach Ventilkapazität</div>
+                        <div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">Ein Expansionsventil wird nicht nach der kW-Zahl der Anlage gewählt, sondern nach der Kapazität der Düse bei den tatsächlichen Bedingungen. Trage die Nennkapazität aus dem Datenblatt ein, dann rechnet das Programm sie auf deinen Betriebspunkt um.</div>
+                        <div class="survey-grid">
+                            <div class="form-group"><label>Δp Flüssigkeitsleitung <small>(bar)</small></label><input type="text" inputmode="decimal" class="exv-in" data-feld="dpLeitung" value="${e.dpLeitung ?? ''}" placeholder="0"></div>
+                            <div class="form-group"><label>Δp Verteiler / Düsenstock <small>(bar)</small></label><input type="text" inputmode="decimal" class="exv-in" data-feld="dpVerteiler" value="${e.dpVerteiler ?? ''}" placeholder="0"></div>
+                            <div class="form-group"><label>Nennkapazität aus dem Datenblatt <small>(kW)</small></label><input type="text" inputmode="decimal" class="exv-in" data-feld="nennkapazitaet" value="${e.nennkapazitaet ?? ''}" placeholder="–"></div>
+                        </div>
+                        <table class="kl-ergebnis"><tbody>
+                            <tr><td>Druckdifferenz gesamt</td><td class="kl-w">${fmtDruck(r.dpGesamt, dEinheitK, true)}</td></tr>
+                            <tr><td>davon am Ventil verfügbar</td><td class="kl-w">${fmtDruck(r.dpVentil, dEinheitK, true)}</td></tr>
+                            <tr><td>Massenstrom</td><td class="kl-w">${r.mDotKgH.toFixed(1).replace('.', ',')} kg/h</td></tr>
+                            <tr><td>Umrechnung Nenn → Betrieb</td><td class="kl-w">Faktor ${r.faktor != null ? r.faktor.toFixed(3).replace('.', ',') : '–'}</td></tr>
+                            <tr class="kl-total"><td>Gesuchte Nennkapazität<br><small>bei ${r.referenz.tVerdampfung} °C / ${r.referenz.tVerfluessigung} °C, ${r.referenz.unterkuehlung} K Unterkühlung</small></td><td class="kl-w">${r.gesuchteNennkapazitaetKW != null ? r.gesuchteNennkapazitaetKW.toFixed(2).replace('.', ',') + ' kW' : '–'}</td></tr>
+                            ${r.kapazitaetBetriebKW != null ? `<tr class="kl-sum"><td>Dein Ventil leistet im Betrieb</td><td class="kl-w">${r.kapazitaetBetriebKW.toFixed(2).replace('.', ',')} kW</td></tr>` : ''}
+                        </tbody></table>
+                        ${r.bewertung ? `<div class="kl-hinweis kl-${r.bewertung.art === 'ok' ? 'info' : r.bewertung.art}">${r.bewertung.art === 'ok' ? '✓' : r.bewertung.art === 'fehler' ? '✕' : '⚠'} ${escapeHtml(r.bewertung.text)}</div>` : ''}
+                        ${r.hinweise.map(h => `<div class="kl-hinweis kl-${h.art}">${h.art === 'pruefen' ? '🔴' : '⚠'} ${escapeHtml(h.text)}</div>`).join('')}
+                    </div>`;
+                })()}
                 ${anfSlots}
                 ${sonstige.length ? `<div class="form-card"><div class="form-card-title">Weitere Komponenten</div>
                     ${sonstige.map(k => `<div class="komp-geraet"><div><strong>${escapeHtml(k.typ)}</strong> ${escapeHtml([k.hersteller, k.modell].filter(Boolean).join(' '))}</div>
