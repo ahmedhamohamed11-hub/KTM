@@ -1924,3 +1924,10 @@
 .ae-modus-btn span { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
 .ae-modus-btn.active { border-color: var(--accent); background: var(--accent-light); }
 .ae-modus-btn.active strong { color: var(--accent); }
+
+/* ---- Angebots-PDF Vorschau ---- */
+.pdf-vorschau { position: relative; background: var(--bg-secondary); border-radius: 8px; overflow: hidden; }
+.pdf-vorschau iframe { width: 100%; height: 62vh; min-height: 340px; border: none; display: block; position: relative; z-index: 1; background: #fff; }
+.pdf-vorschau-fallback { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 12.5px; color: var(--text-muted); padding: 20px; z-index: 0; }
+.pdf-vorschau-leiste { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; }
+@media (max-width: 620px) { .pdf-vorschau iframe { height: 52vh; } }
