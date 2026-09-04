@@ -78,3 +78,72 @@
             treffer.sort((x, y) => y.punkte - x.punkte);
             return treffer;
         }
+
+        // ---------- Preispflege ----------
+        // BEWUSSTE ENTSCHEIDUNG: Es werden KEINE Preise automatisch aus Shops
+        // ausgelesen. Das ginge im Browser ohnehin nicht (CORS), braeuchte
+        // einen eigenen Server mit laufenden Kosten und verstoesst meist gegen
+        // die Nutzungsbedingungen der Shops. Erfundene Preise waeren das
+        // Schlimmste von allem.
+        //
+        // Stattdessen: die App fuehrt zur echten Artikelseite, der Techniker
+        // liest den Preis ab und traegt ihn ein. Gespeichert wird mit Datum
+        // und Quelle, sodass jederzeit sichtbar ist, wie alt ein Preis ist.
+        // Eigene Preise haben Vorrang vor den Katalogpreisen und ueberleben
+        // eine Katalogaktualisierung.
+        const PREIS_ALTER_WARNUNG_TAGE = 180;   // ab hier gilt ein Preis als alt
+
+        function kaeltePreisAlter(datenstand) {
+            if (!datenstand) return null;
+            const d = new Date(datenstand);
+            if (isNaN(d)) return null;
+            return Math.floor((Date.now() - d.getTime()) / 86400000);
+        }
+
+        // Liefert den gueltigen Preis eines Artikels: eigener gepflegter Preis
+        // wenn vorhanden, sonst der Katalogpreis.
+        function kaeltePreisStand(artikel, eigenePreise) {
+            const eigen = (eigenePreise || {})[artikel.id];
+            if (eigen && eigen.ekNetto != null) {
+                const tage = kaeltePreisAlter(eigen.datum);
+                return {
+                    ekNetto: Number(eigen.ekNetto),
+                    vkNetto: eigen.vkNetto != null ? Number(eigen.vkNetto) : (artikel.vkNetto ?? null),
+                    datum: eigen.datum, tage, quelle: eigen.quelle || artikel.quelle,
+                    herkunft: 'selbst gepflegt',
+                    veraltet: tage != null && tage > PREIS_ALTER_WARNUNG_TAGE
+                };
+            }
+            const tage = kaeltePreisAlter(artikel.datenstand);
+            return {
+                ekNetto: artikel.ekNetto ?? null, vkNetto: artikel.vkNetto ?? null,
+                datum: artikel.datenstand, tage, quelle: artikel.quelle,
+                herkunft: artikel.haendler || 'Katalog',
+                veraltet: tage != null && tage > PREIS_ALTER_WARNUNG_TAGE
+            };
+        }
+
+        // Adresse, unter der der Preis nachgesehen werden kann.
+        // Ist eine echte Artikelseite hinterlegt, wird genau die geoeffnet.
+        // Sonst eine normale Websuche nach Hersteller und Artikelnummer -
+        // es wird KEINE Shop-Adresse erraten oder zusammengebaut.
+        function kaeltePreisLink(artikel) {
+            if (artikel.quelle && /^https?:\/\//.test(artikel.quelle)) {
+                return { url: artikel.quelle, art: 'artikelseite', text: 'Artikelseite öffnen' };
+            }
+            const suche = [artikel.hersteller, artikel.artikelnummer, artikel.name]
+                .filter(Boolean).join(' ').slice(0, 120);
+            if (!suche.trim()) return null;
+            return {
+                url: 'https://www.google.com/search?q=' + encodeURIComponent(suche + ' Preis'),
+                art: 'suche', text: 'Im Web suchen'
+            };
+        }
+
+        // Artikel, deren Preis ueberprueft werden sollte.
+        function kaeltePreisPruefliste(eigenePreise) {
+            return KAELTE_KATALOG
+                .map(a => ({ artikel: a, stand: kaeltePreisStand(a, eigenePreise) }))
+                .filter(x => x.stand.ekNetto == null || x.stand.veraltet)
+                .sort((a, b) => (b.stand.tage || 9999) - (a.stand.tage || 9999));
+        }
