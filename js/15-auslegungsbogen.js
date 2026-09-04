@@ -238,7 +238,7 @@
                     });
                     y = py + kh + 14;
                     doc.setFontSize(6.5); doc.setTextColor(...PDF_GRAY);
-                    doc.text('Durchgezogen: Hochdruck und Flüssigkeit · gestrichelt: Sauggas', mx, y);
+                    doc.text('Durchgezogen: Hochdruck und Flüssigkeit · gestrichelt: Sauggas. Vereinfachte Darstellung – das vollständige Schema mit Armaturen, Fühlern, Positionsnummern und Betriebsdaten steht im Schritt „Anlage".', mx, y, { maxWidth: pw - mx * 2 });
                     y += 8;
                 }
 
