@@ -112,5 +112,41 @@ console.log('\n=== Migrierte Alt-API (js/08-anlagen-wartung.js) bleibt kompatibe
   pruefe('R410A (nur in der alten Tabelle) weiterhin vorhanden', w.KTM_FGAS.GWP['R410A'] === 2088);
 }
 
+console.log('\n=== Phase B: historischer Rechtsstand ===');
+{
+  const ctxV = {};
+  new Function(fs.readFileSync(__dirname + '/../js/19-kaelte-compliance.js', 'utf8') +
+    'this.RS = kaelteRechtsstand; this.VER = COMPLIANCE_RULE_SET_VERSION; this.AUSWERTEN = kaelteComplianceAuswerten;').call(ctxV);
+
+  // Neues Projekt (Version wird beim Anlegen gesetzt, hier simuliert)
+  const neu = { kaelte: { complianceRuleSetVersionAtCreation: ctxV.VER, kuehlstellen: [] } };
+  const rsNeu = ctxV.RS(neu);
+  pruefe('Neues Projekt: Rechtsstand = "aktuell"', rsNeu.zustand === 'aktuell');
+  pruefe('Neues Projekt: kein Hinweis nötig', rsNeu.hinweis === null);
+
+  // Bestehendes Projekt OHNE gespeicherten Wert (vor Einführung dieser Funktion)
+  const alt = { kaelte: { kuehlstellen: [] } };
+  const rsAlt = ctxV.RS(alt);
+  pruefe('Altes Projekt ohne Wert: Rechtsstand = "unbekannt", NICHT "aktuell"', rsAlt.zustand === 'unbekannt');
+  pruefe('Altes Projekt: KEINE stille Migration - versionBeiErstellung bleibt null', rsAlt.versionBeiErstellung === null);
+  pruefe('Altes Projekt: Hinweis nennt "nicht rekonstruierbar"', /nicht rekonstruierbar/.test(rsAlt.hinweis));
+
+  // Projekt unter einer ANDEREN (älteren) Version angelegt
+  const geaendert = { kaelte: { complianceRuleSetVersionAtCreation: '2025.3', kuehlstellen: [] } };
+  const rsGeaendert = ctxV.RS(geaendert);
+  pruefe('Projekt mit älterer Version: Rechtsstand = "geaendert"', rsGeaendert.zustand === 'geaendert');
+  pruefe('Alte Version bleibt sichtbar (2025.3), wird NICHT überschrieben', rsGeaendert.versionBeiErstellung === '2025.3');
+  pruefe('Hinweis nennt sowohl alte als auch aktuelle Version', rsGeaendert.hinweis.includes('2025.3') && rsGeaendert.hinweis.includes(ctxV.VER));
+
+  // Die Auswertung selbst nutzt bei einem "geaendert"-Projekt trotzdem IMMER
+  // die aktuelle Regellogik - es gibt kein eingefrorenes altes Ergebnis.
+  global.kaelteAuslegungsdaten = () => ({ kaeltemittel: 'R744', tVerfluessigung: 20 });
+  global.kaelteMaterialListe = () => ({ pos: [{ schluessel: 'kaeltemittel', menge: 5 }] });
+  const cGeaendert = ctxV.AUSWERTEN(geaendert);
+  pruefe('Auswertung bei geändertem Rechtsstand rechnet trotzdem live (R744 korrekt kein F-Gas)',
+    cGeaendert.rules.find(r => r.rule_id === 'RULE-FGAS-2024-001').status === 'PASS');
+  pruefe('Ergebnis enthält beide Versionsangaben', cGeaendert.rule_set_version_at_creation === '2025.3' && cGeaendert.current_rule_set_version === ctxV.VER);
+}
+
 console.log(`\n${fehler === 0 ? '✓ ALLE COMPLIANCE-TESTS BESTANDEN' : '✕ ' + fehler + ' FEHLER'} (${gesamt - fehler}/${gesamt})\n`);
 process.exit(fehler ? 1 : 0);
