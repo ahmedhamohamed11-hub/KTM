@@ -1875,6 +1875,9 @@
                             'SOURCE_MISSING', 'MANUFACTURER_CHECK_REQUIRED', 'EXPERT_REVIEW_REQUIRED', 'NOT_APPLICABLE'];
                         return `
                             <div class="comp-gesamt">${st.icon} Gesamtstatus: <strong>${escapeHtml(st.label)}</strong></div>
+                            ${c.legal_status !== 'aktuell' ? `<div class="comp-rechtsstand comp-rechtsstand-${c.legal_status}">
+                                ${c.legal_status === 'geaendert' ? '📅' : 'ℹ'} <strong>${c.legal_status === 'geaendert' ? 'Rechtsstand geändert' : 'Rechtsstand unbekannt'}:</strong> ${escapeHtml(c.legal_status_note || '')}
+                            </div>` : `<div style="font-size:10.5px;color:var(--text-muted);margin-bottom:10px;">Regelwerk-Version ${escapeHtml(c.current_rule_set_version)} · unverändert seit Projekterstellung</div>`}
                             <div class="comp-zaehler">
                                 ${reihen.filter(s => c.counts[s]).map(s => `<span>${(COMPLIANCE_STATUS[s] || {}).icon || ''} ${c.counts[s]} ${escapeHtml((COMPLIANCE_STATUS[s] || {}).label || s)}</span>`).join('')}
                             </div>
@@ -2451,7 +2454,13 @@
                             kaelte: {
                                 anlagenart: overlay.querySelector('#kpAnlagenart').value,
                                 bearbeiter: '', projektnummer: '', datum: '', ansprechpartner: '', standort: '', notizen: '',
-                                kuehlstellen: []
+                                kuehlstellen: [],
+                                // Wird EINMALIG hier gesetzt und danach nie wieder
+                                // veraendert (Phase B: historischer Rechtsstand).
+                                // Nicht die Auswertungsergebnisse selbst - die
+                                // werden weiterhin nie gespeichert, immer live
+                                // mit der jeweils aktuellen Version berechnet.
+                                complianceRuleSetVersionAtCreation: (typeof COMPLIANCE_RULE_SET_VERSION !== 'undefined') ? COMPLIANCE_RULE_SET_VERSION : null
                             }
                         });
                         overlay.remove();
