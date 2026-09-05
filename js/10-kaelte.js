@@ -1250,13 +1250,14 @@
                 const ks = e.ks;
                 const tv = e.werte.verdampfungstemperatur.wert;
 
-                if (reihe > 0) linie(x, busY, x, yy - 40);
-                else linie(x, busY, x, yy - 40, false, false);
+                // Durchgehende Linie vom Bus bis zum Verdampfer - EXV (und
+                // ggf. Verteiler) werden darauf gezeichnet, nicht durch eine
+                // Luecke "ausgespart". So entsteht kein freischwebendes Stueck.
+                linie(x, busY, x, yy, false, true);
                 sym(S.exv(x, yy - 28, ''), x, yy - 28);
                 text(x - 12, yy - 8, ['EXV'], 'end', 7.5);
                 const dpVert = Number((project.kaelte.exv || {}).dpVerteiler) || 0;
                 if (dpVert > 0) { sym(S.verteiler(x, yy - 10, ''), x, yy - 10); text(x - 12, yy + 2, ['Verteiler'], 'end', 7.5); }
-                linie(x, yy - 16, x, yy, false, true);
                 kasten(x - kb / 2, yy, kb, kh, 'Verdampfer',
                     `${String(ks.bezeichnung || '').slice(0, 20)} · ${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW`);
                 text(x, yy + kh + 13, [`t₀ ${tv} °C · Raum ${e.werte.raumtemperatur.wert} °C`], 'middle', 7.5);
@@ -1385,7 +1386,18 @@
                                 <label>Höhenunterschied (m)<div class="vz-feld"><input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="hoehenunterschied" value="${g.hoehenunterschied ?? ''}"><button type="button" class="vz-knopf" title="Vorzeichen wechseln – minus für fallende Leitung">±</button></div></label>
                                 ${ROHR_FORMSTUECKE.map(([k, l]) => `<label>${escapeHtml(l)}<input type="text" inputmode="decimal" class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="${k}" value="${g[k] ?? ''}"></label>`).join('')}
                             </div>
-                            ${!geo.laenge ? '<div class="empty-note" style="padding:8px;font-size:12px;">Länge eintragen, dann wird dimensioniert.</div>' : !emp ? '<div class="kl-hinweis kl-fehler">✕ Keine der verfügbaren Kupferdimensionen erfüllt alle Kriterien. Massenstrom, Leitungsführung oder Auslegungsbedingungen prüfen.</div>' : `
+                            ${!geo.laenge ? '<div class="empty-note" style="padding:8px;font-size:12px;">Länge eintragen, dann wird dimensioniert.</div>' : !emp ? `
+                                <div class="kl-hinweis kl-fehler">✕ Keine der verfügbaren Kupferdimensionen erfüllt alle Kriterien.</div>
+                                <table class="kl-ergebnis" style="margin-top:6px;"><tbody>
+                                    ${aus.varianten.slice(0, 6).map(v => `
+                                        <tr><td>${escapeHtml(v.rohr.bez)}</td><td style="font-size:11px;">${
+                                            v.bewertung.filter(b => b.art === 'fehler').length
+                                                ? v.bewertung.filter(b => b.art === 'fehler').map(b => '✗ ' + escapeHtml(b.text.split(' – ')[0].split(':')[0])).join('<br>')
+                                                : '✓ alle Kriterien erfüllt außer Grenzfall'
+                                        }</td></tr>`).join('')}
+                                </tbody></table>
+                                <div class="kl-hinweis kl-pruefen" style="margin-top:6px;">🔴 Kein Rohr aus der Datenbank erfüllt gleichzeitig Geschwindigkeit, Druckverlust und – bei dieser Leitung – die Unterkühlungsreserve. Möglichkeiten: Unterkühlung erhöhen (Flüssigkeitsunterkühler), Leitungsweg oder Höhenunterschied verringern, oder mit dem Restrisiko bewusst planen (z. B. Flüssigkeitsleitung isolieren und kurz halten).</div>
+                            ` : `
                                 <div class="rohr-empfehlung">Empfehlung: <strong>${escapeHtml(emp.rohr.bez)}</strong> · ${emp.w.toFixed(1).replace('.', ',')} m/s · Δp ${emp.dpGesamtBar.toFixed(3).replace('.', ',')} bar · äquiv. Länge ${emp.lGesamt.toFixed(1).replace('.', ',')} m</div>
                                 <div class="form-group" style="margin:8px 0 6px;"><label>Gewählte Dimension</label>
                                     <select class="ro-in" data-ks="${ks.id}" data-art="${art.key}" data-feld="gewaehlt">
@@ -1537,7 +1549,7 @@
                             if (leistung > 0 && sl.kw > 0) {
                                 if (leistung < sl.kw * 0.98) urteil = `<span class="komp-urteil komp-schlecht">✕ ${leistung.toFixed(2).replace('.', ',')} kW &lt; Bedarf</span>`;
                                 else if (leistung > sl.kw * 1.6) urteil = `<span class="komp-urteil komp-warn">⚠ ${leistung.toFixed(2).replace('.', ',')} kW – über 60 % Reserve</span>`;
-                                else urteil = `<span class="komp-urteil komp-gut">✓ ${leistung.toFixed(2).replace('.', ',')} kW passt</span>`;
+                                else urteil = `<span class="komp-urteil komp-gut">✓ ${leistung.toFixed(2).replace('.', ',')} kW rechnerisch ausreichend</span>`;
                             }
                             return `<div class="komp-geraet">
                                 <div><strong>${escapeHtml([k.hersteller, k.modell].filter(Boolean).join(' ') || 'ohne Bezeichnung')}</strong>
@@ -1566,7 +1578,7 @@
                                     <div class="kat-zeile">
                                         <div>
                                             <strong>${escapeHtml(t.artikel.name || '')}</strong>
-                                            ${t.geeignet === true ? '<span class="komp-urteil komp-gut">✓ passt</span>' : '<span class="komp-urteil komp-warn">? Leistung prüfen</span>'}
+                                            ${t.geeignet === true ? '<span class="komp-urteil komp-gut">✓ Leistung ausreichend (Katalog)</span>' : '<span class="komp-urteil komp-warn">⚠ Leistung aus Datenblatt prüfen</span>'}
                                             ${(() => {
                                                 const st = kaeltePreisStand(t.artikel, preise);
                                                 const lk = kaeltePreisLink(t.artikel);
@@ -1580,7 +1592,7 @@
                                                         <a href="#" onclick="event.preventDefault();app.openPreisModal(${idJS(project.id)}, ${idJS(t.artikel.id)})">Preis eintragen</a>
                                                     </div>`;
                                             })()}
-                                            <div class="kat-detail">${escapeHtml(t.gruende.join(' · '))}</div>
+                                            <div class="kat-detail">${escapeHtml(t.gruende.join(' · '))} · Katalogtreffer ist kein Herstellernachweis für diesen Betriebspunkt.</div>
                                         </div>
                                         <button class="btn btn-sm btn-outline" onclick="app.katalogUebernehmen(${idJS(project.id)}, ${idJS(t.artikel.id)}, ${idJS(sl.typ)})">Übernehmen</button>
                                     </div>`).join('')}
@@ -1724,35 +1736,128 @@
         function renderKaelteTabPruefung(project) {
             const A = kaelteAuslegungsdaten(project);
             const a = kaelteAuslegung(project);
-            const punkte = [];
 
-            punkte.push({ art: a.anzahlGesamt > 0 ? 'ok' : 'fehler', text: a.anzahlGesamt > 0 ? `${a.anzahlGesamt} Kühlstelle(n) erfasst, davon ${a.anzahlRechenbar} berechenbar.` : 'Keine Kühlstelle erfasst.' });
-            if (a.anzahlGesamt !== a.anzahlRechenbar) punkte.push({ art: 'fehler', text: `${a.anzahlGesamt - a.anzahlRechenbar} Kühlstelle(n) sind nicht berechenbar – Raummaße, Raumtemperatur oder U-Wert fehlen.` });
+            // Gruppierte Uebersicht (Punkt 42): jede Gruppe bekommt ihren
+            // eigenen, ECHT geprueften Status statt einer allgemeinen Liste.
+            // "OK" heisst hier: tatsaechlich ohne offenes 🔴 in dieser Gruppe -
+            // nicht nur "irgendetwas wurde eingetragen".
+            const gruppen = [];
+            const ikon = { ok: '✓', warnung: '⚠', fehler: '✕', pruefen: '🔴' };
 
-            // Alle Schaetzungen sichtbar machen - nichts verstecken.
-            const schaetzungen = [];
+            // --- Kältelast ---
+            const kaeltelastZeilen = [];
+            if (a.anzahlGesamt === 0) kaeltelastZeilen.push({ art: 'fehler', text: 'Keine Kühlstelle erfasst.' });
+            else {
+                kaeltelastZeilen.push({ art: a.anzahlRechenbar === a.anzahlGesamt ? 'ok' : 'fehler',
+                    text: `${a.anzahlRechenbar} von ${a.anzahlGesamt} Kühlstelle(n) berechenbar.` });
+                a.ergebnisse.forEach(e => (e.meldungen || []).forEach(m => {
+                    if (m.art === 'fehler') kaeltelastZeilen.push({ art: 'fehler', text: `${e.ks.bezeichnung}: ${m.text}` });
+                }));
+            }
+            gruppen.push({ titel: 'Kältelast', zeilen: kaeltelastZeilen });
+
+            // --- Kältemittel ---
+            const kmZeilen = [{ art: 'ok', text: A.kaeltemittel }];
+            if (KAELTEMITTEL[A.kaeltemittel] && KAELTEMITTEL[A.kaeltemittel].blend) {
+                kmZeilen.push({ art: 'pruefen', text: 'Zeotropes Gemisch – Taupunkt für Überhitzung, Blasenpunkt für Unterkühlung werden intern unterschieden (siehe Kreisprozess).' });
+            }
+            gruppen.push({ titel: 'Kältemittel', zeilen: kmZeilen });
+
+            // --- Rohrleitungen + Öltransport: ECHTE Pruefung je Leitung,
+            // nicht nur "ist eine Laenge eingetragen". Fasst genau die Logik,
+            // die auch die Weiter-Ampel verwendet.
+            const rohrZeilen = [], oelZeilen = [];
             a.ergebnisse.forEach(e => {
-                Object.entries(e.werte).forEach(([k, w]) => {
-                    if (w.status === 'schaetzung') schaetzungen.push(`${e.ks.bezeichnung}: ${k} = ${w.wert} (${w.herkunft})`);
+                if (!e.ergebnis.moeglich) return;
+                const tv = e.werte.verdampfungstemperatur.wert;
+                let kp2;
+                try {
+                    kp2 = (A.kaeltemittel === 'R744' && A.tVerfluessigung >= 26 && typeof kaelteCO2Kreisprozess === 'function')
+                        ? kaelteCO2Kreisprozess({ tVerdampfung: tv, tGaskuehler: A.tVerfluessigung, kaelteleistungW: e.ergebnis.auslegung })
+                        : kaelteKreisprozess({ kaeltemittel: A.kaeltemittel, tVerdampfung: tv, tVerfluessigung: A.tVerfluessigung,
+                            ueberhitzung: A.ueberhitzung, unterkuehlung: A.unterkuehlung, kaelteleistungW: e.ergebnis.auslegung });
+                } catch (err) { kp2 = null; }
+                if (!kp2 || !kp2.moeglich) return;
+                ROHR_ARTEN.forEach(art => {
+                    const g = (e.ks.rohr || {})[art.key] || {};
+                    if (!Number(g.laenge)) return;
+                    const geo = { laenge: Number(g.laenge), hoehenunterschied: Number(g.hoehenunterschied) || 0,
+                        formstuecke: Object.fromEntries(ROHR_FORMSTUECKE.map(([k]) => [k, Number(g[k]) || 0])) };
+                    try {
+                        const aus = kaelteRohrAuswahl(art.key, kp2, geo);
+                        const z = aus.varianten.find(v => v.rohr.bez === g.gewaehlt) || aus.empfehlung;
+                        const label = `${e.ks.bezeichnung} – ${art.label}`;
+                        if (!z) rohrZeilen.push({ art: 'fehler', text: `${label}: keine Dimension erfüllt die Kriterien.` });
+                        else if (!z.ok) {
+                            const fehlerTexte = z.bewertung.filter(b => b.art === 'fehler').map(b => b.text);
+                            rohrZeilen.push({ art: 'fehler', text: `${label} (${z.rohr.bez}): ${fehlerTexte[0] || 'Kriterium nicht erfüllt'}` });
+                        } else rohrZeilen.push({ art: 'ok', text: `${label}: ${z.rohr.bez}` });
+                        // Oeltransport separat herausziehen (nur Gasleitungen)
+                        if (art.key !== 'fluessig' && z && z.oel) {
+                            const knapp = z.bewertung.find(b => /Mindestgeschwindigkeit|Teillast/.test(b.text));
+                            if (knapp) oelZeilen.push({ art: knapp.art, text: `${label}: ${knapp.text}` });
+                            else oelZeilen.push({ art: 'ok', text: `${label}: Öltransport bei Volllast und 50 % Teillast gesichert.` });
+                        }
+                    } catch (err) { /* optional */ }
                 });
-                (e.meldungen || []).forEach(m => { if (m.art === 'fehler' || m.art === 'warnung') punkte.push({ art: m.art, text: `${e.ks.bezeichnung}: ${m.text}` }); });
             });
+            if (!rohrZeilen.length) rohrZeilen.push({ art: 'warnung', text: 'Noch keine Rohrleitung dimensioniert.' });
+            if (!oelZeilen.length) oelZeilen.push({ art: 'warnung', text: 'Noch keine Saug- oder Druckleitung zum Prüfen vorhanden.' });
+            gruppen.push({ titel: 'Rohrleitungen', zeilen: rohrZeilen });
+            gruppen.push({ titel: 'Öltransport', zeilen: oelZeilen });
 
+            // --- Komponenten: Luecken gegen das Anforderungsprofil der
+            // Anlagenart, nicht nur "ist ueberhaupt etwas eingetragen".
             const komp = project.kaelte.komponenten || [];
-            punkte.push({ art: komp.length ? 'ok' : 'warnung', text: komp.length ? `${komp.length} Komponente(n) eingetragen.` : 'Keine Komponenten eingetragen – ohne Herstellerdaten ist die Auslegung nicht abgeschlossen.' });
-            const ohneQuelle = komp.filter(k => !k.quelle && !k.artikelnummer).length;
-            if (ohneQuelle) punkte.push({ art: 'warnung', text: `${ohneQuelle} Komponente(n) ohne Artikelnummer oder Quelle.` });
+            const kompZeilen = [];
+            if (a.anzahlRechenbar && typeof kaelteKomponentenBedarf === 'function') {
+                try {
+                    const bedarf = kaelteKomponentenBedarf(project);
+                    if (bedarf.moeglich) {
+                        const vorhanden = komp.map(c => String(c.typ || '').toLowerCase());
+                        bedarf.slots.forEach(sl => {
+                            const da = vorhanden.some(v => v === sl.typ.toLowerCase() || v.includes(sl.typ.toLowerCase()) || sl.typ.toLowerCase().includes(v));
+                            kompZeilen.push({ art: da ? 'ok' : 'fehler', text: da ? sl.typ : `${sl.typ} fehlt` });
+                        });
+                    }
+                } catch (err) { /* optional */ }
+            }
+            komp.forEach(k => {
+                if (!k.quelle && !k.artikelnummer) kompZeilen.push({ art: 'warnung', text: `${k.typ || k.modell}: Herstellerleistung/Quelle nicht dokumentiert – vor Bestellung prüfen.` });
+            });
+            if (!kompZeilen.length) kompZeilen.push({ art: 'warnung', text: 'Noch keine Komponenten eingetragen.' });
+            gruppen.push({ titel: 'Komponenten', zeilen: kompZeilen });
 
-            const mitRohr = a.ergebnisse.filter(e => e.ks.rohr && Object.values(e.ks.rohr).some(r => Number(r.laenge) > 0)).length;
-            punkte.push({ art: mitRohr ? 'ok' : 'warnung', text: mitRohr ? `Rohrleitungen für ${mitRohr} Kühlstelle(n) dimensioniert.` : 'Noch keine Rohrleitung dimensioniert.' });
+            // --- Füllmenge ---
+            const mm = kaelteMaterialListe(project);
+            const kmPos = mm.pos.find(x => x.schluessel === 'kaeltemittel');
+            const fuellZeilen = [];
+            if (!kmPos || !(kmPos.menge > 0)) fuellZeilen.push({ art: 'pruefen', text: kmPos ? kmPos.beschreibung : 'Noch keine Leitungen für die Füllmengenberechnung.' });
+            else fuellZeilen.push({ art: 'ok', text: `${kmPos.menge} kg ${A.kaeltemittel} – ${kmPos.beschreibung}` });
+            gruppen.push({ titel: 'Füllmenge', zeilen: fuellZeilen });
 
-            if (KAELTEMITTEL[A.kaeltemittel] && KAELTEMITTEL[A.kaeltemittel].blend) punkte.push({ art: 'warnung', text: `${A.kaeltemittel} ist ein Gemisch – Stoffdaten aus Gemischmodell, Temperaturgleit nicht berücksichtigt.` });
+            // --- Angebot: Materialliste tatsaechlich vollstaendig genug? ---
+            const angebotZeilen = [];
+            const ohnePreis = mm.pos.filter(p => p.menge > 0 && p.vkPreis == null).length;
+            if (!mm.pos.length) angebotZeilen.push({ art: 'fehler', text: 'Materialliste ist leer.' });
+            else if (ohnePreis) angebotZeilen.push({ art: 'warnung', text: `Materialliste unvollständig – ${ohnePreis} Position(en) ohne Verkaufspreis.` });
+            else angebotZeilen.push({ art: 'ok', text: `Materialliste vollständig – ${mm.pos.length} Positionen mit Preis.` });
+            gruppen.push({ titel: 'Angebot', zeilen: angebotZeilen });
 
-            const ikon = { ok: '✓', warnung: '⚠', fehler: '✕' };
+            // Richtwert-Schaetzungen weiterhin vollstaendig auflisten - nichts verstecken.
+            const schaetzungen = [];
+            a.ergebnisse.forEach(e => Object.entries(e.werte).forEach(([k, w]) => {
+                if (w.status === 'schaetzung') schaetzungen.push(`${e.ks.bezeichnung}: ${k} = ${w.wert} (${w.herkunft})`);
+            }));
+
             return `
                 <div class="form-card">
                     <div class="form-card-title">Technische Prüfung</div>
-                    ${punkte.map(p => `<div class="kl-hinweis kl-${p.art === 'ok' ? 'info' : p.art}">${ikon[p.art]} ${escapeHtml(p.text)}</div>`).join('')}
+                    ${gruppen.map(g => `
+                        <div class="pruef-gruppe">
+                            <div class="pruef-gruppe-titel">${escapeHtml(g.titel.toUpperCase())}</div>
+                            ${g.zeilen.map(p => `<div class="kl-hinweis kl-${p.art === 'ok' ? 'info' : p.art}" style="margin-top:3px;">${ikon[p.art]} ${escapeHtml(p.text)}</div>`).join('')}
+                        </div>`).join('')}
                 </div>
                 <div class="form-card">
                     <div class="form-card-title">Verwendete Richtwert-Schätzungen (${schaetzungen.length})</div>
@@ -1761,8 +1866,6 @@
                 ${(() => {
                     // F-Gase-Pflichten aus der berechneten Fuellmenge
                     if (typeof kaelteFGase !== 'function') return '';
-                    const mm = kaelteMaterialListe(project);
-                    const kmPos = mm.pos.find(x => x.schluessel === 'kaeltemittel');
                     const menge = kmPos ? Number(kmPos.menge) || 0 : 0;
                     if (!menge) return `<div class="form-card"><div class="form-card-title">F-Gase-Pflichten</div>
                         <div class="empty-note" style="padding:12px;">Erst die Füllmenge berechnen – dann steht hier, ob und wie oft die Anlage auf Dichtheit zu prüfen ist.</div></div>`;
@@ -1866,7 +1969,38 @@
             if (tab === 'rohrleitungen') {
                 const mitRohr = a.ergebnisse.filter(e => e.ks.rohr && Object.values(e.ks.rohr).some(r => Number(r.laenge) > 0));
                 if (!mitRohr.length) return { status: 'warnung', text: 'Noch keine Leitungslänge eingetragen. Ohne Längen gibt es keine Dimension und kein Rohrmaterial.' };
-                return { status: 'ok', text: `Rohrleitungen für ${mitRohr.length} Kühlstelle(n) dimensioniert. Warnungen zu Öltransport und Teillast stehen direkt bei der jeweiligen Leitung.` };
+                // Echte Pruefung statt Pauschal-OK: fuer jede eingetragene Leitung
+                // nachrechnen, ob die gewaehlte bzw. empfohlene Dimension
+                // tatsaechlich ohne Fehler dasteht (Oeltransport, Druckverlust,
+                // Unterkuehlungsreserve/Flashgas). Ein "passt" darf nicht
+                // erscheinen, wenn dort noch ein 🔴 steht.
+                const A2 = kaelteAuslegungsdaten(project);
+                let fehlerhaft = 0, geprueft = 0;
+                mitRohr.forEach(e => {
+                    const tv = e.werte.verdampfungstemperatur.wert;
+                    let kp2;
+                    try {
+                        kp2 = (A2.kaeltemittel === 'R744' && A2.tVerfluessigung >= 26 && typeof kaelteCO2Kreisprozess === 'function')
+                            ? kaelteCO2Kreisprozess({ tVerdampfung: tv, tGaskuehler: A2.tVerfluessigung, kaelteleistungW: e.ergebnis.auslegung })
+                            : kaelteKreisprozess({ kaeltemittel: A2.kaeltemittel, tVerdampfung: tv, tVerfluessigung: A2.tVerfluessigung,
+                                ueberhitzung: A2.ueberhitzung, unterkuehlung: A2.unterkuehlung, kaelteleistungW: e.ergebnis.auslegung });
+                    } catch (err) { kp2 = null; }
+                    if (!kp2 || !kp2.moeglich) return;
+                    ROHR_ARTEN.forEach(art => {
+                        const g = (e.ks.rohr || {})[art.key] || {};
+                        if (!Number(g.laenge)) return;
+                        geprueft++;
+                        const geo = { laenge: Number(g.laenge), hoehenunterschied: Number(g.hoehenunterschied) || 0,
+                            formstuecke: Object.fromEntries(ROHR_FORMSTUECKE.map(([k]) => [k, Number(g[k]) || 0])) };
+                        try {
+                            const aus = kaelteRohrAuswahl(art.key, kp2, geo);
+                            const z = aus.varianten.find(v => v.rohr.bez === g.gewaehlt) || aus.empfehlung;
+                            if (!z || !z.ok) fehlerhaft++;
+                        } catch (err) { /* Bewertung optional */ }
+                    });
+                });
+                if (fehlerhaft > 0) return { status: 'fehler', text: `${fehlerhaft} von ${geprueft} dimensionierten Leitungen haben ein ungelöstes 🔴 (Öltransport, Druckverlust oder Unterkühlungsreserve). Das gilt technisch nicht als abgeschlossen – siehe die jeweilige Leitung.` };
+                return { status: 'ok', text: `Rohrleitungen für ${mitRohr.length} Kühlstelle(n) dimensioniert, alle geprüften Kriterien erfüllt.` };
             }
             if (tab === 'verbund') {
                 if ((k.anlagenart || 'einzel') === 'einzel') return { status: 'ok', text: 'Einzelanlage – kein Verbund erforderlich.' };
@@ -1918,7 +2052,13 @@
                     menge: o.menge != null ? Number(o.menge) : (Number(k.menge) || 1),
                     ekPreis: o.ekPreis != null ? Number(o.ekPreis) : (k.ekPreis != null ? Number(k.ekPreis) : null),
                     vkPreis: o.vkPreis != null ? Number(o.vkPreis) : (k.vkPreis != null ? Number(k.vkPreis) : null),
-                    herkunft: 'aus Schritt Komponenten', geaendert: o.menge != null
+                    // Fehlende Artikelnummer bzw. fehlender Preis werden explizit
+                    // benannt statt stillschweigend mit 0 weiterzurechnen (Punkt 26/27).
+                    herkunft: ['aus Schritt Komponenten',
+                        !k.artikelnummer ? '⚠ Artikelnummer fehlt' : '',
+                        (k.ekPreis == null && o.ekPreis == null) ? '⚠ Einkaufspreis fehlt' : ''
+                    ].filter(Boolean).join(' · '),
+                    geaendert: o.menge != null
                 });
             });
 
@@ -1979,6 +2119,18 @@
                     const tst = (Number(g.tStueckDurchgang) || 0) + (Number(g.tStueckAbzweig) || 0);
                     if (tst) add(`${pre}_t`, 'Formstück', `T-Stücke ${dim}`, kurz, tst, 'Stk', 'aus der Rohrberechnung');
 
+                    // KORREKTUR (2026-09): Ventile, Magnetventile, Filtertrockner,
+                    // Schaugläser und Rückschlagventile wurden im Rohrleitungen-
+                    // Schritt zwar für die äquivalente Länge/den Druckverlust
+                    // gezählt, tauchten aber NICHT als Materialposition auf -
+                    // sie fehlten dann in der Angebotssumme, obwohl der Techniker
+                    // sie extra eingetragen hatte.
+                    [['ventil', 'Ventile'], ['magnetventil', 'Magnetventile'], ['filtertrockner', 'Filtertrockner'],
+                     ['schauglas', 'Schaugläser'], ['rueckschlagventil', 'Rückschlagventile']].forEach(([feld, label]) => {
+                        const anz = Number(g[feld]) || 0;
+                        if (anz) add(`${pre}_${feld}`, 'Formstück', `${label} ${dim}`, kurz, anz, 'Stk', 'aus der Rohrberechnung');
+                    });
+
                     // Lötstellen: je Bogen/T-Stück zwei, plus je 3 m eine Verbindung
                     const loetstellen = boegen * 2 + tst * 3 + Math.ceil(laenge / 3);
                     add(`${pre}_loet`, 'Verbrauchsmaterial', `Hartlot / Lötstellen ${dim}`, kurz, loetstellen, 'Stk',
@@ -1990,6 +2142,18 @@
             if (pos.length) {
                 // Fuellmenge aus der tatsaechlichen Geometrie. Bauteilvolumina
                 // kommen aus den eingetragenen Komponenten, sofern vorhanden.
+                // KORREKTUR (2026-09): Vorher wurde hier IMMER eine praezise
+                // Zahl (z. B. "6,0 kg") als Fuellmenge angezeigt, auch wenn
+                // Verdampfer-, Verfluessiger- oder Sammler-Innenvolumen
+                // fehlten - der angezeigte Wert war dann nur die Summe der
+                // Leitungsanteile, sah aber wie eine vollstaendige Gesamt-
+                // fuellmenge aus. Das ist Scheinpraezision und wird jetzt so
+                // NICHT mehr angezeigt: ohne alle Bauteilvolumina bleibt die
+                // Menge in dieser Position auf 0 (fliesst dann auch nicht mit
+                // einem falschen Wert ins Angebot), und der Text sagt
+                // ausdruecklich "nicht vollstaendig bestimmbar" - die bekannten
+                // Teilmengen stehen trotzdem in der Herkunftszeile, nichts wird
+                // versteckt.
                 let fmMenge = 0, fmHerkunft = 'Leitungslängen fehlen', fmText = '';
                 const erste = a.ergebnisse.find(e => e.ergebnis.moeglich);
                 if (erste && leitungenFuerFuellmenge.length) {
@@ -2002,10 +2166,16 @@
                     if (kp.moeglich) {
                         const bv = project.kaelte.bauteilVolumen || {};
                         const fm = kaelteFuellmenge(leitungenFuerFuellmenge, kp, bv);
-                        fmMenge = Math.ceil(fm.gesamt * 10) / 10;
-                        fmHerkunft = fm.teile.map(t => `${t.name} ${t.kg.toFixed(2).replace('.', ',')} kg`).join(' · ');
-                        fmText = fm.sicher ? 'aus Leitungs- und Bauteilvolumen berechnet'
-                                           : `⚠ unvollständig: ${fm.offen.join(', ')} ohne Innenvolumen`;
+                        const bekannt = fm.teile.map(t => `${t.name} ${t.kg.toFixed(2).replace('.', ',')} kg`).join(' · ');
+                        const fehlend = fm.offen.map(n => `${n}: Daten fehlen`).join(' · ');
+                        fmHerkunft = [bekannt, fehlend].filter(Boolean).join(' · ');
+                        if (fm.sicher) {
+                            fmMenge = Math.ceil(fm.gesamt * 10) / 10;
+                            fmText = 'aus Leitungs- und Bauteilvolumen berechnet';
+                        } else {
+                            fmMenge = 0;   // bewusst 0, keine Scheinpraezision
+                            fmText = `Gesamtfüllmenge nicht vollständig bestimmbar – Innenvolumen fehlt bei: ${fm.offen.join(', ')}. Bekannte Anteile: ${bekannt || '–'}.`;
+                        }
                     }
                 }
                 add('kaeltemittel', 'Verbrauchsmaterial', `Kältemittel ${A.kaeltemittel}`,
@@ -2413,6 +2583,18 @@
                             quelle: overlay.querySelector('#koQuelle').value.trim(),
                             notiz: overlay.querySelector('#koNotiz').value.trim()
                         };
+                        // Duplikat-Pruefung: dieselbe Komponente (Typ + Hersteller +
+                        // Modell + Art.-Nr.) nicht versehentlich zweimal anlegen.
+                        // Die Entscheidung bleibt beim Benutzer (Punkt 25) - es
+                        // wird nichts automatisch verhindert oder zusammengefuehrt.
+                        if (index == null) {
+                            const schluessel = x => [x.typ, x.hersteller, x.modell, x.artikelnummer].map(v => String(v || '').toLowerCase().trim()).join('|');
+                            const dupIdx = liste.findIndex(x => schluessel(x) === schluessel(neu));
+                            if (dupIdx >= 0) {
+                                const weiter = await showConfirm(`"${neu.modell || neu.typ}" ist bereits als Komponente vorhanden (${liste[dupIdx].menge || 1} ${liste[dupIdx].einheit || 'Stk'}). Trotzdem als weitere Position hinzufügen?`);
+                                if (!weiter) return;
+                            }
+                        }
                         if (index != null) liste[index] = neu; else liste.push(neu);
                         await db.put('projects', project);
 
