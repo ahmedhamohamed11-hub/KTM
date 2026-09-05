@@ -1967,3 +1967,8 @@
 .vz-knopf:hover { border-color: var(--accent); color: var(--accent); }
 .vz-knopf:active { background: var(--accent); color: #fff; }
 .preis-alt { color: #c98a12; font-weight: 600; }
+
+/* ---- Gruppierte technische Pruefung ---- */
+.pruef-gruppe { margin-bottom: 14px; }
+.pruef-gruppe:last-child { margin-bottom: 0; }
+.pruef-gruppe-titel { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 5px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
