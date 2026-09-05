@@ -684,6 +684,10 @@ async function backgroundSyncPushInner() {
                 return true;
             });
 
+            // Verhindert Toast-Flut, wenn z. B. bei einem vollen Sync mehrere
+            // Datensaetze derselben Tabelle dasselbe fehlende Feld haben - der
+            // Konsolen-Log (fuer die Fehlersuche) bleibt trotzdem vollstaendig.
+            const gemeldeteFeldverluste = new Set();
             for (const rec of filtered) {
 
                 const p = toSnake(rec);
@@ -707,16 +711,41 @@ async function backgroundSyncPushInner() {
                 // Feld und versuchen es erneut - so lange, bis der Datensatz passt.
                 // Dadurch synchronisiert die App auch mit einer DB, der einzelne
                 // (neue) Spalten fehlen, statt den ganzen Datensatz abzulehnen.
+                //
+                // WICHTIG (Fund 2026-09): das lief bisher KOMPLETT LAUTLOS ab -
+                // wenn die Selbstheilung erfolgreich war, gab es am Ende keinen
+                // Fehler mehr, also auch keinen Toast und keinen Log-Eintrag.
+                // Fehlt z. B. die Spalte "kaelte" in der projects-Tabelle,
+                // wuerden sämtliche Kälteanlagen-Auslegungsdaten bei JEDEM Push
+                // unbemerkt verworfen - das Projekt selbst synct einwandfrei,
+                // nur eben ohne seinen wichtigsten Inhalt. Jetzt wird jedes
+                // entfernte Feld gesammelt und sichtbar gemeldet.
+                const entfernteFelder = [];
                 let guard = 0;
                 while (error && /Could not find the '(\w+)' column/.test(error.message) && guard < 25) {
                     guard++;
                     const miss = error.message.match(/Could not find the '(\w+)' column/)[1];
+                    entfernteFelder.push(miss);
                     // Im Einzelnutzer-Modus ist tenant_id nicht nötig - fehlt die
                     // Spalte, einfach weglassen und weitermachen.
                     delete p[miss];
                     ({ data, error } = await sb.from(sbTable(t))
                         .upsert(p, { onConflict: t === 'settings' ? 'key' : 'id' })
                         .select());
+                }
+                if (entfernteFelder.length) {
+                    // Immer sichtbar loggen, unabhaengig davon ob der Push am
+                    // Ende doch noch erfolgreich war - genau DAS war bisher das
+                    // Problem: ein "erfolgreicher" Sync konnte trotzdem stumm
+                    // Daten verloren haben.
+                    console.error(`⚠️ Sync "${t}" (ID ${rec.id ?? rec.key}): folgende Felder fehlen als Spalte in Supabase und wurden NICHT gespeichert: ${entfernteFelder.join(', ')}. Diese Daten sind auf anderen Geräten nicht sichtbar, bis die Spalte(n) angelegt werden.`);
+                    window.__ktmSyncFeldVerlust = window.__ktmSyncFeldVerlust || [];
+                    window.__ktmSyncFeldVerlust.push({ table: t, id: rec.id ?? rec.key, felder: entfernteFelder, zeit: new Date().toISOString() });
+                    const dedupeKey = t + ':' + entfernteFelder.join(',');
+                    if (!gemeldeteFeldverluste.has(dedupeKey)) {
+                        gemeldeteFeldverluste.add(dedupeKey);
+                        showToast(`Achtung: Feld "${entfernteFelder.join(', ')}" fehlt in der Datenbank – Daten dort NICHT gespeichert (Details: F12-Konsole).`, 'error');
+                    }
                 }
 
                 // SELBSTHEILUNG 2: ein Pflichtfeld ist NULL (z. B. weil ein Datensatz
