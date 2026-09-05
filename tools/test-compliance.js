@@ -148,5 +148,52 @@ console.log('\n=== Phase B: historischer Rechtsstand ===');
   pruefe('Ergebnis enthält beide Versionsangaben', cGeaendert.rule_set_version_at_creation === '2025.3' && cGeaendert.current_rule_set_version === ctxV.VER);
 }
 
+console.log('\n=== Phase E: Prüfbuch/Anlagenbuch ===');
+{
+  const ctxPb = {};
+  new Function(fs.readFileSync(__dirname + '/../js/20-kaelte-pruefbuch.js', 'utf8').replace(/Object\.assign\(app,[\s\S]*$/, '') +
+    'this.STAMM = kaeltePruefbuchStamm; this.ADD = kaeltePruefbuchEintragHinzufuegen; this.NEXT = kaeltePruefbuchNaechstePruefung;').call(ctxPb);
+  global.kaelteAuslegungsdaten = () => ({ kaeltemittel: 'R404A' });
+  global.kaelteMaterialListe = () => ({ pos: [{ schluessel: 'kaeltemittel', menge: 20 }] });
+  global.KAELTE_ANLAGENARTEN = [{ key: 'verbund', label: 'Verbundanlage' }];
+
+  const project = { id: 99, title: 'Testprojekt', kaelte: { anlagenart: 'verbund' } };
+  const stamm = ctxPb.STAMM(project);
+  pruefe('Anlagenkennung wird generiert, wenn nicht gesetzt', stamm.anlagenkennung === 'ANL-99');
+  pruefe('Kältemittel/Füllmenge live übernommen, nicht doppelt gespeichert', stamm.kaeltemittel === 'R404A' && stamm.fuellmengeKg === 20);
+
+  ctxPb.ADD(project, { datum: '2026-01-10', pruefart: 'Dichtheitskontrolle', pruefer: 'A' });
+  ctxPb.ADD(project, { datum: '2026-02-05', pruefart: 'Dichtheitskontrolle', pruefer: 'B' });
+  pruefe('Zwei Einträge angehängt, keiner überschrieben', project.kaelte.pruefbuch.eintraege.length === 2);
+  pruefe('Laufende Nummer korrekt vergeben (1, 2)', project.kaelte.pruefbuch.eintraege[0].nr === 1 && project.kaelte.pruefbuch.eintraege[1].nr === 2);
+  pruefe('Erster Eintrag durch das Hinzufügen des zweiten nicht verändert', project.kaelte.pruefbuch.eintraege[0].pruefer === 'A');
+
+  global.kaelteFGase = ctxThermo.FG;
+  const naechste = ctxPb.NEXT(project);
+  pruefe('Nächste Fälligkeit aus dem letzten (späteren) Eintrag berechnet', naechste.letztePruefung === '2026-02-05');
+  pruefe('F-Gase-Fälligkeit vorhanden (20 kg R404A ist prüfpflichtig)', naechste.faelligkeiten.some(f => f.naechsteFaelligkeit != null));
+  pruefe('KAV §22 ehrlich als nicht bestimmbar, nicht erfunden', naechste.faelligkeiten.some(f => f.quelle.includes('KAV') && f.naechsteFaelligkeit === null));
+}
+
+console.log('\n=== Phase F: Was-wäre-wenn-Simulation ===');
+{
+  global.kaelteAuslegungsdaten = () => ({ kaeltemittel: 'R290' });
+  global.kaelteMaterialListe = () => ({ pos: [{ schluessel: 'kaeltemittel', menge: 3 }] });
+  const projectSim = { kaelte: {} };
+  const projectVorher = JSON.stringify(projectSim);
+
+  const ctxComp2 = {};
+  new Function(fs.readFileSync(__dirname + '/../js/19-kaelte-compliance.js', 'utf8') +
+    'this.SIM = kaelteComplianceSimulieren;').call(ctxComp2);
+  const r = ctxComp2.SIM(projectSim, 'R404A', 130, { les: false });
+
+  pruefe('Original-Projekt durch die Simulation NICHT verändert', JSON.stringify(projectSim) === projectVorher);
+  pruefe('Original zeigt R290/3kg (kein F-Gas, PASS)', r.original.regeln.find(x => x.rule_id === 'RULE-FGAS-2024-001').status === 'PASS');
+  pruefe('Simulation zeigt R404A/130kg (WARNING wegen Intervall)', r.simulation.regeln.find(x => x.rule_id === 'RULE-FGAS-2024-001').status === 'WARNING');
+  pruefe('Simulation zeigt fehlendes LES als FAIL', r.simulation.regeln.find(x => x.rule_id === 'RULE-FGAS-2024-002').status === 'FAIL');
+  pruefe('Änderungsliste markiert beide Regeln als geändert', r.geaendert.every(g => g.aendertSich));
+  pruefe('Hinweis nennt es ausdrücklich als reine Simulation', /Simulation/.test(r.hinweis));
+}
+
 console.log(`\n${fehler === 0 ? '✓ ALLE COMPLIANCE-TESTS BESTANDEN' : '✕ ' + fehler + ' FEHLER'} (${gesamt - fehler}/${gesamt})\n`);
 process.exit(fehler ? 1 : 0);
