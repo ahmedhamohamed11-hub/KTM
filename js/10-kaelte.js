@@ -859,6 +859,12 @@
             }
 
             const schritteFertig = [stellen.length > 0, rechenbar, hatRohr, komp > 0, hatVolumen].filter(Boolean).length;
+            // Nach Wichtigkeit sortieren (Punkt 40): 'problem' und 'fehlt'
+            // zuerst, damit sie bei der Begrenzung auf 6 Zeilen in der
+            // Anzeige nicht von 'erkannt'/'naechster'-Hinweisen verdraengt
+            // werden.
+            const ASS_RANG = { problem: 0, fehlt: 1, naechster: 2, erkannt: 3 };
+            hinweise.sort((a, b) => (ASS_RANG[a.art] ?? 9) - (ASS_RANG[b.art] ?? 9));
             return { hinweise, fortschritt: Math.round(schritteFertig / 5 * 100) };
         }
 
@@ -1411,10 +1417,11 @@
                                     <tr><td>Reynoldszahl</td><td class="kl-w">${Math.round(zeile.re).toLocaleString('de-AT')}</td></tr>
                                     <tr><td>Formstücke als äquiv. Länge</td><td class="kl-w">${zeile.aeqLaenge.toFixed(1).replace('.', ',')} m</td></tr>
                                     <tr class="kl-formel"><td colspan="2">${escapeHtml(zeile.aeqDetail.join(' · ') || 'keine Formstücke')}</td></tr>
-                                    <tr><td>Δp Rohrreibung</td><td class="kl-w">${zeile.dpReibungBar.toFixed(4).replace('.', ',')} bar</td></tr>
+                                    <tr><td>Δp Rohrreibung (reines Rohr)</td><td class="kl-w">${zeile.dpReibungRohrBar.toFixed(4).replace('.', ',')} bar</td></tr>
+                                    <tr><td>Δp Formstücke</td><td class="kl-w">${zeile.dpReibungFormBar.toFixed(4).replace('.', ',')} bar</td></tr>
                                     <tr><td>Δp Höhenunterschied</td><td class="kl-w">${zeile.dpHoeheBar.toFixed(4).replace('.', ',')} bar</td></tr>
                                     <tr class="kl-sum"><td>Δp gesamt</td><td class="kl-w">${zeile.dpGesamtBar.toFixed(4).replace('.', ',')} bar</td></tr>
-                                    <tr class="kl-formel"><td colspan="2">Darcy-Weisbach, Rohrreibungszahl nach Colebrook-White (λ = ${zeile.f.toFixed(4)})</td></tr>
+                                    <tr class="kl-formel"><td colspan="2">Darcy-Weisbach, Rohrreibungszahl nach Colebrook-White (λ = ${zeile.f.toFixed(4)}) – Formstücke als äquivalente Rohrlänge mit derselben Reibungszahl</td></tr>
                                 </tbody></table>
                                 ${zeile.bewertung.map(b => `<div class="kl-hinweis kl-${b.art}">${b.art === 'fehler' ? '✕' : b.art === 'warnung' ? '⚠' : 'ℹ'} ${escapeHtml(b.text)}</div>`).join('')}
                                 ${art.key !== 'heissgas' && tVerd != null ? (() => {
@@ -1849,6 +1856,13 @@
             a.ergebnisse.forEach(e => Object.entries(e.werte).forEach(([k, w]) => {
                 if (w.status === 'schaetzung') schaetzungen.push(`${e.ks.bezeichnung}: ${k} = ${w.wert} (${w.herkunft})`);
             }));
+
+            // Reihenfolge nach Wichtigkeit statt nach Einfuegereihenfolge
+            // (Punkt 40): 🔴 kritisch/pruefen und ✕ zuerst, dann ⚠ Warnung,
+            // zuletzt ✓ OK - wer die Seite ueberfliegt, sieht das Wichtigste
+            // zuerst statt es zwischen erledigten Punkten suchen zu muessen.
+            const RANG = { fehler: 0, pruefen: 1, warnung: 2, ok: 3 };
+            gruppen.forEach(g => { g.zeilen = [...g.zeilen].sort((a, b) => (RANG[a.art] ?? 9) - (RANG[b.art] ?? 9)); });
 
             return `
                 <div class="form-card">
