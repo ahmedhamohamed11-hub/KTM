@@ -48,16 +48,27 @@
                     if (y + brauche > ph - 20) { doc.addPage(); kopf(); return 26; }
                     return y;
                 };
-                const tabelle = (y, head, body, spalten) => {
+                const tabelle = (y, head, body, spalten, extra) => {
                     doc.autoTable({
                         startY: y, margin: { left: mx, right: mx, top: 26, bottom: 18 },
                         head: [head], body, theme: 'plain',
                         styles: { font: 'helvetica', fontSize: 8, cellPadding: { top: 2.2, bottom: 2.2, left: 2, right: 2 }, textColor: PDF_INK, lineColor: PDF_LINE, lineWidth: 0.1 },
                         headStyles: { fillColor: PDF_TEAL, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
                         columnStyles: spalten || {},
-                        didDrawPage: () => { if (doc.internal.getCurrentPageInfo().pageNumber > 1) kopf(); }
+                        didDrawPage: () => { if (doc.internal.getCurrentPageInfo().pageNumber > 1) kopf(); },
+                        ...(extra || {})
                     });
                     return doc.lastAutoTable.finalY + 8;
+                };
+                // Verhindert "verwaiste" Ueberschriften am Seitenende (Punkt 45):
+                // reserviert etwas Platz fuer die naechste Tabelle, BEVOR eine
+                // Ueberschrift gesetzt wird. Reicht der Rest der Seite nicht,
+                // wird vorher umgebrochen statt die Ueberschrift alleine stehen
+                // zu lassen.
+                const titelMitTabelle = (yy, t, mindestZeilen) => {
+                    const brauch = 14 + Math.max(1, mindestZeilen || 1) * 6;
+                    yy = platz(yy, brauch);
+                    return titel(yy, t);
                 };
 
                 kopf();
@@ -231,28 +242,50 @@
                 }
 
                 // --- Komponenten ---
+                // Quelle wird NICHT als lange URL im Text ausgegeben (Punkt 45):
+                // eine vollstaendige Artikel-URL sprengt die Tabellenspalte und
+                // zerreisst die Zeile. Stattdessen ein kurzes Label ("Quelle ↗"
+                // bzw. der Domainname), das - wenn es eine echte URL ist - als
+                // klickbarer Link im PDF hinterlegt wird.
+                const kurzQuelle = (q) => {
+                    if (!q) return { text: '— fehlt —', url: null };
+                    const m = /^https?:\/\/([^\/]+)/.exec(q);
+                    if (m) {
+                        const rest = q.slice(m[0].length);
+                        const zusatz = rest.includes('· Stand') ? ' · Stand' + rest.split('· Stand')[1] : '';
+                        return { text: (m[1].replace(/^www\./, '') + ' ↗' + zusatz).slice(0, 34), url: q.split(' · ')[0] };
+                    }
+                    return { text: String(q).slice(0, 34), url: null };
+                };
                 const komp = project.kaelte.komponenten || [];
                 if (komp.length) {
-                    y = platz(y, 30);
-                    y = titel(y, 'Komponenten');
-                    y = tabelle(y, ['Typ', 'Hersteller / Modell', 'Art.-Nr.', 'Leistung', 'Quelle'],
-                        komp.map(k => [k.typ || '–', [k.hersteller, k.modell].filter(Boolean).join(' ') || '–',
+                    y = titelMitTabelle(y, 'Komponenten', komp.length);
+                    const kompRows = komp.map(k => {
+                        const q = kurzQuelle(k.quelle);
+                        const row = [k.typ || '–', [k.hersteller, k.modell].filter(Boolean).join(' ') || '–',
                             k.artikelnummer || '–', k.leistungKW ? `${Number(k.leistungKW).toFixed(2).replace('.', ',')} kW` : '–',
-                            k.quelle || '— fehlt —']),
-                        { 3: { halign: 'right' }, 4: { fontSize: 7 } });
+                            q.text];
+                        row._quelleUrl = q.url;
+                        return row;
+                    });
+                    y = tabelle(y, ['Typ', 'Hersteller / Modell', 'Art.-Nr.', 'Leistung', 'Quelle'], kompRows,
+                        { 3: { halign: 'right' }, 4: { fontSize: 7, textColor: PDF_TEAL } },
+                        { didDrawCell: (data) => {
+                            if (data.section !== 'body' || data.column.index !== 4) return;
+                            const url = kompRows[data.row.index] && kompRows[data.row.index]._quelleUrl;
+                            if (url) doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
+                        } });
                 }
 
                 // --- Warnungen ---
                 if (alleWarnungen.length) {
-                    y = platz(y, 30);
-                    y = titel(y, 'Warnungen und Fehler');
+                    y = titelMitTabelle(y, 'Warnungen und Fehler', alleWarnungen.length);
                     y = tabelle(y, ['Kühlstelle', 'Art', 'Meldung'], alleWarnungen,
                         { 0: { cellWidth: 32 }, 1: { cellWidth: 20 }, 2: { fontSize: 7.5 } });
                 }
 
                 // --- Richtwert-Schätzungen: bewusst vollstaendig aufgelistet ---
-                y = platz(y, 30);
-                y = titel(y, 'Verwendete Richtwert-Schätzungen');
+                y = titelMitTabelle(y, 'Verwendete Richtwert-Schätzungen', alleSchaetzungen.length);
                 if (alleSchaetzungen.length) {
                     y = tabelle(y, ['Kühlstelle', 'Größe', 'Wert', 'Herkunft'], alleSchaetzungen,
                         { 0: { cellWidth: 30 }, 1: { cellWidth: 38 }, 2: { cellWidth: 20 }, 3: { fontSize: 7 } });
