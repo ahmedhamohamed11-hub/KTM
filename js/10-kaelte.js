@@ -310,6 +310,16 @@
                     });
                 });
 
+                // Interner Wärmetauscher – wird nur gezeichnet, wenn es ihn gibt
+                contentArea.querySelectorAll('.wt-in').forEach(el => {
+                    el.addEventListener('change', async () => {
+                        const p = await db.get('projects', projectId);
+                        p.kaelte.internerWT = el.checked;
+                        await db.put('projects', p);
+                        renderKaelteDetail(projectId);
+                    });
+                });
+
                 // Innenvolumen der Bauteile (Füllmenge)
                 contentArea.querySelectorAll('.bv-in').forEach(el => {
                     el.addEventListener('change', async () => {
@@ -662,6 +672,7 @@
                             ${[['verdampfer', 'Verdampfer'], ['verfluessiger', 'Verflüssiger / Gaskühler'], ['sammler', 'Flüssigkeitssammler'], ['sonstige', 'Sonstige Bauteile']]
                                 .map(([k, l]) => `<div class="form-group"><label>${escapeHtml(l)} <small>(Liter)</small></label><input type="text" inputmode="decimal" class="bv-in" data-feld="${k}" value="${bv[k] ?? ''}" placeholder="aus Datenblatt"></div>`).join('')}
                         </div>
+                        <label class="ae-check" style="margin-top:10px;"><input type="checkbox" class="wt-in" ${project.kaelte.internerWT ? 'checked' : ''}> Interner Wärmetauscher vorhanden</label>
                         <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">Diese Werte stehen im Herstellerdatenblatt. Was hier leer bleibt, fehlt in der Füllmenge – es wird nichts geschätzt.</div>
                         ${(() => {
                             // Erforderliche Sammlergroesse aus der berechneten Fuellmenge
@@ -824,6 +835,27 @@
                 const tvs = a.ergebnisse.filter(e => e.ergebnis.moeglich).map(e => e.werte.verdampfungstemperatur.wert);
                 const spanneG = Math.max(...tvs) - Math.min(...tvs);
                 if (spanneG > 12) sag('erkannt', `Die Verdampfungstemperaturen liegen ${spanneG.toFixed(0)} K auseinander. Auf einer gemeinsamen Sauggruppe zwingt das alle Stellen auf die tiefste Temperatur – zwei Gruppen (MT und LT) sind hier meist wirtschaftlicher.`, 'verbund');
+            }
+
+            // --- Welche Bauteile fehlen noch fürs Angebot? ---
+            // Kommt aus dem Anforderungsprofil der Anlagenart, nicht aus einer
+            // festen Liste - bei einer Einzelanlage wird kein Ölabscheider
+            // verlangt, bei einem Verbund schon.
+            if (rechenbar && typeof kaelteKomponentenBedarf === 'function') {
+                try {
+                    const bedarf = kaelteKomponentenBedarf(project);
+                    if (bedarf.moeglich) {
+                        const vorhanden = (k.komponenten || []).map(c => String(c.typ || '').toLowerCase());
+                        const fehlend = bedarf.slots
+                            .map(sl => sl.typ)
+                            .filter(t => !vorhanden.some(v => v === t.toLowerCase() || v.includes(t.toLowerCase()) || t.toLowerCase().includes(v)));
+                        if (fehlend.length) {
+                            sag('fehlt', `Für das Angebot fehlen noch: ${fehlend.join(', ')}. Im Schritt Komponenten eintragen oder aus dem Katalog übernehmen – sonst stehen sie später nicht in der Materialliste.`, 'komponenten');
+                        } else if (komp) {
+                            sag('erkannt', `Alle für eine ${(KAELTE_ANLAGENARTEN.find(x => x.key === (k.anlagenart || 'einzel')) || {}).label || 'Anlage'} üblichen Bauteile sind eingetragen.`, 'komponenten');
+                        }
+                    }
+                } catch (e) { /* Checkliste optional */ }
             }
 
             const schritteFertig = [stellen.length > 0, rechenbar, hatRohr, komp > 0, hatVolumen].filter(Boolean).length;
@@ -1080,8 +1112,8 @@
             };
             const linie = (x1, y1, x2, y2, gestrichelt, pfeil) =>
                 teile.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${F.linie}" stroke-width="2"${gestrichelt ? ' stroke-dasharray="6 3"' : ''}${pfeil ? ' marker-end="url(#kpfeil)"' : ''}/>`);
-            const weg = (d, gestrichelt) =>
-                teile.push(`<path d="${d}" fill="none" stroke="${F.linie}" stroke-width="2"${gestrichelt ? ' stroke-dasharray="6 3"' : ''}/>`);
+            const weg = (d, gestrichelt, pfeil) =>
+                teile.push(`<path d="${d}" fill="none" stroke="${F.linie}" stroke-width="2"${gestrichelt ? ' stroke-dasharray="6 3"' : ''}${pfeil ? ' marker-end="url(#kpfeil)"' : ''}/>`);
             const text = (x, y, zeilen, anker = 'start', groesse = 8) =>
                 (Array.isArray(zeilen) ? zeilen : [zeilen]).forEach((z, i) =>
                     teile.push(`<text x="${x}" y="${y + i * 9.5}" text-anchor="${anker}" font-size="${groesse}" fill="${F.klein}">${escapeHtml(z)}</text>`));
@@ -1122,121 +1154,128 @@
             } catch (e) { kp = null; }
 
             // ---------- Layout ----------
-            const B = 900;                              // Zeichenbreite
-            const kb = 118, kh = 34;                    // Bauteilkasten
+            // Feste Spalten statt gedehnter Breite: der Abzweig zu den
+            // Verdampfern liegt genau ueber der ersten Verdampferspalte,
+            // dadurch entfaellt die Schleife, die entstand, wenn die
+            // Fluessigkeitsleitung erst nach links und dann wieder nach
+            // rechts lief.
+            const kb = 118, kh = 34;
             const proReihe = Math.min(stellen.length, 4);
             const reihen = Math.ceil(stellen.length / 4);
+            const spaltenBreite = 200;
+            const xVerdichter = 40;
+            const xAbzweig = 210;                       // Abzweig = erste Verdampferspalte
+            const B = Math.max(900, xAbzweig + (proReihe - 1) * spaltenBreite + 260);
+            const rechteSpalte = B - 40 - kb;
             const hdmd = art === 'hdmd';
 
             let y = 26;
-            const linkeSpalte = 70, rechteSpalte = B - 70 - kb;
+            const vdMitte = xVerdichter + kb / 2, vdY = y + kh / 2;
 
             // --- Verdichterebene ---
-            const verdichterTitel = art === 'einzel' ? 'Verflüssigungssatz' : (hdmd ? 'Verdichter MT' : 'Verdichterverbund');
-            kasten(linkeSpalte, y, kb, kh, verdichterTitel, `${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW · ${A.kaeltemittel}`);
-            const vdMitte = linkeSpalte + kb / 2, vdY = y + kh / 2;
-
-            // Bei HD/MD zusätzlich LT-Verdichter und Parallelverdichter
+            kasten(xVerdichter, y, kb, kh, art === 'einzel' ? 'Verflüssigungssatz' : (hdmd ? 'Verdichter MT' : 'Verdichterverbund'),
+                `${(a.summeAuslegung / 1000).toFixed(2).replace('.', ',')} kW · ${A.kaeltemittel}`);
             if (hdmd) {
-                kasten(linkeSpalte, y + 52, kb, kh, 'Verdichter LT', `t₀ ${tiefste} °C`);
-                kasten(linkeSpalte, y + 104, kb, kh, 'Parallelverdichter', 'Flashgas');
+                kasten(xVerdichter, y + 52, kb, kh, 'Verdichter LT', `t₀ ${tiefste} °C`);
+                kasten(xVerdichter, y + 104, kb, kh, 'Parallelverdichter', 'Flashgas');
             }
 
-            // Druckleitung nach rechts, mit Absperr-, Rückschlagventil und Ölabscheider
+            // --- Druckleitung: Verdichter -> Verflüssiger, Pfeil nach rechts
             const dlY = vdY;
-            linie(linkeSpalte + kb, dlY, rechteSpalte, dlY, false, true);
-            sym(S.absperr(linkeSpalte + kb + 26, dlY, 'Absperr'), linkeSpalte + kb + 26, dlY);
+            linie(xVerdichter + kb, dlY, rechteSpalte, dlY, false, true);
+            const dlPlatz = rechteSpalte - (xVerdichter + kb);
+            sym(S.absperr(xVerdichter + kb + 30, dlY, 'Absperr'), xVerdichter + kb + 30, dlY);
             if (art !== 'einzel') {
-                sym(S.rueck(linkeSpalte + kb + 62, dlY, 'Rückschlag'), linkeSpalte + kb + 62, dlY);
-                sym(S.oel(linkeSpalte + kb + 108, dlY, 'Ölabscheider'), linkeSpalte + kb + 108, dlY);
-                // Ölrückführung zum Verdichter
-                weg(`M ${linkeSpalte + kb + 108} ${dlY + 12} L ${linkeSpalte + kb + 108} ${dlY + 30} L ${vdMitte + 18} ${dlY + 30} L ${vdMitte + 18} ${dlY + kh / 2}`, true);
-                text(linkeSpalte + kb + 40, dlY + 42, ['Ölrückführung']);
+                sym(S.rueck(xVerdichter + kb + 76, dlY, 'Rückschlag'), xVerdichter + kb + 76, dlY);
+                const xOel = xVerdichter + kb + 130;
+                sym(S.oel(xOel, dlY, 'Ölabscheider'), xOel, dlY);
+                // Ölrückführung: eigener Weg unterhalb, mit Pfeil zum Verdichter
+                weg(`M ${xOel} ${dlY + 12} L ${xOel} ${dlY + 34} L ${vdMitte + 26} ${dlY + 34} L ${vdMitte + 26} ${dlY + kh / 2 + 1}`, true, true);
+                text(xOel - 60, dlY + 46, ['Ölrückführung']);
             }
-            sym(S.sensor(rechteSpalte - 26, dlY - 22, 'P', 'Hochdruck'), rechteSpalte - 26, dlY - 22);
-            linie(rechteSpalte - 26, dlY - 15, rechteSpalte - 26, dlY);
-            sym(S.sicherheit(rechteSpalte - 62, dlY - 22, 'Sicherheitsventil'), rechteSpalte - 62, dlY - 22);
-            linie(rechteSpalte - 62, dlY - 15, rechteSpalte - 62, dlY);
-            text((linkeSpalte + kb + rechteSpalte) / 2, dlY - 8, ['Druckleitung'], 'middle');
+            // Sicherheitsventil und Hochdruckfühler getrennt platzieren,
+            // damit sich die Beschriftungen nicht überlagern.
+            sym(S.sicherheit(rechteSpalte - 150, dlY - 30, 'Sicherheitsventil'), rechteSpalte - 150, dlY - 30);
+            linie(rechteSpalte - 150, dlY - 23, rechteSpalte - 150, dlY);
+            sym(S.sensor(rechteSpalte - 60, dlY - 30, 'P', 'Hochdruck'), rechteSpalte - 60, dlY - 30);
+            linie(rechteSpalte - 60, dlY - 23, rechteSpalte - 60, dlY);
+            text((xVerdichter + kb + rechteSpalte) / 2, dlY - 9, ['Druckleitung'], 'middle');
 
-            // --- Verflüssiger / Gaskühler ---
             kasten(rechteSpalte, y, kb, kh, hdmd ? 'Gaskühler' : 'Verflüssiger',
                 hdmd ? `Austritt ${A.tVerfluessigung} °C` : `tc ${A.tVerfluessigung} °C`);
 
-            // --- Hochdruckventil und Mitteldrucksammler (nur HD/MD) ---
-            let flY = y + 74;                        // Höhe der Flüssigkeitsleitung
+            // --- Sammler bzw. Mitteldruckebene ---
+            let flY = y + 84;
             if (hdmd) {
-                sym(S.exv(rechteSpalte + kb / 2, y + kh + 16, 'Hochdruckventil'), rechteSpalte + kb / 2, y + kh + 16);
-                linie(rechteSpalte + kb / 2, y + kh, rechteSpalte + kb / 2, y + kh + 10);
-                flY = y + 104;
-                kasten(rechteSpalte - 20, flY - kh / 2, kb + 20, kh, 'Mitteldrucksammler', 'Flashgas-Abscheidung');
-                linie(rechteSpalte + kb / 2, y + kh + 24, rechteSpalte + kb / 2, flY - kh / 2);
-                // Flashgas zum Parallelverdichter
-                weg(`M ${rechteSpalte - 20} ${flY - 8} L ${rechteSpalte - 54} ${flY - 8} L ${rechteSpalte - 54} ${y + 121} L ${linkeSpalte + kb} ${y + 121}`, true);
-                sym(S.magnet(rechteSpalte - 54, flY - 30, 'Flashgas-Ventil'), rechteSpalte - 54, flY - 30);
-                text(rechteSpalte - 150, y + 117, ['Flashgas zum Parallelverdichter']);
+                sym(S.exv(rechteSpalte + kb / 2, y + kh + 18, 'Hochdruckventil'), rechteSpalte + kb / 2, y + kh + 18);
+                linie(rechteSpalte + kb / 2, y + kh, rechteSpalte + kb / 2, y + kh + 12, false, true);
+                flY = y + 114;
+                kasten(rechteSpalte - 26, flY - kh / 2, kb + 26, kh, 'Mitteldrucksammler', 'Flashgas-Abscheidung');
+                linie(rechteSpalte + kb / 2, y + kh + 26, rechteSpalte + kb / 2, flY - kh / 2, false, true);
+                const xFg = rechteSpalte - 62;
+                weg(`M ${rechteSpalte - 26} ${flY - 9} L ${xFg} ${flY - 9} L ${xFg} ${y + 121} L ${xVerdichter + kb} ${y + 121}`, true, true);
+                sym(S.magnet(xFg, flY - 34, 'Flashgas-Ventil'), xFg, flY - 34);
+                text(xVerdichter + kb + 12, y + 117, ['Flashgas zum Parallelverdichter']);
             } else {
                 sym(S.behaelter(rechteSpalte + kb / 2, flY, 'Sammler'), rechteSpalte + kb / 2, flY);
-                linie(rechteSpalte + kb / 2, y + kh, rechteSpalte + kb / 2, flY - 8);
+                linie(rechteSpalte + kb / 2, y + kh, rechteSpalte + kb / 2, flY - 9, false, true);
             }
 
-            // --- Flüssigkeitsleitung mit Armaturenstrang nach links ---
-            const flVon = rechteSpalte + kb / 2 - (hdmd ? kb / 2 + 20 : 17);
-            const flBis = linkeSpalte + kb / 2;
-            linie(flVon, flY, flBis, flY);
-            const abstand = (flVon - flBis) / 5;
-            sym(S.absperr(flVon - abstand * 0.6, flY, 'Absperr'), flVon - abstand * 0.6, flY);
-            sym(S.filter(flVon - abstand * 1.6, flY, 'Filtertrockner'), flVon - abstand * 1.6, flY);
-            sym(S.schauglas(flVon - abstand * 2.6, flY, 'Schauglas'), flVon - abstand * 2.6, flY);
-            sym(S.magnet(flVon - abstand * 3.6, flY, 'Magnetventil'), flVon - abstand * 3.6, flY);
-            if (!hdmd) sym(S.wt(flVon - abstand * 4.4, flY, 'int. WT'), flVon - abstand * 4.4, flY);
-            text((flVon + flBis) / 2, flY - 12, ['Flüssigkeitsleitung'], 'middle');
+            // --- Flüssigkeitsleitung nach links, Pfeil in Fließrichtung ---
+            const flVon = hdmd ? rechteSpalte - 26 : rechteSpalte + kb / 2 - 17;
+            linie(flVon, flY, xAbzweig, flY, false, true);
+            // Armaturen gleichmäßig verteilen, Reihenfolge in Fließrichtung:
+            // Absperr, Filtertrockner, Schauglas, Magnetventil (und int. WT)
+            const wtAn = !!(project.kaelte.internerWT);
+            const armaturen = [['absperr', 'Absperr'], ['filter', 'Filtertrockner'], ['schauglas', 'Schauglas'], ['magnet', 'Magnetventil']];
+            if (wtAn) armaturen.push(['wt', 'int. Wärmetauscher']);
+            const strecke = flVon - xAbzweig;
+            armaturen.forEach((ar, i) => {
+                const ax = flVon - strecke * ((i + 1) / (armaturen.length + 1));
+                sym(S[ar[0]](ax, flY, ar[1]), ax, flY);
+            });
+            text((flVon + xAbzweig) / 2, flY - 13, ['Flüssigkeitsleitung'], 'middle');
 
-            // --- Verteilerschiene zu den Verdampfern ---
-            const busY = flY + 40;
-            const spaltenBreite = (B - 100) / proReihe;
-            const startX = 50 + spaltenBreite / 2;
-            linie(flBis, flY, flBis, busY);
-            const letzteX = startX + (proReihe - 1) * spaltenBreite;
-            linie(Math.min(flBis, startX), busY, Math.max(flBis, letzteX), busY);
+            // --- Verteilerschiene: liegt genau über der ersten Spalte ---
+            const busY = flY + 44;
+            linie(xAbzweig, flY, xAbzweig, busY, false, true);
+            const letzteX = xAbzweig + (proReihe - 1) * spaltenBreite;
+            if (proReihe > 1) linie(xAbzweig, busY, letzteX, busY);
 
-            const saugBusY = busY + 46 + reihen * 132;
+            const saugBusY = busY + 58 + (reihen - 1) * 150 + 96;
             stellen.forEach((e, i) => {
                 const reihe = Math.floor(i / 4), spalte = i % 4;
-                const x = startX + spalte * spaltenBreite;
-                const yy = busY + 46 + reihe * 132;
+                const x = xAbzweig + spalte * spaltenBreite;
+                const yy = busY + 58 + reihe * 150;
                 const ks = e.ks;
                 const tv = e.werte.verdampfungstemperatur.wert;
 
-                // Abzweig von der Verteilerschiene
-                linie(x, busY, x, yy - 34);
-                sym(S.exv(x, yy - 22, 'EXV'), x, yy - 22);
-                // Verteiler nur zeigen, wenn dafür auch ein Druckverlust
-                // angesetzt wurde - sonst wäre er im Schema erfunden.
+                if (reihe > 0) linie(x, busY, x, yy - 40);
+                else linie(x, busY, x, yy - 40, false, false);
+                sym(S.exv(x, yy - 28, ''), x, yy - 28);
+                text(x - 12, yy - 8, ['EXV'], 'end', 7.5);
                 const dpVert = Number((project.kaelte.exv || {}).dpVerteiler) || 0;
-                if (dpVert > 0) sym(S.verteiler(x, yy - 6, 'Verteiler'), x, yy - 6);
-                linie(x, yy - 12, x, yy);
+                if (dpVert > 0) { sym(S.verteiler(x, yy - 10, ''), x, yy - 10); text(x - 12, yy + 2, ['Verteiler'], 'end', 7.5); }
+                linie(x, yy - 16, x, yy, false, true);
                 kasten(x - kb / 2, yy, kb, kh, 'Verdampfer',
                     `${String(ks.bezeichnung || '').slice(0, 20)} · ${(e.ergebnis.auslegung / 1000).toFixed(2).replace('.', ',')} kW`);
-                text(x, yy + kh + 12, [`t₀ ${tv} °C · tRaum ${e.werte.raumtemperatur.wert} °C`], 'middle', 7.5);
+                text(x, yy + kh + 13, [`t₀ ${tv} °C · Raum ${e.werte.raumtemperatur.wert} °C`], 'middle', 7.5);
 
-                // Flüssigkeitsdaten links am Abzweig
                 const fd = leitungsdaten(ks, 'fluessig', kp);
-                if (fd) text(x + 10, yy - 44, fd, 'start', 7);
+                if (fd) text(x + 14, yy - 48, fd, 'start', 7);
 
-                // Saugleitung nach unten zur Sammelschiene
-                sym(S.sensor(x, yy + kh + 22, 'T', ''), x, yy + kh + 22);
-                weg(`M ${x} ${yy + kh} L ${x} ${saugBusY}`, true);
+                // Saugleitung nach unten, Pfeil zeigt weg vom Verdampfer
+                sym(S.sensor(x, yy + kh + 26, 'T', ''), x, yy + kh + 26);
+                weg(`M ${x} ${yy + kh + 33} L ${x} ${saugBusY}`, true, false);
                 const sd = leitungsdaten(ks, 'saug', kp);
-                if (sd) text(x + 10, yy + kh + 34, sd, 'start', 7);
+                if (sd) text(x + 14, yy + kh + 40, sd, 'start', 7);
             });
 
-            // --- Saugsammelschiene zurück zum Verdichter ---
-            weg(`M ${letzteX} ${saugBusY} L ${vdMitte - 22} ${saugBusY} L ${vdMitte - 22} ${vdY + kh / 2}`, true);
-            sym(S.absperr(vdMitte - 22, saugBusY - 26, 'Saugabsperr'), vdMitte - 22, saugBusY - 26);
-            sym(S.sensor(vdMitte - 52, saugBusY - 26, 'P', 'Niederdruck'), vdMitte - 52, saugBusY - 26);
-            linie(vdMitte - 52, saugBusY - 19, vdMitte - 52, saugBusY);
-            text(vdMitte + 6, saugBusY - 8, ['Saugleitung']);
+            // --- Saugsammelschiene zurück zum Verdichter, mit Richtungspfeil
+            weg(`M ${letzteX} ${saugBusY} L ${vdMitte} ${saugBusY} L ${vdMitte} ${vdY + kh / 2 + 1}`, true, true);
+            sym(S.absperr(vdMitte, saugBusY - 40, 'Saugabsperr'), vdMitte, saugBusY - 40);
+            sym(S.sensor(vdMitte, saugBusY - 84, 'P', 'Niederdruck'), vdMitte, saugBusY - 84);
+            text(vdMitte + 60, saugBusY - 9, ['Saugleitung']);
 
             // --- Legende ---
             const legY = saugBusY + 40;
