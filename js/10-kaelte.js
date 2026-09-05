@@ -1865,6 +1865,34 @@
             gruppen.forEach(g => { g.zeilen = [...g.zeilen].sort((a, b) => (RANG[a.art] ?? 9) - (RANG[b.art] ?? 9)); });
 
             return `
+                <div class="form-card comp-dashboard">
+                    <div class="form-card-title">Compliance</div>
+                    ${(() => {
+                        if (typeof kaelteComplianceAuswerten !== 'function') return '';
+                        const c = kaelteComplianceAuswerten(project);
+                        const st = COMPLIANCE_STATUS[c.overall_status] || { icon: 'ℹ', label: c.overall_status };
+                        const reihen = ['PASS', 'PASS_WITH_WARNINGS', 'WARNING', 'FAIL', 'DATA_MISSING', 'NOT_EVALUABLE',
+                            'SOURCE_MISSING', 'MANUFACTURER_CHECK_REQUIRED', 'EXPERT_REVIEW_REQUIRED', 'NOT_APPLICABLE'];
+                        return `
+                            <div class="comp-gesamt">${st.icon} Gesamtstatus: <strong>${escapeHtml(st.label)}</strong></div>
+                            <div class="comp-zaehler">
+                                ${reihen.filter(s => c.counts[s]).map(s => `<span>${(COMPLIANCE_STATUS[s] || {}).icon || ''} ${c.counts[s]} ${escapeHtml((COMPLIANCE_STATUS[s] || {}).label || s)}</span>`).join('')}
+                            </div>
+                            <div class="comp-regeln">
+                                ${c.rules.map(r => `
+                                    <div class="comp-karte comp-${r.status.toLowerCase()}">
+                                        <div class="comp-karte-kopf">
+                                            <span class="comp-karte-ikon">${(COMPLIANCE_STATUS[r.status] || {}).icon || ''}</span>
+                                            <span class="comp-karte-titel">${escapeHtml(r.title)}</span>
+                                            <span class="comp-karte-id">${escapeHtml(r.rule_id)}</span>
+                                        </div>
+                                        <div class="comp-karte-text">${escapeHtml(r.reason || '')}</div>
+                                        <div class="comp-karte-quelle">${escapeHtml(r.source_name || '')}${r.article ? ', ' + escapeHtml(r.article) : ''} · ${r.verification_status === 'VERIFIED' ? 'verifiziert' : 'nicht verifiziert (Platzhalter)'}</div>
+                                    </div>`).join('')}
+                            </div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">${escapeHtml(c.note)}</div>`;
+                    })()}
+                </div>
                 <div class="form-card">
                     <div class="form-card-title">Technische Prüfung</div>
                     ${gruppen.map(g => `
