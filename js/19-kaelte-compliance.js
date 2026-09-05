@@ -197,7 +197,58 @@
             evaluate() { return { status: 'SOURCE_MISSING', reason: p.quelle_hinweis, calculated: {} }; }
         }));
 
-        // ---------- Zentrale Auswertung ----------
+        // ---------- Was-wäre-wenn-Simulation (Phase F) ----------
+        // Reine Funktion: veraendert NIE project oder project.kaelte. Baut
+        // ein voellig unabhaengiges Objekt, ruft NUR die zwei verifizierten
+        // F-Gase-Regeln (RULE-FGAS-2024-001/002) mit den hypothetischen
+        // Werten auf und vergleicht das Ergebnis mit dem echten Projekt.
+        //
+        // BEWUSSTE EINSCHRAENKUNG: simuliert wird nur, was die Regel-Engine
+        // wirklich rechnet - Kaeltemittel und Fuellmenge fuer die F-Gase-
+        // Pruefpflicht. Eine vollstaendige physikalische Simulation (anderer
+        // Rohrdurchmesser -> anderer Massenstrom -> andere Fuellmenge -> ...)
+        // wuerde die komplette Kaelteauslegung ein zweites Mal durchrechnen -
+        // genau die Dopplung, die vermieden werden soll. Die neun Platzhalter-
+        // Regeln liefern bei jeder Simulation weiterhin SOURCE_MISSING, weil
+        // sie unabhaengig vom Input sind - das aendert die Simulation nicht.
+        function kaelteComplianceSimulieren(project, kaeltemittelSim, fuellmengeSimKg, fgaseOptsSim) {
+            const echtA = kaelteAuslegungsdaten(project);
+            const echtMM = kaelteMaterialListe(project);
+            const echtKm = echtMM.pos.find(p => p.schluessel === 'kaeltemittel');
+            const echtMenge = echtKm ? Number(echtKm.menge) || 0 : 0;
+            const echtFg = (project.kaelte || {}).fgase || {};
+
+            const regelIds = ['RULE-FGAS-2024-001', 'RULE-FGAS-2024-002'];
+            const auswerten = (kaeltemittel, mengeKg, fg) => {
+                const shadowProject = {
+                    kaelte: { fgase: fg }
+                };
+                // Shadow-Werte injizieren, OHNE die echten globalen Funktionen
+                // dauerhaft zu veraendern: waehrend der Auswertung kurz
+                // umbiegen, danach exakt zuruecksetzen.
+                const origA = kaelteAuslegungsdaten, origM = kaelteMaterialListe;
+                try {
+                    kaelteAuslegungsdaten = () => ({ kaeltemittel });
+                    kaelteMaterialListe = () => ({ pos: [{ schluessel: 'kaeltemittel', menge: mengeKg }] });
+                    return COMPLIANCE_RULES.filter(r => regelIds.includes(r.rule_id))
+                        .map(r => ({ rule_id: r.rule_id, title: r.title, ...r.evaluate(shadowProject) }));
+                } finally {
+                    kaelteAuslegungsdaten = origA; kaelteMaterialListe = origM;
+                }
+            };
+
+            const original = auswerten(echtA.kaeltemittel, echtMenge, echtFg);
+            const simulation = auswerten(kaeltemittelSim || echtA.kaeltemittel, fuellmengeSimKg != null ? fuellmengeSimKg : echtMenge, fgaseOptsSim || echtFg);
+
+            return {
+                original: { kaeltemittel: echtA.kaeltemittel, fuellmengeKg: echtMenge, regeln: original },
+                simulation: { kaeltemittel: kaeltemittelSim || echtA.kaeltemittel, fuellmengeKg: fuellmengeSimKg != null ? fuellmengeSimKg : echtMenge, regeln: simulation },
+                geaendert: original.map((o, i) => ({ rule_id: o.rule_id, title: o.title, von: o.status, nach: simulation[i].status, aendertSich: o.status !== simulation[i].status })),
+                hinweis: 'Reine Simulation – die Projektdaten wurden nicht verändert. Simuliert werden nur die verifizierten F-Gase-Regeln, nicht die vollständige Kälteauslegung.'
+            };
+        }
+
+
         // Wertet ALLE registrierten Regeln fuer ein Projekt aus und baut die
         // in project.kaelte.compliance vorgesehene Struktur.
         function kaelteComplianceAuswerten(project) {
