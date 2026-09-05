@@ -1035,7 +1035,20 @@
             };
         })();
 
-        function kaelteSchemaSvg(project) {
+        // farbenOverride: fuer das PDF werden die CSS-Variablen durch feste
+        // Farbwerte ersetzt. Ein aus dem Dokument geloestes SVG kann
+        // var(--accent) nicht mehr aufloesen - es waere sonst schwarz.
+        function kaelteSchemaSvg(project, farbenOverride) {
+            const farbenVorher = { ...SCHEMA_F };
+            if (farbenOverride) Object.assign(SCHEMA_F, farbenOverride);
+            try {
+                return kaelteSchemaSvgIntern(project);
+            } finally {
+                Object.assign(SCHEMA_F, farbenVorher);
+            }
+        }
+
+        function kaelteSchemaSvgIntern(project) {
             const A = kaelteAuslegungsdaten(project);
             const a = kaelteAuslegung(project);
             const art = project.kaelte.anlagenart || 'einzel';
@@ -1252,6 +1265,37 @@
                         <path d="M0,0 L0,6 L7,3 z" fill="${F.linie}"/></marker></defs>
                     ${teile.join('\n')}
                 </svg>`;
+        }
+
+        // Wandelt das Schema in ein Rasterbild fuer das PDF um.
+        // Bewusst derselbe Generator wie am Bildschirm - dadurch koennen
+        // Plan im PDF und Plan in der App nicht auseinanderlaufen.
+        function kaelteSchemaAlsBild(project, farben, breitePx = 2000) {
+            return new Promise((aufloesen, ablehnen) => {
+                const svg = kaelteSchemaSvg(project, farben);
+                if (!svg) { aufloesen(null); return; }
+                const vb = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(svg);
+                if (!vb) { aufloesen(null); return; }
+                const bV = parseFloat(vb[1]), hV = parseFloat(vb[2]);
+                const hPx = Math.round(breitePx * hV / bV);
+                const bild = new Image();
+                const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                bild.onload = () => {
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = breitePx; c.height = hPx;
+                        const ctx = c.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, breitePx, hPx);
+                        ctx.drawImage(bild, 0, 0, breitePx, hPx);
+                        URL.revokeObjectURL(url);
+                        aufloesen({ dataUrl: c.toDataURL('image/png'), breite: bV, hoehe: hV });
+                    } catch (e) { URL.revokeObjectURL(url); ablehnen(e); }
+                };
+                bild.onerror = (e) => { URL.revokeObjectURL(url); ablehnen(e); };
+                bild.src = url;
+            });
         }
 
         // ---- Rohrleitungen-Tab
