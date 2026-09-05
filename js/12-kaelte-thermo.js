@@ -457,19 +457,37 @@
             });
 
             // Bauteile: nur rechnen, wenn ein Innenvolumen bekannt ist.
-            [['verdampfer', 'Verdampfer', 'fluessig'], ['verfluessiger', 'Verflüssiger / Gaskühler', 'fluessig'],
-             ['sammler', 'Flüssigkeitssammler', 'fluessig'], ['sonstige', 'Sonstige Bauteile', 'fluessig']].forEach(([key, name, zustand]) => {
+            // KORREKTUR (2026-09): "Sonstige Bauteile" ist ein optionaler
+            // Sammelposten fuer zusaetzliche Komponenten, die es nicht bei
+            // jeder Anlage gibt - anders als Verdampfer/Verfluessiger/
+            // Sammler, die immer vorhanden sind. Vorher wurde ein leeres
+            // "Sonstige"-Feld genauso wie ein fehlendes Pflichtfeld behandelt
+            // und hat die Fuellmenge dauerhaft als "unvollstaendig" markiert -
+            // selbst eine eingetragene 0 aenderte daran nichts (0 ist falsy).
+            // Fehlt "Sonstige", wird jetzt einfach mit 0 kg gerechnet, ohne
+            // die Vollstaendigkeit zu blockieren.
+            const pflichtBauteile = [['verdampfer', 'Verdampfer'], ['verfluessiger', 'Verflüssiger / Gaskühler'], ['sammler', 'Flüssigkeitssammler']];
+            pflichtBauteile.forEach(([key, name]) => {
                 const v = Number(bauteilVolumenL[key]);
                 if (!v) { offen.push(name); return; }
                 // Verdampfer und Verfluessiger sind im Betrieb nur teilweise
                 // fluessig gefuellt. Ohne Herstellerangabe zum Fuellgrad wird
                 // mit einem klar benannten Fuellgrad gerechnet.
-                const fuellgrad = (key === 'sammler') ? 0.6 : (key === 'sonstige' ? 1.0 : 0.35);
+                const fuellgrad = (key === 'sammler') ? 0.6 : 0.35;
                 const kg = v / 1000 * kp.rhoFluessig * fuellgrad;
                 gesamt += kg;
                 teile.push({ name, volumenL: v, dichte: kp.rhoFluessig, kg,
                     formel: `${v} l × ${kp.rhoFluessig.toFixed(1)} kg/m³ × ${(fuellgrad * 100).toFixed(0)} % Füllgrad` });
             });
+            // "Sonstige Bauteile" optional: nur mitgerechnet, wenn ein Wert
+            // eingetragen ist, blockiert aber nie die Vollstaendigkeit.
+            const vSonst = Number(bauteilVolumenL.sonstige);
+            if (vSonst > 0) {
+                const kg = vSonst / 1000 * kp.rhoFluessig;   // 100 % Fuellgrad, da Sammelposten ohne bekannten Fuellgrad
+                gesamt += kg;
+                teile.push({ name: 'Sonstige Bauteile', volumenL: vSonst, dichte: kp.rhoFluessig, kg,
+                    formel: `${vSonst} l × ${kp.rhoFluessig.toFixed(1)} kg/m³` });
+            }
 
             return {
                 teile, gesamt, offen,
