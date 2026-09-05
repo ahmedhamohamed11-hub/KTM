@@ -331,7 +331,10 @@
                 // --- Compliance-Zusammenfassung ---
                 if (typeof kaelteComplianceAuswerten === 'function') {
                     const c = kaelteComplianceAuswerten(project);
-                    y = titelMitTabelle(y, 'Compliance-Zusammenfassung', c.rules.length);
+                    y = titelMitTabelle(y, 'Compliance-Zusammenfassung', c.rules.length + 1);
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...PDF_INK);
+                    doc.text(`Regelwerk-Version bei Prüfung: ${c.current_rule_set_version}${c.legal_status !== 'aktuell' ? ' · ' + (c.legal_status_note || '') : ' · unverändert seit Projekterstellung'}`, mx, y, { maxWidth: pw - mx * 2 });
+                    y += 8;
                     y = tabelle(y, ['Rule ID', 'Titel', 'Status', 'Begründung'],
                         c.rules.map(r => [r.rule_id, r.title,
                             r.verification_status === 'VERIFIED' ? (COMPLIANCE_STATUS[r.status] || {}).label || r.status : 'nicht verifiziert',
