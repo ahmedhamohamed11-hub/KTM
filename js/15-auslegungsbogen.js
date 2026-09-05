@@ -328,6 +328,21 @@
 
                 // --- Datenquellen und Vorbehalt ---
                 y = platz(y, 46);
+                // --- Compliance-Zusammenfassung ---
+                if (typeof kaelteComplianceAuswerten === 'function') {
+                    const c = kaelteComplianceAuswerten(project);
+                    y = titelMitTabelle(y, 'Compliance-Zusammenfassung', c.rules.length);
+                    y = tabelle(y, ['Rule ID', 'Titel', 'Status', 'Begründung'],
+                        c.rules.map(r => [r.rule_id, r.title,
+                            r.verification_status === 'VERIFIED' ? (COMPLIANCE_STATUS[r.status] || {}).label || r.status : 'nicht verifiziert',
+                            r.reason || '']),
+                        { 0: { cellWidth: 34, fontSize: 6.5 }, 1: { cellWidth: 46 }, 2: { cellWidth: 34 }, 3: { fontSize: 7 } });
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...PDF_GRAY);
+                    const hinweisText = doc.splitTextToSize(c.note, pw - mx * 2);
+                    y = platz(y, hinweisText.length * 3.6 + 4);
+                    doc.text(hinweisText, mx, y); y += hinweisText.length * 3.6 + 6;
+                }
+
                 y = titel(y, 'Datenquellen und Vorbehalt');
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...PDF_INK);
                 const quellen = [
