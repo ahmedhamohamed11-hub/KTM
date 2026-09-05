@@ -167,7 +167,11 @@ console.log('\n— Expansionsventil nach Ventilkapazität —');
 const EX = ctx.EX;
 const ex1 = EX({ kaeltemittel: 'R449A', tVerdampfung: -27, tVerfluessigung: 40, unterkuehlung: 4,
                  kaelteleistungW: 10000, dpLeitungBar: 0.3, dpVerteilerBar: 0.5 });
-pruefe('EXV: Δp am Ventil [bar]', ex1.dpVentil, 13.9, 0.2);
+// Sollwert korrigiert (2026-09): die Hochdruckseite muss mit dem BLASEN-
+// PUNKTdruck gerechnet werden, nicht mit dem Taupunktdruck - bei R449A/40°C
+// ein Unterschied von 2,06 bar (gegen CoolProp geprueft, 12,5 %). Der alte
+// Sollwert 13,9 bar basierte auf dem falschen Taupunktbezug.
+pruefe('EXV: Δp am Ventil [bar] (Blasenpunkt-korrigiert)', ex1.dpVentil, 15.96, 0.2);
 gesamt++;
 if (ex1.dpVentil >= ex1.dpGesamt) { console.log('  ✕   Leitungsverluste wurden nicht abgezogen'); fehler++; }
 else console.log('  OK  Leitungs- und Verteilerverlust vom verfügbaren Δp abgezogen');
@@ -189,6 +193,37 @@ const ex4 = EX({ kaeltemittel: 'R449A', tVerdampfung: -27, tVerfluessigung: 40, 
 gesamt++;
 if (ex4.moeglich) { console.log('  ✕   Ohne verbleibendes Δp darf nicht ausgelegt werden'); fehler++; }
 else console.log('  OK  Ohne verbleibende Druckdifferenz korrekt abgelehnt');
+
+console.log('\n— Bubble/Dew-Konsistenz bei zeotropen Gemischen (Korrektur 2026-09) —');
+// Vorher zeigte pVerfluessigung den TAUPUNKTdruck, obwohl h3 (Fluessigkeit
+// vor der Drossel) mit der BLASENPUNKT-Enthalpie bei derselben Temperatur
+// gerechnet wird. Bei R449A/40°C ein Unterschied von 2,06 bar (12,5 %),
+// gegen CoolProp geprueft (Referenzwerte Bubble 18,583 / Dew 16,522 bar).
+const kpBD = ctx.KP({ kaeltemittel: 'R449A', tVerdampfung: -30, tVerfluessigung: 40, ueberhitzung: 8, unterkuehlung: 0, kaelteleistungW: 6720 });
+pruefe('R449A 40°C: Verflüssigungsdruck jetzt = Blasenpunkt [bar]', kpBD.pVerfluessigung, 18.583, 0.02);
+pruefe('R449A 40°C: Taupunktdruck separat verfügbar [bar]', kpBD.pVerfluessigungTau, 16.522, 0.02);
+gesamt++;
+if (Math.abs(kpBD.pVerfluessigung - kpBD.pVerfluessigungTau) < 1) { console.log('  ✕   Bubble/Dew-Differenz wird nicht mehr abgebildet'); fehler++; }
+else console.log(`  OK  Bubble/Dew-Differenz sichtbar: ${(kpBD.pVerfluessigung - kpBD.pVerfluessigungTau).toFixed(2)} bar`);
+
+console.log('\n— Exakter Nutzer-Testfall: R449A 6,72 kW, t0=-30, tc=+40, ÜH=8K, UK=0K —');
+pruefe('Massenstrom [kg/h] (Vorgabe: ca. 187,7)', kpBD.mDotKgH, 187.7, 1.5);
+const geoFl = { laenge: 30, hoehenunterschied: 11, formstuecke: { bogen90: 8, bogen45: 4, ventil: 1, magnetventil: 1, filtertrockner: 1, schauglas: 1 } };
+const raFl = ctx.RA('fluessig', kpBD, geoFl);
+const v12 = raFl.varianten.find(x => x.rohr.bez.includes('12'));
+// Vorgabewerte des Nutzers fuer Ø12×1mm: w=0,65 m/s, Δp=1,279 bar, ΔT≈2,93K
+pruefe('Ø12×1mm Flüssigkeit: w [m/s] (Vorgabe 0,65)', v12.w, 0.65, 0.02);
+pruefe('Ø12×1mm Flüssigkeit: Δp [bar] (Vorgabe 1,279)', v12.dpGesamtBar, 1.279, 0.01);
+pruefe('Ø12×1mm Flüssigkeit: ΔT [K] (Vorgabe ≈2,93)', v12.dTverlustK, 2.93, 0.1);
+gesamt++;
+if (v12.ok) { console.log('  ✕   Bei 0K Unterkühlung und 2,93K Verlust darf Ø12×1 NICHT als geeignet gelten'); fehler++; }
+else console.log('  OK  Ø12×1mm korrekt als ungeeignet erkannt (Flashgas-Risiko bei 0K Unterkühlung)');
+gesamt++;
+if (!v12.bewertung.some(b => /Unterkühlungsreserve/.test(b.text))) { console.log('  ✕   Flashgas-/Unterkühlungsreserve-Meldung fehlt'); fehler++; }
+else console.log('  OK  Flashgas-/Unterkühlungsreserve-Meldung vorhanden');
+gesamt++;
+if (raFl.empfehlung) { console.log('  ✕   Bei 0K Unterkühlung und dieser Leitungsführung darf KEINE Dimension empfohlen werden'); fehler++; }
+else console.log('  OK  Korrekt keine Empfehlung – jede Dimension zehrt die (nicht vorhandene) Unterkühlung auf');
 
 console.log('\n— Fehlende Daten dürfen nicht erfunden werden —');
 gesamt++;
