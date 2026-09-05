@@ -39,7 +39,49 @@
             WARNING: 5, PASS_WITH_WARNINGS: 5, PASS: 6, NOT_APPLICABLE: 6, INFORMATION: 6
         };
 
-        // ---------- Rule Registry ----------
+        // ---------- Regelwerk-Version (Phase B: historischer Rechtsstand) ----------
+        // EINE zentrale Versionsnummer fuer den gesamten Regelsatz. Wird erhoeht,
+        // wenn sich an den Regeln (Schwellen, Formeln, neue/entfernte Regeln)
+        // etwas aendert - nicht bei reinen Text-/UI-Korrekturen.
+        //
+        // WICHTIG zum Vorgehen: Compliance-Ergebnisse werden in dieser App nie
+        // gespeichert, sondern bei jedem Aufruf frisch aus project.kaelte
+        // berechnet (Entscheidung aus Phase 1). Es gibt deshalb kein "altes,
+        // eingefrorenes Ergebnis", das versehentlich ueberschrieben werden
+        // koennte - das macht Phase B einfacher als eine volle Versions-
+        // historie: es reicht EIN einziger, einmalig gesetzter Wert pro
+        // Projekt (wann/unter welcher Version wurde es angelegt), der mit der
+        // aktuellen Version verglichen wird. Dieser Wert wird NUR beim
+        // Anlegen eines neuen Kaelteprojekts gesetzt (app.openNeuesKaelteprojekt)
+        // und danach nie mehr veraendert - auch nicht durch diese Datei.
+        const COMPLIANCE_RULE_SET_VERSION = '2026.1';
+
+        // Vergleicht die Version, unter der ein Projekt angelegt wurde, mit der
+        // aktuell geladenen. Bestehende Projekte von VOR dieser Funktion haben
+        // keinen gespeicherten Wert - das wird als "unbekannt" ausgegeben,
+        // NICHT stillschweigend als "aktuelle Version" unterstellt (waere eine
+        // stille Migration, die der Auftrag ausdruecklich verbietet).
+        function kaelteRechtsstand(project) {
+            const bei = (project.kaelte && project.kaelte.complianceRuleSetVersionAtCreation) || null;
+            const aktuell = COMPLIANCE_RULE_SET_VERSION;
+            if (!bei) {
+                return {
+                    versionBeiErstellung: null, versionAktuell: aktuell,
+                    zustand: 'unbekannt',
+                    hinweis: `Für dieses Projekt ist keine Regelwerk-Version bei Erstellung hinterlegt (angelegt vor Einführung dieser Funktion). Aktuelle Prüfung erfolgt mit Version ${aktuell} - der ursprüngliche Rechtsstand ist nicht rekonstruierbar.`
+                };
+            }
+            if (bei !== aktuell) {
+                return {
+                    versionBeiErstellung: bei, versionAktuell: aktuell,
+                    zustand: 'geaendert',
+                    hinweis: `Projekt angelegt unter Regelwerk-Version ${bei}. Aktuell gilt Version ${aktuell}. Die unten stehende Auswertung verwendet bereits die aktuelle Version - erneute fachliche Prüfung des Projekts nach dem geänderten Rechtsstand wird empfohlen.`
+                };
+            }
+            return { versionBeiErstellung: bei, versionAktuell: aktuell, zustand: 'aktuell', hinweis: null };
+        }
+
+
         // Jede Regel: siehe COMPLIANCE-Feldliste im Auftrag. calculate() bekommt
         // den Projekt-Kontext und liefert { status, calculated, reason, evidence }.
         // Regeln mit verification_status 'DRAFT' UND ohne calculate-Funktion
@@ -186,8 +228,12 @@
             else if ((zaehler.DATA_MISSING || 0) + (zaehler.NOT_EVALUABLE || 0) > 0) overall = 'DATA_MISSING';
             else if ((zaehler.WARNING || 0) + (zaehler.PASS_WITH_WARNINGS || 0) > 0) overall = 'PASS_WITH_WARNINGS';
 
+            const rechtsstand = kaelteRechtsstand(project);
             return {
-                current_rule_set_version: '1.0',
+                current_rule_set_version: COMPLIANCE_RULE_SET_VERSION,
+                rule_set_version_at_creation: rechtsstand.versionBeiErstellung,
+                legal_status: rechtsstand.zustand,       // 'aktuell' | 'geaendert' | 'unbekannt'
+                legal_status_note: rechtsstand.hinweis,
                 checked_at: new Date().toISOString(),
                 overall_status: overall,
                 counts: zaehler,
