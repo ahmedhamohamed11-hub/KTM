@@ -10,6 +10,7 @@ new Function(src + `
   this.AF=kaelteAbsolutFeuchte; this.PS=kaelteSaettigungsdruck;
   this.KP=kaelteKreisprozess; this.RA=kaelteRohrAuswahl; this.ST=kmStoff;
   this.KMT=KAELTEMITTEL;
+  this.FM=kaelteFuellmenge;
   this.FG=kaelteFGase;
   this.EX=kaelteExpansionsventil;
 `).call(ctx);
@@ -224,6 +225,21 @@ else console.log('  OK  Flashgas-/Unterkühlungsreserve-Meldung vorhanden');
 gesamt++;
 if (raFl.empfehlung) { console.log('  ✕   Bei 0K Unterkühlung und dieser Leitungsführung darf KEINE Dimension empfohlen werden'); fehler++; }
 else console.log('  OK  Korrekt keine Empfehlung – jede Dimension zehrt die (nicht vorhandene) Unterkühlung auf');
+
+console.log('\n— Füllmenge: "Sonstige Bauteile" ist optional, kein Pflichtfeld —');
+// Vorher blockierte ein leeres ODER sogar explizit auf 0 gesetztes "Sonstige"-
+// Feld die Vollstaendigkeit dauerhaft (0 ist falsy in JS) - ein Techniker
+// ohne zusaetzliche Bauteile konnte "vollstaendig" nie erreichen.
+const fmOhneSonstige = ctx.FM([{art:'fluessig',diMm:10,laenge:5,bez:'x'}],
+  { rhoFluessig: 1000 }, { verdampfer: 8, verfluessiger: 6, sammler: 10 });
+gesamt++;
+if (!fmOhneSonstige.sicher) { console.log('  ✕   Ohne "Sonstige Bauteile" (Feld leer gelassen) sollte die Füllmenge trotzdem vollständig sein'); fehler++; }
+else console.log('  OK  Füllmenge vollständig ohne "Sonstige Bauteile" – optionaler Sammelposten blockiert nicht mehr');
+gesamt++;
+const fmMitSonstige0 = ctx.FM([{art:'fluessig',diMm:10,laenge:5,bez:'x'}],
+  { rhoFluessig: 1000 }, { verdampfer: 8, verfluessiger: 6, sammler: 10, sonstige: 0 });
+if (!fmMitSonstige0.sicher) { console.log('  ✕   Explizite 0 bei "Sonstige" darf nicht mehr als "fehlend" gelten'); fehler++; }
+else console.log('  OK  Explizite 0 bei "Sonstige Bauteile" gilt korrekt als vollständig');
 
 console.log('\n— Fehlende Daten dürfen nicht erfunden werden —');
 gesamt++;
