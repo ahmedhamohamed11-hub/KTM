@@ -754,7 +754,7 @@
                                 <button class="btn btn-outline" onclick="app.calcReset()">Neu starten</button>
                             </div>
                             <div id="calcAiBox" class="calc-ai-box"></div>
-                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v202</span></div>
+                            <div class="calc-note">Der finale Preis wird nach Besichtigung bestätigt. Richtwerte für Kühllast, Montage und U-Wert. <span style="opacity:0.6;">· Build v203</span></div>
                         </div>
                     </div>`;
             })().catch(e => {
@@ -1923,6 +1923,7 @@
                         <button class="btn btn-primary btn-sm" onclick="app.openDeviceConfigurator()">🔧 Geräte-Konfigurator</button>
                         <button class="btn btn-outline btn-sm" onclick="app.exportMaterialsExcel()">Excel Export</button>
                         <button class="btn btn-outline btn-sm" onclick="app.importMaterialsExcel()">Excel Import</button>
+                        <button class="btn btn-outline btn-sm" onclick="app.openPreislistenImport()">Preislisten übernehmen</button>
                     </div>
                     <div class="mat-crumbs">${crumbs.join('<span class="crumb-sep">›</span>')}
                         ${searching ? `<span class="crumb-hint">${inScope.length} Treffer</span>` : ''}
