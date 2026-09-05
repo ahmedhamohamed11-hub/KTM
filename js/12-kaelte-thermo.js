@@ -138,13 +138,27 @@
                 const glidK = kaelteGlideK(kaeltemittel, tVerdampfung);
                 hinweise.push({ art: 'pruefen', text: `${kaeltemittel} ist ein zeotropes Gemisch mit ${glidK != null ? 'rund ' + glidK.toFixed(1).replace('.', ',') + ' K' : 'einem'} Temperaturgleit bei ${tVerdampfung} °C. Die angegebene Verdampfungstemperatur wird als Taupunkt am Verdampferaustritt gerechnet; am Verdampfereintritt liegt die Temperatur entsprechend tiefer. Für die endgültige Auslegung das Herstellerdatenblatt verwenden.` });
             }
-            hinweise.push({ art: 'info', text: 'Die Heißgasdichte wird mit gesättigtem Dampf beim Verflüssigungsdruck gerechnet – ohne Verdichterdaten ist die Verdichtungsendtemperatur nicht bestimmbar. Das ergibt eine eher großzügige Druckleitung.' });
+            hinweise.push({ art: 'info', text: 'Die Heißgasdichte wird mit gesättigtem Dampf beim Taupunktdruck gerechnet – ohne Verdichterdaten ist die Verdichtungsendtemperatur nicht bestimmbar. Das ergibt eine eher großzügige Druckleitung.' });
+
+            // KORREKTUR (2026-09): pVerfluessigung zeigte bisher den TAUPUNKT-
+            // druck, obwohl h3 (Fluessigkeit vor der Drossel) mit der
+            // BLASENPUNKT-Enthalpie bei derselben Temperatur gerechnet wird -
+            // bei R449A/40 °C ein Unterschied von 2,06 bar bzw. 12,5 % (gegen
+            // CoolProp geprueft). Jetzt konsistent: die "Verfluessigungstemp."
+            // wird als Blasenpunkt-Bezug behandelt (Punkt 5 der Vorgabe:
+            // "Fuer die Unterkuehlung -> Bubble Point verwenden"), der
+            // Blasenpunktdruck ist der zur h3-Enthalpie passende Druck.
+            // Taupunktdruck bleibt zusaetzlich verfuegbar (pVerfluessigungTau).
+            if (KAELTEMITTEL[kaeltemittel] && KAELTEMITTEL[kaeltemittel].blend) {
+                hinweise.push({ art: 'pruefen', text: `${kaeltemittel} ist ein Gemisch: Taupunkt- und Blasenpunktdruck bei ${tVerfluessigung} °C unterscheiden sich (${c.p.toFixed(2).replace('.', ',')} bzw. ${c.pBubble.toFixed(2).replace('.', ',')} bar). Für die Unterkühlung und das Expansionsventil ist der Blasenpunktdruck maßgebend, da die Flüssigkeit vor der Drossel dort vorliegt.` });
+            }
 
             return {
                 moeglich: true, hinweise,
-                kaeltemittel, tSat: tVerdampfung, tSatHoch: tVerfluessigung,
+                kaeltemittel, tSat: tVerdampfung, tSatHoch: tVerfluessigung, unterkuehlung,
                 q0, mDot, mDotKgH: mDot * 3600,
-                pVerdampfung: v.p, pVerfluessigung: c.p, druckverhaeltnis: c.p / v.p,
+                pVerdampfung: v.p, pVerfluessigung: c.pBubble, pVerfluessigungTau: c.p,
+                druckverhaeltnis: c.pBubble / v.p,
                 rhoSaug, rhoFluessig, rhoHeissgas,
                 etaSaug: v.etaDa, etaFluessig: (cSub || c).etaFl, etaHeissgas: c.etaDa,
                 volumenstromSaug: (mDot / rhoSaug) * 3600,        // m³/h
@@ -338,6 +352,21 @@
                         ok = false;
                     } else if (dTv != null && dTv > grenze * 0.7) {
                         bewertung.push({ art: 'warnung', text: `Temperaturverlust ${dTv.toFixed(1).replace('.', ',')} K liegt nahe an der Grenze von ${grenze.toFixed(1).replace('.', ',')} K.` });
+                    }
+                    // Konkreter Flashgas-Check (2026-09 ergaenzt): reicht die
+                    // TATSAECHLICH eingestellte Unterkuehlung noch aus, wenn
+                    // man den Druckverlust als Temperaturverlust davon
+                    // abzieht? Das ist die eigentliche Frage bei Fluessigkeits-
+                    // leitungen mit wenig oder keiner Unterkuehlung - nicht nur
+                    // "ist der Verlust unter einem pauschalen Grenzwert".
+                    if (art === 'fluessig' && dTv != null && kp.unterkuehlung != null) {
+                        const restUnterkuehlung = kp.unterkuehlung - dTv;
+                        if (restUnterkuehlung <= 0) {
+                            bewertung.push({ art: 'fehler', text: `Unterkühlungsreserve nicht ausreichend: ${kp.unterkuehlung.toFixed(1).replace('.', ',')} K Unterkühlung stehen ${dTv.toFixed(1).replace('.', ',')} K Temperaturverlust durch den Druckabfall gegenüber – rechnerisch ${restUnterkuehlung.toFixed(1).replace('.', ',')} K Reserve. Flashgas in der Flüssigkeitsleitung vor dem Expansionsventil möglich.` });
+                            ok = false;
+                        } else if (restUnterkuehlung < 2) {
+                            bewertung.push({ art: 'warnung', text: `Nach Abzug des Druckverlusts bleiben rechnerisch nur noch ${restUnterkuehlung.toFixed(1).replace('.', ',')} K Unterkühlungsreserve. Knapp – Flashgas-Risiko bei ungünstigeren Betriebsbedingungen prüfen.` });
+                        }
                     }
                 }
                 return { ...e, ok, bewertung, oel, dTverlustK: dTv };
@@ -703,8 +732,11 @@
             const c = kmStoff(kaeltemittel, tVerfluessigung);
             if (!v || !c) return { moeglich: false, hinweis: `Für ${kaeltemittel} fehlen bei diesen Temperaturen die Stoffdaten.` };
 
-            // Verfügbare Druckdifferenz am Ventil
-            const dpGesamt = c.p - v.p;
+            // Verfügbare Druckdifferenz am Ventil. Hochdruckseite mit dem
+            // BLASENPUNKTdruck (nicht Taupunkt) - dort liegt die Fluessigkeit
+            // vor der Drossel tatsaechlich vor, siehe Korrektur in
+            // kaelteKreisprozess (2,06 bar / 12,5 % Unterschied bei R449A/40°C).
+            const dpGesamt = c.pBubble - v.p;
             const dpVentil = dpGesamt - dpLeitungBar - dpVerteilerBar;
             const cSub = kmStoff(kaeltemittel, tVerfluessigung - unterkuehlung) || c;
             const rhoFl = cSub.rhoFl;
@@ -729,7 +761,7 @@
             if (rv && rc) {
                 const rSub = kmStoff(kaeltemittel, ref.tVerfluessigung - (ref.unterkuehlung ?? 4)) || rc;
                 const q0Ref = (rv.hDa + rv.cpDa * ueberhitzung) - (rc.hFl - rc.cpFl * (ref.unterkuehlung ?? 4));
-                const dpRef = rc.p - rv.p;
+                const dpRef = rc.pBubble - rv.p;   // konsistent mit dpGesamt oben
                 if (q0Ref > 0 && dpRef > 0) {
                     faktor = (q0 / q0Ref) * Math.sqrt((dpVentil * rhoFl) / (dpRef * rSub.rhoFl));
                     if (nennkapazitaetKW) kapazitaetBetriebKW = nennkapazitaetKW * faktor;
