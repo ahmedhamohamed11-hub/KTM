@@ -1864,6 +1864,7 @@
             const RANG = { fehler: 0, pruefen: 1, warnung: 2, ok: 3 };
             gruppen.forEach(g => { g.zeilen = [...g.zeilen].sort((a, b) => (RANG[a.art] ?? 9) - (RANG[b.art] ?? 9)); });
 
+
             return `
                 <div class="form-card comp-dashboard">
                     <div class="form-card-title">Compliance</div>
@@ -1896,6 +1897,11 @@
                             <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">${escapeHtml(c.note)}</div>`;
                     })()}
                 </div>
+                ${typeof renderKaeltePruefbuch === 'function' ? renderKaeltePruefbuch(project) : ''}
+                ${(() => {
+                    if (typeof kaelteComplianceSimulieren !== 'function') return '';
+                    return renderKaelteWasWaereWenn(project);
+                })()}
                 <div class="form-card">
                     <div class="form-card-title">Technische Prüfung</div>
                     ${gruppen.map(g => `
