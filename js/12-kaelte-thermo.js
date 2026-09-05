@@ -222,7 +222,14 @@
             const f = kaelteRohrReibungszahl(re, rohr.di);
             const aeq = kaelteAequivalenteLaenge(geo.formstuecke, rohr.di);
             const lGesamt = (geo.laenge || 0) + aeq.laenge;
-            const dpReibung = f * (lGesamt / di) * (rho * w * w / 2);   // Pa
+            const dynDruck = rho * w * w / 2;
+            // KORREKTUR (2026-09, Punkt 17): getrennt ausweisen statt in einer
+            // Zahl zu verschmelzen - "reines Rohr" und "Formstücke" nutzen
+            // dieselbe Reibungszahl (gleiche Stroemung), unterscheiden sich
+            // nur in der Laenge, die in die Formel eingeht.
+            const dpReibungRohr = f * ((geo.laenge || 0) / di) * dynDruck;
+            const dpReibungForm = f * (aeq.laenge / di) * dynDruck;
+            const dpReibung = dpReibungRohr + dpReibungForm;
 
             // Statische Hoehe: bei der Fluessigkeitsleitung gewinnt eine
             // fallende Leitung Druck, eine steigende verliert. Beim Sauggas
@@ -233,10 +240,12 @@
 
             return {
                 rohr, w, re, f, aeqLaenge: aeq.laenge, aeqDetail: aeq.detail, lGesamt,
+                dpReibungRohrBar: dpReibungRohr / 1e5, dpReibungFormBar: dpReibungForm / 1e5,
                 dpReibungBar: dpReibung / 1e5, dpHoeheBar: dpHoehe / 1e5, dpGesamtBar: dpGesamt / 1e5,
                 rho, volumenInnenL: flaeche * (geo.laenge || 0) * 1000
             };
         }
+
 
         // ---------- Mindestgeschwindigkeit fuer den Oeltransport ----------
         // Konkret berechnet statt pauschal "bitte pruefen".
@@ -326,7 +335,7 @@
                     if (e.w < oel.wMin) { bewertung.push({ art: 'fehler', text: `Strömung ${e.w.toFixed(1)} m/s liegt unter der berechneten Mindestgeschwindigkeit ${oel.wMin.toFixed(1)} m/s für den Öltransport (${steigend ? 'Steigleitung' : 'waagrecht'}, Ø ${r.di.toFixed(1)} mm innen, maßgebend: ${oel.massgebend}). Öl kehrt nicht sicher zum Verdichter zurück – kleinere Dimension wählen.` }); ok = false; }
                     else if (e.w < oel.wMin * 1.25) bewertung.push({ art: 'warnung', text: `Strömung ${e.w.toFixed(1)} m/s liegt nur knapp über der Mindestgeschwindigkeit ${oel.wMin.toFixed(1)} m/s. Bei Teillast (geregelter Verdichter) reicht das nicht mehr – dann Doppelsteigleitung oder Leistungsregelung berücksichtigen.` });
                     // Teillast-Reserve: bei halber Leistung halbiert sich die Geschwindigkeit.
-                    if (ok && e.w / 2 < oel.wMin) bewertung.push({ art: 'info', text: `Bei 50 % Teillast fällt die Strömung auf ${(e.w / 2).toFixed(1)} m/s und liegt damit unter ${oel.wMin.toFixed(1)} m/s. Für geregelte Anlagen Doppelsteigleitung prüfen.` });
+                    if (ok && e.w / 2 < oel.wMin) bewertung.push({ art: 'warnung', text: `Bei 50 % Teillast beträgt die Strömungsgeschwindigkeit ${(e.w / 2).toFixed(1).replace('.', ',')} m/s und liegt unter dem Prüfwert von ${oel.wMin.toFixed(1).replace('.', ',')} m/s. Öltransport bei Teillast nicht ausreichend – Doppelsteigleitung bzw. alternative Leitungsführung prüfen.` });
                 } else if (e.w > g.opt[1]) bewertung.push({ art: 'warnung', text: `Flüssigkeitsgeschwindigkeit ${e.w.toFixed(2)} m/s über dem üblichen Bereich (${g.opt[0]}–${g.opt[1]} m/s) – Druckverlust erhöht die Flashgas-Gefahr vor dem Expansionsventil. Unterkühlung prüfen oder größere Dimension wählen.` });
                 // Druckverlust in Temperaturverlust umrechnen und bewerten.
                 // Eine Leitung, die den Oeltransport schafft, aber 1 bar
@@ -557,7 +566,7 @@
             const { kaeltemittel, fuellmengeKg, tVerfluessigung = 40, tStillstand = 50, anteilAbpumpbar = 0.85 } = p;
             const cBetrieb = kmStoff(kaeltemittel, tVerfluessigung);
             const cWarm = kmStoff(kaeltemittel, tStillstand);
-            if (!cBetrieb || !fuellmengeKg) return { moeglich: false, hinweis: 'Ohne Füllmenge und Stoffdaten ist keine Sammlergröße bestimmbar.' };
+            if (!cBetrieb || !fuellmengeKg) return { moeglich: false, hinweis: 'Sammlerauswahl anhand Herstellerdaten prüfen – ohne Füllmenge und Stoffdaten ist kein Mindestvolumen bestimmbar.' };
 
             const abzupumpen = fuellmengeKg * anteilAbpumpbar;
             const volBetriebL = (abzupumpen / cBetrieb.rhoFl) * 1000;
@@ -582,7 +591,7 @@
                 erforderlichL: erforderlich,
                 nachAufnahme, nachSicherheit, massgebend,
                 abzupumpenKg: abzupumpen, volBetriebL, warmHinweis,
-                hinweis: `Erforderlich mindestens ${erforderlich.toFixed(1).replace('.', ',')} l (maßgebend: ${massgebend}). ${warmHinweis} Zulässiger Füllgrad und Prüfdruck sind Herstellerangaben – der berechnete Wert ist die Untergrenze, nicht die Auswahl.`
+                hinweis: `Erforderliches Mindestvolumen: ${erforderlich.toFixed(1).replace('.', ',')} l (maßgebend: ${massgebend}). ${warmHinweis} Der berechnete Wert ist die Untergrenze, nicht die Auswahl – die tatsächliche Sammlerauswahl ist zusätzlich anhand Herstellerangaben, zulässigem Füllgrad, zulässigem Druck und Temperaturbedingungen der tatsächlichen Anlage zu prüfen.`
             };
         }
 
