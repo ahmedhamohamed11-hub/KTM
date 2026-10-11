@@ -772,19 +772,71 @@
                     return 'IG';   // im Zweifel als Innengerät behandeln (nie fälschlich als AG vorschlagen)
                 };
 
-                // Kandidaten der Zielmarke: gleicher Typ, bei Multi-AG auch gleiche IG-Anzahl,
-                // dann nach kW-Nähe sortiert
+                // Bauform: Wandgeraet oder Truhengeraet - darf nicht gemischt werden
+                // (frueher erschien bei einem Wandgeraet ein Daikin-Truhengeraet FVXM25B
+                // als "eine Stufe niedriger").
+                const formOf = (m) => {
+                    if (!m) return '?';
+                    const t = `${m.series || ''} ${m.name || ''} ${m.notes || ''}`.toLowerCase();
+                    return (/truhen|standger|bodenger/.test(t) || /\b[fc]vx/.test(t)) ? 'truhe' : 'wand';
+                };
+                // Sets (Innen- + Aussengeraet in einem Eintrag) sind kein Einzelgeraet
+                const isSetMat = (m) => /\bset\b/i.test(m.name || '') || String(m.articleNumber || '').includes('+');
+                // Modellcode (FTXM25A, EZ09CYN ...) - damit derselbe Artikel nicht doppelt
+                // erscheint ("Perfera FTXM25A" und "Daikin FTXM25A" sind im Katalog 2 Eintraege)
+                const modelCode = (m) => {
+                    const x = `${m.articleNumber || ''} ${m.name || ''}`.toUpperCase().match(/[A-Z]{1,4}\d{2,3}[A-Z0-9]*/);
+                    return x ? x[0] : '';
+                };
+
+                // Kandidaten der Zielmarke: gleicher Typ und gleiche Bauform, bei Multi-AG auch
+                // gleiche IG-Anzahl, ohne Sets, ohne Doppeleintraege
                 const candidatesFor = (p, brand) => {
                     const orig = mats.find(x => String(x.id) === String(p.materialId));
                     const type = devType(orig);
                     const need = maxIG(orig);
-                    const kw = kwOf(orig?.size);
-                    return mats
-                        .filter(m => m.manufacturer === brand
-                            && devType(m) === type                                     // IG bleibt IG, AG bleibt AG
-                            && (type !== 'MULTI-AG' || maxIG(m) === need))             // 4 IG -> nur 4-IG-Geräte
-                        .map(m => ({ m, kw: kwOf(m.size), diff: Math.abs(kwOf(m.size) - kw) }))
-                        .sort((a, b) => a.diff - b.diff || a.kw - b.kw);
+                    const form = formOf(orig);
+                    let pool = mats.filter(m => m.manufacturer === brand
+                        && devType(m) === type                                     // IG bleibt IG, AG bleibt AG
+                        && (type !== 'MULTI-AG' || maxIG(m) === need)              // 4 IG -> nur 4-IG-Geraete
+                        && !isSetMat(m) && kwOf(m.size) > 0);
+                    const gleicheForm = pool.filter(m => formOf(m) === form);
+                    if (gleicheForm.length) pool = gleicheForm;
+                    // Doppeleintraege je Serie+Modell+Leistung zusammenfassen; bevorzugt den
+                    // Eintrag mit Artikelnummer
+                    const byKey = new Map();
+                    pool.forEach(m => {
+                        const code = modelCode(m);
+                        const key = code ? `${m.series || ''}|${code}|${kwOf(m.size).toFixed(1)}` : `id:${m.id}`;
+                        const cur = byKey.get(key);
+                        if (!cur || (!cur.articleNumber && m.articleNumber)) byKey.set(key, m);
+                    });
+                    return [...byKey.values()].map(m => ({
+                        m, kw: kwOf(m.size), series: String(m.series || '').trim() || 'Ohne Serie',
+                        price: matUnitPrice(m, p.unit || 'Stk')
+                    }));
+                };
+
+                // Leistungsstufen: benachbarte Groessen mit <= 0,3 kW Abstand sind EINE Klasse
+                // (2,4/2,5 | 3,3/3,4/3,5 | 5,0/5,2). Ergebnis: gleiche Leistung, eine Stufe
+                // kleiner, eine Stufe groesser.
+                const stepsFor = (kw, cands) => {
+                    const sizes = [...new Set(cands.map(c => c.kw))].sort((x, y) => x - y);
+                    const klassen = [];
+                    sizes.forEach(sz => {
+                        const l = klassen[klassen.length - 1];
+                        if (l && sz - l[l.length - 1] <= 0.3) l.push(sz); else klassen.push([sz]);
+                    });
+                    const inKlasse = (k) => (c) => c.kw >= k[0] - 0.001 && c.kw <= k[k.length - 1] + 0.001;
+                    const idx = klassen.findIndex(k => kw >= k[0] - 0.25 && kw <= k[k.length - 1] + 0.25);
+                    let klein = null, gross = null;
+                    if (idx >= 0) { klein = klassen[idx - 1] || null; gross = klassen[idx + 1] || null; }
+                    else {
+                        for (const k of klassen) { if (k[k.length - 1] < kw) klein = k; else if (!gross && k[0] > kw) gross = k; }
+                    }
+                    const pick = (k) => k ? cands.filter(inKlasse(k)) : [];
+                    return { exact: idx >= 0 ? pick(klassen[idx]) : [], klein: pick(klein), gross: pick(gross),
+                             kleinKw: klein ? klein[klein.length - 1] : 0, grossKw: gross ? gross[gross.length - 1] : 0 };
                 };
 
                 const modal = showModal(
@@ -889,23 +941,52 @@
                             return `<div class="form-card"><div class="form-card-title">${escapeHtml(p.name)} <span style="font-weight:600;color:var(--text-muted);">· ${typeLabel}</span></div>
                                 <div style="font-size:12.5px;color:var(--warning);">${escapeHtml(brand)} hat kein passendes ${type === 'MULTI-AG' ? `Multi-Außengerät für ${need} Innengeräte` : 'Gerät dieser Bauart'} – Position bleibt unverändert.</div></div>`;
                         }
-                        const exact = cands.filter(c => c.diff < 0.05);
-                        const near = cands.filter(c => c.diff >= 0.05).slice(0, 6);
-                        const opt = (c) => {
-                            const tag = c.diff < 0.05 ? '✓ exakt' : (c.kw > kw ? '▲ eine Stufe höher' : '▼ eine Stufe niedriger');
-                            const ig = maxIG(c.m) >= 2 ? ` · ${maxIG(c.m)} IG` : '';
-                            return `<option value="${escapeHtml(String(c.m.id))}">${escapeHtml(c.m.name)} · ${escapeHtml(c.m.size || '')}${ig} · ${formatCurrency(matUnitPrice(c.m, p.unit || 'Stk'))} — ${tag}</option>`;
+                        // Stufen PRO SERIE: jede Serie hat ihre eigenen Leistungsklassen (Comfora
+                        // hat z. B. kein 4,2-Geraet) - es kommt immer das naechstkleinere/-groessere
+                        // Geraet derselben Serie.
+                        const serienListe = [...new Set(cands.map(c => c.series))];
+                        const stSerie = new Map(serienListe.map(se => [se, stepsFor(kw, cands.filter(c => c.series === se))]));
+                        const alle = (key) => serienListe.flatMap(se => stSerie.get(se)[key]);
+                        const st = { exact: alle('exact'), klein: alle('klein'), gross: alle('gross') };
+                        const fmtKw = (v) => `${v.toFixed(1).replace('.', ',')} kW`;
+                        const ig = (c) => maxIG(c.m) >= 2 ? ` · ${maxIG(c.m)} IG` : '';
+                        const delta = (c) => {
+                            const d = c.price - (Number(p.price) || 0);
+                            if (Math.abs(d) < 0.005) return '±0,00 €';
+                            return `${d > 0 ? '+' : '−'}${formatCurrency(Math.abs(d))}`;
                         };
+                        // Je Stufe nach Serie getrennt, Serien nach Preis aufsteigend, innerhalb
+                        // der Serie guenstigstes zuerst.
+                        const gruppen = (key, titelFn) => serienListe
+                            .map(se => [se, stSerie.get(se)])
+                            .filter(([, x]) => x[key].length)
+                            .map(([se, x]) => [se, x, [...x[key]].sort((u, v) => u.price - v.price || u.kw - v.kw)])
+                            .sort((u, v) => u[2][0].price - v[2][0].price)
+                            .map(([se, x, arr]) => `<optgroup label="${escapeHtml(titelFn(x))} · ${escapeHtml(se)}">${arr.map(c =>
+                                `<option value="${escapeHtml(String(c.m.id))}">${escapeHtml(c.m.name)} · ${escapeHtml(c.m.size || '')}${ig(c)} · ${formatCurrency(c.price)} (${delta(c)})</option>`
+                            ).join('')}</optgroup>`).join('');
+                        const serienExakt = [...new Set(st.exact.map(c => c.series))];
+                        const optionen = [
+                            gruppen('exact', () => `Gleiche Leistung${old?.size ? ' (' + old.size + (/kw/i.test(old.size) ? '' : ' kW') + ')' : ''}`),
+                            gruppen('klein', (x) => `Eine Stufe kleiner (${fmtKw(x.kleinKw)})`),
+                            gruppen('gross', (x) => `Eine Stufe größer (${fmtKw(x.grossKw)})`)
+                        ].join('');
+                        // Vorauswahl: gleiche Leistung (guenstigste Serie), sonst eine Stufe groesser
+                        // (reicht sicher), sonst kleiner
+                        const guenstigste = (arr) => arr.slice().sort((u, v) => u.price - v.price)[0];
+                        const vorauswahl = st.exact.length ? guenstigste(st.exact) : (st.gross.length ? guenstigste(st.gross) : (st.klein.length ? guenstigste(st.klein) : null));
+                        const optionenMitAuswahl = vorauswahl
+                            ? optionen.replace(`<option value="${escapeHtml(String(vorauswahl.m.id))}">`, `<option value="${escapeHtml(String(vorauswahl.m.id))}" selected>`)
+                            : optionen;
                         return `<div class="form-card">
                             <div class="form-card-title">${escapeHtml(p.name)} <span style="font-weight:600;color:var(--text-muted);">· ${typeLabel} · aktuell ${escapeHtml(old?.size || '')} · ${formatCurrency(p.price || 0)}</span></div>
                             <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">
-                                ${exact.length
-                                    ? `${escapeHtml(brand)} hat <strong style="color:var(--success);">${exact.length} passende(s) Modell(e) mit exakt ${escapeHtml(old?.size || '')}</strong>${type === 'MULTI-AG' ? ` und ${need} Innengeräte-Anschlüssen` : ''}.`
-                                    : `${escapeHtml(brand)} hat kein Modell mit exakt ${escapeHtml(old?.size || '')}${type === 'MULTI-AG' ? ` bei ${need} Innengeräte-Anschlüssen` : ''} – nächstliegende Leistungen:`}
+                                ${st.exact.length
+                                    ? `${escapeHtml(brand)} hat <strong style="color:var(--success);">${st.exact.length} Modell(e) mit gleicher Leistung</strong> (${serienExakt.map(escapeHtml).join(', ')})${type === 'MULTI-AG' ? ` und ${need} Innengeräte-Anschlüssen` : ''}. Dazu je eine Stufe kleiner und größer. In Klammern: Preisunterschied zum aktuellen Gerät.`
+                                    : `${escapeHtml(brand)} hat kein Modell mit gleicher Leistung wie ${escapeHtml(old?.size || '')}${type === 'MULTI-AG' ? ` bei ${need} Innengeräte-Anschlüssen` : ''} – nächstkleinere und nächstgrößere Stufe:`}
                             </div>
                             <select class="var-pick" data-idx="${i}">
-                                ${exact.map(opt).join('')}
-                                ${near.map(opt).join('')}
+                                ${optionenMitAuswahl}
                                 <option value="">— Gerät nicht tauschen (Original behalten) —</option>
                             </select>
                         </div>`;
