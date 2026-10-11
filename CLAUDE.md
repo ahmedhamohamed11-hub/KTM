@@ -52,7 +52,7 @@ der Positionstabelle, sondern als eigene Zeile im Summenblock nach dem Rabatt.
 **Summenblock:**
 ```
 Zwischensumme (Material inkl. USt.)
-− Rabatt (x %) auf Material
+− Rabatt (x %) auf Material und Geräte   (je nach Bezug auch „auf Klimageräte“ / „auf das gesamte Angebot“)
 + Arbeitsleistung Montage
 = Gesamtbetrag
 ```

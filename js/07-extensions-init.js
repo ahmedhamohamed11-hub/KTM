@@ -7169,7 +7169,7 @@
                 </label>
                 <input type="number" id="offerDiscountRate" value="${Math.min(100, Math.max(0, offerSettings.discountRate))}" step="0.5" min="0" max="100" ${offerSettings.discountEnabled ? '' : 'disabled'}>
                 <select id="offerDiscountScope" style="margin-top:6px;" ${offerSettings.discountEnabled ? '' : 'disabled'}>
-                    <option value="material" ${offerSettings.discountScope !== 'geraete' ? 'selected' : ''}>Auf das gesamte Material (Geräte + Zubehör)</option>
+                    <option value="material" ${offerSettings.discountScope !== 'geraete' ? 'selected' : ''}>Auf Material und Geräte</option>
                     <option value="geraete" ${offerSettings.discountScope === 'geraete' ? 'selected' : ''}>Nur auf die Klimageräte</option>
                     <option value="alles" ${offerSettings.discountScope === 'alles' ? 'selected' : ''}>Auf das gesamte Angebot (auch Arbeitsleistung)</option>
                 </select>
@@ -7577,7 +7577,7 @@
             html += row('Zwischensumme', formatCurrency(R.grossMaterial + R.grossLabor));
             html += row(`− ${discountLabel(R)}`, `- ${formatCurrency(R.grossDiscount)}`, 'discount');
         } else {
-            html += row('Zwischensumme Material', formatCurrency(R.grossMaterial));
+            html += row('Zwischensumme Material und Geräte', formatCurrency(R.grossMaterial));
             if (hatRabatt) {
                 if (R.discountScope === 'geraete') {
                     html += row('davon Klimageräte', formatCurrency(R.grossDevices), 'sm muted');
@@ -7665,7 +7665,7 @@
         html += row('Materialkosten (EK)', formatCurrency(materialEK));
         html += row('Materialverkauf (VK)', formatCurrency(materialVK));
         html += row('Materialgewinn', formatCurrency(materialProfit), materialProfit < 0 ? 'neg' : 'pos');
-        if (discAmountNet > 0.005) html += row(`${{geraete:'Rabatt nur auf Klimageräte', alles:'Rabatt auf gesamtes Angebot'}[offerSettings.discountScope] || 'Gesamtrabatt auf Material'} (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(discAmountNet));
+        if (discAmountNet > 0.005) html += row(`${{geraete:'Rabatt nur auf Klimageräte', alles:'Rabatt auf gesamtes Angebot'}[offerSettings.discountScope] || 'Rabatt auf Material und Geräte'} (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(discAmountNet));
         html += row('Arbeitskosten (VK)', formatCurrency(laborVK));
         html += row('Reingewinn gesamt', formatCurrency(totalProfit), totalProfit < 0 ? 'neg' : 'pos');
         html += row('Gewinnmarge', `${margin.toFixed(1)} %`, margin < 10 ? 'neg' : 'pos');

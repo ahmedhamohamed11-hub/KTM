@@ -1280,7 +1280,7 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const pct = (R.rate * 100).toFixed(1).replace('.0', '').replace('.', ',');
             if (R.discountScope === 'geraete') return `Rabatt (${pct} %) auf Klimageräte`;
             if (R.discountScope === 'alles')   return `Rabatt (${pct} %) auf das gesamte Angebot`;
-            return `Rabatt (${pct} %) auf Material`;
+            return `Rabatt (${pct} %) auf Material und Geräte`;
         }
         window.discountLabel = discountLabel;
         // Eine Stelle fuer die Pruefung des Rabatt-Bezugs (Dialoge, Speichern)

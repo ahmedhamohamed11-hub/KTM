@@ -89,7 +89,7 @@
                             </div>
                             <div class="ae-modus" id="aeDiscScope" style="margin-top:10px;${entwurf.discountEnabled ? '' : 'display:none;'}">
                                 <button type="button" class="ae-modus-btn ${(entwurf.discountScope !== 'geraete' && entwurf.discountScope !== 'alles') ? 'active' : ''}" onclick="app.aeSetzeRabattBezug('material')">
-                                    <strong>Auf das gesamte Material</strong><span>Geräte, Zubehör und Material. Arbeitsleistung bleibt ohne Rabatt.</span>
+                                    <strong>Auf Material und Geräte</strong><span>Geräte, Zubehör und Material. Arbeitsleistung bleibt ohne Rabatt.</span>
                                 </button>
                                 <button type="button" class="ae-modus-btn ${entwurf.discountScope === 'geraete' ? 'active' : ''}" onclick="app.aeSetzeRabattBezug('geraete')">
                                     <strong>Nur auf die Klimageräte</strong><span>Zubehör und Material bleiben zum vollen Preis.</span>
