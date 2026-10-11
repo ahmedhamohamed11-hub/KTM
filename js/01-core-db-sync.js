@@ -59,6 +59,14 @@
   discountAmount: 'discount_amount',
   discountScope: 'discount_scope',
 
+  agreedPrice: 'agreed_price',
+  depositAmount: 'deposit_amount',
+  depositDate: 'deposit_date',
+  netMode: 'net_mode',
+  dealerDiscount: 'dealer_discount',
+  openMeters: 'open_meters',
+  priceIncludesVat: 'price_includes_vat',
+
   netAfterDiscount: 'net_after_discount',
   netPrice: 'net_price',
   calcData: 'calc_data',
