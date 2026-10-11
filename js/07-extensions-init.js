@@ -3269,12 +3269,17 @@
                 const summaryRows = [];
                 // Positionen sind Endpreise inkl. USt. -> keine Steuerzeile.
                 //   Zwischensumme Material - Rabatt + Arbeitsleistung = Gesamt
-                if (_R.posDiscount > 0) {
-                    summaryRows.push(['Positions-Rabatte', `- ${formatCurrency(_R.posDiscount)}`]);
-                }
+                // Positions-Rabatte stecken bereits in den Zeilensummen der Tabelle
+                // (und stehen je Zeile in der Beschreibung) - eine zusaetzliche
+                // Abzugszeile vor der Zwischensumme wuerde doppelt abziehen.
                 summaryRows.push(['Zwischensumme', formatCurrency(_R.grossMaterial)]);
                 if (_R.discountEnabled && _R.grossDiscount > 0) {
-                    summaryRows.push([`Rabatt (${(_R.rate * 100).toFixed(1).replace('.', ',')} %)`, `- ${formatCurrency(_R.grossDiscount)}`]);
+                    // Zeigt, worauf der Rabatt wirkt; bei "nur Geraete" zusaetzlich
+                    // die Basis, damit der Kunde die Rechnung nachvollziehen kann.
+                    if (_R.discountScope === 'geraete') {
+                        summaryRows.push(['Klimageräte', formatCurrency(_R.grossDevices)]);
+                    }
+                    summaryRows.push([discountLabel(_R), `- ${formatCurrency(_R.grossDiscount)}`]);
                 }
                 if (_R.grossLabor > 0) {
                     summaryRows.push(['Arbeitsleistung Montage', formatCurrency(_R.grossLabor)]);
@@ -7104,6 +7109,7 @@
         vatRate: defaults.defaultVatRate,
         discountEnabled: defaults.defaultDiscount > 0,
         discountRate: defaults.defaultDiscount,
+        discountScope: 'material',   // 'material' = gesamtes Material | 'geraete' = nur Klimageräte
     };
 
     const siteAddress = project.siteAddress || `${customer.street || ''} ${customer.houseNumber || ''}, ${customer.zip || ''} ${customer.city || ''}`.trim();
@@ -7154,6 +7160,10 @@
                     <input type="checkbox" id="offerDiscountToggle" ${offerSettings.discountEnabled ? 'checked' : ''}> Rabatt
                 </label>
                 <input type="number" id="offerDiscountRate" value="${Math.min(100, Math.max(0, offerSettings.discountRate))}" step="0.5" min="0" max="100" ${offerSettings.discountEnabled ? '' : 'disabled'}>
+                <select id="offerDiscountScope" style="margin-top:6px;" ${offerSettings.discountEnabled ? '' : 'disabled'}>
+                    <option value="material" ${offerSettings.discountScope !== 'geraete' ? 'selected' : ''}>Auf das gesamte Material (Geräte + Zubehör)</option>
+                    <option value="geraete" ${offerSettings.discountScope === 'geraete' ? 'selected' : ''}>Nur auf die Klimageräte</option>
+                </select>
             </div>
         </div>
 
@@ -7245,6 +7255,7 @@
                 vatRate,
                 discountEnabled,
                 discountRate: discountRate / 100,   // am Datensatz IMMER als Bruch (0,30 = 30 %)
+                discountScope: offerSettings.discountScope === 'geraete' ? 'geraete' : 'material',
                 contactPerson: overlay.querySelector('#offerContact').value.trim(),
                 contactPhone: overlay.querySelector('#offerPhone').value.trim(),
                 contactEmail: overlay.querySelector('#offerEmail').value.trim(),
@@ -7298,6 +7309,7 @@
             vatRate: offerSettings.vatEnabled ? (Number(offerSettings.vatRate) || 0) : 0,
             discountEnabled: offerSettings.discountEnabled,
             discountRate: offerSettings.discountRate,
+            discountScope: offerSettings.discountScope,
             agreedPrice: null
         };
         const R = recomputeOffer(tempOffer);
@@ -7334,6 +7346,11 @@
 
         offerSettings.discountEnabled = discountToggle.checked;
         offerSettings.discountRate = discountToggle.checked ? (parseFloat(discountInput.value) || 0) : 0;
+        const scopeSel = modal.querySelector('#offerDiscountScope');
+        if (scopeSel) {
+            scopeSel.disabled = !discountToggle.checked;
+            offerSettings.discountScope = scopeSel.value === 'geraete' ? 'geraete' : 'material';
+        }
     }
 
     modal.querySelector('#offerAutoNumber').addEventListener('change', async function() {
@@ -7399,6 +7416,11 @@
     });
 
     modal.querySelector('#offerDiscountRate').addEventListener('input', function() {
+        updateSettingsFromUI();
+        renderSummary();
+    });
+
+    modal.querySelector('#offerDiscountScope').addEventListener('change', function() {
         updateSettingsFromUI();
         renderSummary();
     });
@@ -7519,92 +7541,37 @@
 
     function renderSummary() {
         updateSettingsFromUI();
-        const calc = computeOfferTotals();
-        const discRate = calc.discountRate;   // z.B. 0.15
-
-        // Klimageräte-Kategorien (immer 20% MwSt)
-        const KLIMA = new Set(['Klimaanlagen','Klimageräte','Klimageraete',
-            'Innengeräte','Innengeraete','Außengeräte','Aussengeraete','Multisplit-Systeme']);
-        const isKlima = it => KLIMA.has((it.category || '').trim());
-
-        // Pro Position: Netto, Rabattanteil, Netto-nach-Rabatt, MwSt, Brutto.
-        // WICHTIG: it.price ist bei priceIncludesVat=true bereits der Endpreis inkl.
-        // USt. Die USt wird dann HERAUSGERECHNET (price / (1+rate)), nicht nochmals
-        // aufgeschlagen - sonst genau die doppelte Besteuerung, die hier behoben wird.
-        const posDetails = selected.map(it => {
-            const qty  = Number(it.quantity) || 0;
-            const disc = Number(it.discount)  || 0;
-            const rate = vatForPos(it);
-            const unitPreis = Number(it.price) || 0;
-            const unitNetto = it.priceIncludesVat ? (rate > 0 ? unitPreis / (1 + rate) : unitPreis) : unitPreis;
-            const netto      = unitNetto * qty * (1 - disc / 100);
-            const nettoAfter = netto * (1 - discRate);
-            const vat        = nettoAfter * rate;
-            return { ...it, qty, disc, netto, nettoAfter, vat, brutto: nettoAfter + vat, klima: isKlima(it) };
-        });
-
-        // Summen Klimageräte
-        const klimaPos   = posDetails.filter(p => p.klima);
-        const klimaNetto = klimaPos.reduce((s, p) => s + p.nettoAfter, 0);
-        const klimaVat   = klimaPos.reduce((s, p) => s + p.vat, 0);
-
+        // EINE Quelle: alle angezeigten Zeilen kommen aus recomputeOffer(). Frueher
+        // wurden Rabatt und USt. hier pro Position nachgerechnet (auch auf Arbeit,
+        // und Material ausser Klima ohne USt.-Zeile) - dadurch ergaben die sichtbaren
+        // Zeilen nicht die Endsumme.
+        const tempOffer = {
+            positions: selected,
+            vatEnabled: offerSettings.vatEnabled,
+            vatRate: offerSettings.vatEnabled ? (Number(offerSettings.vatRate) || 0) : 0,
+            discountEnabled: offerSettings.discountEnabled,
+            discountRate: offerSettings.discountRate,
+            discountScope: offerSettings.discountScope,
+            agreedPrice: null
+        };
+        const R = recomputeOffer(tempOffer);
+        const row = (label, val, cls = '') => `<div class="offer-summary-row ${cls}"><span>${label}</span><span>${val}</span></div>`;
         let html = '';
 
-        // ── Nettobetrag ──────────────────────────────────────────────────────
-        if (calc.posDiscountAmount > 0.001) {
-            html += `<div class="offer-summary-row"><span>Listenpreis (netto)</span><span>${formatCurrency(calc.grossSubtotal)}</span></div>`;
-            html += `<div class="offer-summary-row sm"><span>− Positions-Rabatte</span><span>- ${formatCurrency(calc.posDiscountAmount)}</span></div>`;
-        }
-        html += `<div class="offer-summary-row"><span>Nettobetrag</span><span>${formatCurrency(calc.subtotal)}</span></div>`;
-
-        // ── Gesamt-Rabatt ─────────────────────────────────────────────────────
-        if (offerSettings.discountEnabled && calc.globalDiscountAmount > 0.005) {
-            const pct = (discRate * 100).toFixed(1).replace('.', ',');
-            html += `<div class="offer-summary-row discount"><span>− Rabatt (${pct} %)</span><span>- ${formatCurrency(calc.globalDiscountAmount)}</span></div>`;
-            html += `<div class="offer-summary-row"><span>Netto nach Rabatt</span><span>${formatCurrency(calc.netAfterDiscount)}</span></div>`;
-        }
-
-        // ── MwSt-Block: nur wenn Klimageräte vorhanden ────────────────────────
-        if (klimaNetto > 0.005) {
-            html += `<div class="offer-summary-row sm muted"><span>Davon Klimageräte (Netto nach Rabatt)</span><span>${formatCurrency(klimaNetto)}</span></div>`;
-            html += `<div class="offer-summary-row"><span>+ 20 % MwSt. auf Klimageräte</span><span>${formatCurrency(klimaVat)}</span></div>`;
-
-            // Detailtabelle Klimageräte
-            if (klimaPos.length > 0) {
-                html += `<div class="offer-vat-table-wrap">
-                    <table class="offer-vat-table">
-                        <thead><tr>
-                            <th>Klimagerät</th>
-                            <th class="num">Netto</th>
-                            <th class="num">Rabatt</th>
-                            <th class="num">Netto n. R.</th>
-                            <th class="num">20% MwSt.</th>
-                            <th class="num">Brutto</th>
-                        </tr></thead>
-                        <tbody>${klimaPos.map(p => `<tr>
-                            <td>${escapeHtml(p.name||'')}<div class="pos-meta-sm">${p.qty} ${escapeHtml(p.unit||'Stk')}</div></td>
-                            <td class="num">${formatCurrency(p.netto)}</td>
-                            <td class="num">${discRate > 0 ? '- ' + (discRate*100).toFixed(1).replace('.',',') + ' %' : '—'}</td>
-                            <td class="num">${formatCurrency(p.nettoAfter)}</td>
-                            <td class="num">${formatCurrency(p.vat)}</td>
-                            <td class="num fw">${formatCurrency(p.brutto)}</td>
-                        </tr>`).join('')}</tbody>
-                    </table>
-                </div>`;
+        // Summenblock genau wie im Angebot/PDF:
+        //   Zwischensumme - Rabatt + Arbeitsleistung = Gesamtbetrag
+        html += row('Zwischensumme Material', formatCurrency(R.grossMaterial));
+        if (R.discountEnabled && R.grossDiscount > 0.005) {
+            if (R.discountScope === 'geraete') {
+                html += row('davon Klimageräte', formatCurrency(R.grossDevices), 'sm muted');
+            }
+            html += row(`− ${discountLabel(R)}`, `- ${formatCurrency(R.grossDiscount)}`, 'discount');
+            if (R.discountScope === 'geraete' && R.grossDevices < 0.005) {
+                html += `<div class="calc-warn">⚠️ Es ist kein Klimagerät im Angebot – der Rabatt wirkt auf nichts.</div>`;
             }
         }
-
-        // Sonstige MwSt (falls Toggle an und Nicht-Klimageräte)
-        if (offerSettings.vatEnabled) {
-            const otherVat = posDetails.filter(p => !p.klima).reduce((s, p) => s + p.vat, 0);
-            if (otherVat > 0.005) {
-                const pct = ((offerSettings.vatRate || 0) * 100).toFixed(0);
-                html += `<div class="offer-summary-row"><span>+ ${pct} % MwSt. (Sonstige)</span><span>${formatCurrency(otherVat)}</span></div>`;
-            }
-        }
-
-        // ── Gesamtbetrag ──────────────────────────────────────────────────────
-        html += `<div class="offer-summary-row total"><span>Gesamtbetrag</span><span>${formatCurrency(calc.total)}</span></div>`;
+        if (R.grossLabor > 0.005) html += row('+ Arbeitsleistung Montage', formatCurrency(R.grossLabor));
+        html += row('Gesamtbetrag', formatCurrency(R.total), 'total');
 
         modal.querySelector('#offerSummaryBox').innerHTML = html;
         renderInternalCalc();
@@ -7646,7 +7613,11 @@
         const warnRows = [];
         selected.forEach(it => {
             const qty = Number(it.quantity) || 0;
-            const vkLine = (Number(it.price) || 0) * qty * (1 - (Number(it.discount) || 0) / 100);
+            // NETTO-Verkauf gegen Netto-EK (nie Brutto gegen Netto): ein Endpreis inkl.
+            // USt. wird mit dem Satz der Position herausgerechnet.
+            const _unitPr = Number(it.price) || 0;
+            const _unitNet = it.priceIncludesVat ? _unitPr / (1 + vatForPos(it)) : _unitPr;
+            const vkLine = _unitNet * qty * (1 - (Number(it.discount) || 0) / 100);
             if (isLabor(it)) { laborVK += vkLine; return; }
             materialVK += vkLine;
             const ekUnit = purchaseUnitFor(it);
@@ -7663,11 +7634,12 @@
         });
         const totalVK = materialVK + laborVK;
         const materialProfit = materialVK - materialEK;
-        // Gesamtrabatt (auf das ganze Angebot, separat von Positions-Rabatten) muss hier
-        // ebenfalls abgezogen werden - sonst zeigt die Live-Kalkulation einen höheren
-        // Gewinn als tatsächlich beim Speichern als netAfterDiscount herauskommt.
-        const globalDiscRate = (offerSettings && offerSettings.discountEnabled) ? (Math.min(100, Math.max(0, Number(offerSettings.discountRate) || 0)) / 100) : 0;
-        const totalVKAfterDiscount = totalVK * (1 - globalDiscRate);
+        // Gesamtrabatt aus der zentralen Berechnung - beruecksichtigt den Bezug
+        // (gesamtes Material oder nur Klimageraete); Arbeit wird nie rabattiert.
+        const _Rc = computeOfferTotals();
+        const globalDiscRate = _Rc.discountRate || 0;
+        const discAmountNet = _Rc.globalDiscountAmount || 0;
+        const totalVKAfterDiscount = totalVK - discAmountNet;
         const totalProfit = totalVKAfterDiscount - materialEK; // Arbeit = reiner Ertrag (kein EK)
         const margin = totalVKAfterDiscount > 0 ? (totalProfit / totalVKAfterDiscount) * 100 : 0;
         const row = (label, val, cls = '') => `<div class="calc-row ${cls}"><span>${label}</span><span>${val}</span></div>`;
@@ -7675,7 +7647,7 @@
         html += row('Materialkosten (EK)', formatCurrency(materialEK));
         html += row('Materialverkauf (VK)', formatCurrency(materialVK));
         html += row('Materialgewinn', formatCurrency(materialProfit), materialProfit < 0 ? 'neg' : 'pos');
-        if (globalDiscRate > 0) html += row(`Gesamtrabatt (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(totalVK - totalVKAfterDiscount));
+        if (discAmountNet > 0.005) html += row(`${offerSettings.discountScope === 'geraete' ? 'Rabatt nur auf Klimageräte' : 'Gesamtrabatt auf Material'} (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(discAmountNet));
         html += row('Arbeitskosten (VK)', formatCurrency(laborVK));
         html += row('Reingewinn gesamt', formatCurrency(totalProfit), totalProfit < 0 ? 'neg' : 'pos');
         html += row('Gewinnmarge', `${margin.toFixed(1)} %`, margin < 10 ? 'neg' : 'pos');

@@ -57,6 +57,7 @@
   discountEnabled: 'discount_enabled',
   discountRate: 'discount_rate',
   discountAmount: 'discount_amount',
+  discountScope: 'discount_scope',
 
   netAfterDiscount: 'net_after_discount',
   netPrice: 'net_price',
@@ -1220,32 +1221,55 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             const discountEnabled = !!offer.discountEnabled && rate > 0;
             const isLabor = p => (typeof isLaborPos === 'function') ? isLaborPos(p) : false;
 
+            // Rabatt-Bezug (offer.discountScope):
+            //   'material' = auf das gesamte Material inkl. Geraete (Standard, wie bisher)
+            //   'geraete'  = nur auf die Klimageraete
+            // Arbeitsleistung wird in beiden Faellen NICHT rabattiert.
+            const scope = offer.discountScope === 'geraete' ? 'geraete' : 'material';
+            const isDevice = p => KLIMA.has((p.category || '').trim());
+
             let netMaterial = 0, netLabor = 0, vatMaterialFull = 0, vatLabor = 0;
+            let netDevices = 0, vatDevices = 0, netBase = 0, vatBase_ = 0;
             positions.forEach((p, i) => {
                 const r = vatOf(p);
-                if (isLabor(p)) { netLabor += netPerPos[i]; vatLabor += netPerPos[i] * r; }
-                else            { netMaterial += netPerPos[i]; vatMaterialFull += netPerPos[i] * r; }
+                if (isLabor(p)) { netLabor += netPerPos[i]; vatLabor += netPerPos[i] * r; return; }
+                netMaterial += netPerPos[i]; vatMaterialFull += netPerPos[i] * r;
+                if (isDevice(p)) { netDevices += netPerPos[i]; vatDevices += netPerPos[i] * r; }
+                if (scope === 'material' || isDevice(p)) { netBase += netPerPos[i]; vatBase_ += netPerPos[i] * r; }
             });
 
             // Bruttowerte - so steht es im Angebot: Material inkl. USt., davon Rabatt,
             // Arbeitsleistung separat, Summe daraus.
             const grossMaterial = netMaterial + vatMaterialFull;
             const grossLabor    = netLabor + vatLabor;
-            const grossDiscount = discountEnabled ? grossMaterial * rate : 0;
+            const grossDevices  = netDevices + vatDevices;
+            const discountBaseGross = netBase + vatBase_;     // Betrag, auf den der Rabatt wirkt (inkl. USt.)
+            const grossDiscount = discountEnabled ? discountBaseGross * rate : 0;
             const total         = grossMaterial - grossDiscount + grossLabor;
 
             // Nettowerte fuer die interne Kalkulation
-            const globalDiscount = discountEnabled ? netMaterial * rate : 0;
+            const globalDiscount = discountEnabled ? netBase * rate : 0;
             const netAfter  = netMaterial - globalDiscount + netLabor;
-            const vatAmount = vatMaterialFull * (1 - (discountEnabled ? rate : 0)) + vatLabor;
+            const vatAmount = vatMaterialFull - (discountEnabled ? vatBase_ * rate : 0) + vatLabor;
             const vatRate   = vatBase;
 
             return { gross, net, posDiscount, rate, discountEnabled, globalDiscount, netAfter,
                      vatRate, vatAmount, total,
+                     discountScope: scope, grossDevices, discountBaseGross, discountBaseNet: netBase,
                      netMaterial, netLabor, vatLabor, grossMaterial, grossLabor, grossDiscount,
                      positions,
                      nameConflicts: detectPositionNameConflicts(offer.positions || []) };
         }
+
+        // Beschriftung der Rabatt-Zeile - EINE Stelle fuer Angebot, PDF und Dialoge,
+        // damit der Kunde immer sieht, WORAUF der Rabatt gegeben wurde.
+        function discountLabel(R) {
+            const pct = (R.rate * 100).toFixed(1).replace('.0', '').replace('.', ',');
+            return R.discountScope === 'geraete'
+                ? `Rabatt (${pct} %) auf Klimageräte`
+                : `Rabatt (${pct} %) auf Material`;
+        }
+        window.discountLabel = discountLabel;
 
         // Baut den Anzeigenamen eines Kunden inkl. Anrede + Titel zusammen.
         // "Herr Dr. Max Mustermann" – Firma-Kunden zeigen die Firma.
