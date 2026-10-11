@@ -797,6 +797,7 @@
                     const need = maxIG(orig);
                     const form = formOf(orig);
                     let pool = mats.filter(m => m.manufacturer === brand
+                        && DEV_CATS.includes(m.category)                           // nur Klimageraete - nie Rohre/Zubehoer/Kabel
                         && devType(m) === type                                     // IG bleibt IG, AG bleibt AG
                         && (type !== 'MULTI-AG' || maxIG(m) === need)              // 4 IG -> nur 4-IG-Geraete
                         && !isSetMat(m) && kwOf(m.size) > 0);
@@ -819,7 +820,7 @@
 
                 // Leistungsstufen: benachbarte Groessen mit <= 0,3 kW Abstand sind EINE Klasse
                 // (2,4/2,5 | 3,3/3,4/3,5 | 5,0/5,2). Ergebnis: gleiche Leistung, eine Stufe
-                // kleiner, eine Stufe groesser.
+                // kleiner (bis zu zwei), eine Stufe groesser.
                 const stepsFor = (kw, cands) => {
                     const sizes = [...new Set(cands.map(c => c.kw))].sort((x, y) => x - y);
                     const klassen = [];
@@ -829,14 +830,18 @@
                     });
                     const inKlasse = (k) => (c) => c.kw >= k[0] - 0.001 && c.kw <= k[k.length - 1] + 0.001;
                     const idx = klassen.findIndex(k => kw >= k[0] - 0.25 && kw <= k[k.length - 1] + 0.25);
-                    let klein = null, gross = null;
-                    if (idx >= 0) { klein = klassen[idx - 1] || null; gross = klassen[idx + 1] || null; }
+                    let klein = null, klein2 = null, gross = null;
+                    if (idx >= 0) { klein = klassen[idx - 1] || null; klein2 = klassen[idx - 2] || null; gross = klassen[idx + 1] || null; }
                     else {
-                        for (const k of klassen) { if (k[k.length - 1] < kw) klein = k; else if (!gross && k[0] > kw) gross = k; }
+                        for (const k of klassen) {
+                            if (k[k.length - 1] < kw) { klein2 = klein; klein = k; }
+                            else if (!gross && k[0] > kw) gross = k;
+                        }
                     }
                     const pick = (k) => k ? cands.filter(inKlasse(k)) : [];
-                    return { exact: idx >= 0 ? pick(klassen[idx]) : [], klein: pick(klein), gross: pick(gross),
-                             kleinKw: klein ? klein[klein.length - 1] : 0, grossKw: gross ? gross[gross.length - 1] : 0 };
+                    const kwVon = (k) => k ? k[k.length - 1] : 0;
+                    return { exact: idx >= 0 ? pick(klassen[idx]) : [], klein: pick(klein), klein2: pick(klein2), gross: pick(gross),
+                             kleinKw: kwVon(klein), klein2Kw: kwVon(klein2), grossKw: kwVon(gross) };
                 };
 
                 const modal = showModal(
@@ -947,7 +952,7 @@
                         const serienListe = [...new Set(cands.map(c => c.series))];
                         const stSerie = new Map(serienListe.map(se => [se, stepsFor(kw, cands.filter(c => c.series === se))]));
                         const alle = (key) => serienListe.flatMap(se => stSerie.get(se)[key]);
-                        const st = { exact: alle('exact'), klein: alle('klein'), gross: alle('gross') };
+                        const st = { exact: alle('exact'), klein: alle('klein'), klein2: alle('klein2'), gross: alle('gross') };
                         const fmtKw = (v) => `${v.toFixed(1).replace('.', ',')} kW`;
                         const ig = (c) => maxIG(c.m) >= 2 ? ` · ${maxIG(c.m)} IG` : '';
                         const delta = (c) => {
@@ -969,12 +974,13 @@
                         const optionen = [
                             gruppen('exact', () => `Gleiche Leistung${old?.size ? ' (' + old.size + (/kw/i.test(old.size) ? '' : ' kW') + ')' : ''}`),
                             gruppen('klein', (x) => `Eine Stufe kleiner (${fmtKw(x.kleinKw)})`),
+                            gruppen('klein2', (x) => `Zwei Stufen kleiner (${fmtKw(x.klein2Kw)})`),
                             gruppen('gross', (x) => `Eine Stufe größer (${fmtKw(x.grossKw)})`)
                         ].join('');
                         // Vorauswahl: gleiche Leistung (guenstigste Serie), sonst eine Stufe groesser
                         // (reicht sicher), sonst kleiner
                         const guenstigste = (arr) => arr.slice().sort((u, v) => u.price - v.price)[0];
-                        const vorauswahl = st.exact.length ? guenstigste(st.exact) : (st.gross.length ? guenstigste(st.gross) : (st.klein.length ? guenstigste(st.klein) : null));
+                        const vorauswahl = st.exact.length ? guenstigste(st.exact) : (st.gross.length ? guenstigste(st.gross) : (st.klein.length ? guenstigste(st.klein) : (st.klein2.length ? guenstigste(st.klein2) : null)));
                         const optionenMitAuswahl = vorauswahl
                             ? optionen.replace(`<option value="${escapeHtml(String(vorauswahl.m.id))}">`, `<option value="${escapeHtml(String(vorauswahl.m.id))}" selected>`)
                             : optionen;
@@ -982,7 +988,7 @@
                             <div class="form-card-title">${escapeHtml(p.name)} <span style="font-weight:600;color:var(--text-muted);">· ${typeLabel} · aktuell ${escapeHtml(old?.size || '')} · ${formatCurrency(p.price || 0)}</span></div>
                             <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">
                                 ${st.exact.length
-                                    ? `${escapeHtml(brand)} hat <strong style="color:var(--success);">${st.exact.length} Modell(e) mit gleicher Leistung</strong> (${serienExakt.map(escapeHtml).join(', ')})${type === 'MULTI-AG' ? ` und ${need} Innengeräte-Anschlüssen` : ''}. Dazu je eine Stufe kleiner und größer. In Klammern: Preisunterschied zum aktuellen Gerät.`
+                                    ? `${escapeHtml(brand)} hat <strong style="color:var(--success);">${st.exact.length} Modell(e) mit gleicher Leistung</strong> (${serienExakt.map(escapeHtml).join(', ')})${type === 'MULTI-AG' ? ` und ${need} Innengeräte-Anschlüssen` : ''}. Dazu bis zu zwei Stufen kleiner und eine Stufe größer. In Klammern: Preisunterschied zum aktuellen Gerät.`
                                     : `${escapeHtml(brand)} hat kein Modell mit gleicher Leistung wie ${escapeHtml(old?.size || '')}${type === 'MULTI-AG' ? ` bei ${need} Innengeräte-Anschlüssen` : ''} – nächstkleinere und nächstgrößere Stufe:`}
                             </div>
                             <select class="var-pick" data-idx="${i}">
