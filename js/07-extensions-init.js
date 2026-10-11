@@ -3272,17 +3272,25 @@
                 // Positions-Rabatte stecken bereits in den Zeilensummen der Tabelle
                 // (und stehen je Zeile in der Beschreibung) - eine zusaetzliche
                 // Abzugszeile vor der Zwischensumme wuerde doppelt abziehen.
-                summaryRows.push(['Zwischensumme', formatCurrency(_R.grossMaterial)]);
-                if (_R.discountEnabled && _R.grossDiscount > 0) {
-                    // Zeigt, worauf der Rabatt wirkt; bei "nur Geraete" zusaetzlich
-                    // die Basis, damit der Kunde die Rechnung nachvollziehen kann.
-                    if (_R.discountScope === 'geraete') {
-                        summaryRows.push(['Klimageräte', formatCurrency(_R.grossDevices)]);
-                    }
+                if (_R.discountEnabled && _R.grossDiscount > 0 && _R.discountScope === 'alles') {
+                    // Rabatt wirkt auch auf die Arbeitsleistung -> Arbeit steht VOR dem Rabatt
+                    summaryRows.push(['Material und Geräte', formatCurrency(_R.grossMaterial)]);
+                    if (_R.grossLabor > 0) summaryRows.push(['Arbeitsleistung Montage', formatCurrency(_R.grossLabor)]);
+                    summaryRows.push(['Zwischensumme', formatCurrency(_R.grossMaterial + _R.grossLabor)]);
                     summaryRows.push([discountLabel(_R), `- ${formatCurrency(_R.grossDiscount)}`]);
-                }
-                if (_R.grossLabor > 0) {
-                    summaryRows.push(['Arbeitsleistung Montage', formatCurrency(_R.grossLabor)]);
+                } else {
+                    summaryRows.push(['Zwischensumme', formatCurrency(_R.grossMaterial)]);
+                    if (_R.discountEnabled && _R.grossDiscount > 0) {
+                        // Zeigt, worauf der Rabatt wirkt; bei "nur Geraete" zusaetzlich
+                        // die Basis, damit der Kunde die Rechnung nachvollziehen kann.
+                        if (_R.discountScope === 'geraete') {
+                            summaryRows.push(['Klimageräte', formatCurrency(_R.grossDevices)]);
+                        }
+                        summaryRows.push([discountLabel(_R), `- ${formatCurrency(_R.grossDiscount)}`]);
+                    }
+                    if (_R.grossLabor > 0) {
+                        summaryRows.push(['Arbeitsleistung Montage', formatCurrency(_R.grossLabor)]);
+                    }
                 }
                 summaryRows.forEach(([label, val]) => {
                     doc.text(label, boxX, fy);
@@ -7163,6 +7171,7 @@
                 <select id="offerDiscountScope" style="margin-top:6px;" ${offerSettings.discountEnabled ? '' : 'disabled'}>
                     <option value="material" ${offerSettings.discountScope !== 'geraete' ? 'selected' : ''}>Auf das gesamte Material (Geräte + Zubehör)</option>
                     <option value="geraete" ${offerSettings.discountScope === 'geraete' ? 'selected' : ''}>Nur auf die Klimageräte</option>
+                    <option value="alles" ${offerSettings.discountScope === 'alles' ? 'selected' : ''}>Auf das gesamte Angebot (auch Arbeitsleistung)</option>
                 </select>
             </div>
         </div>
@@ -7255,7 +7264,7 @@
                 vatRate,
                 discountEnabled,
                 discountRate: discountRate / 100,   // am Datensatz IMMER als Bruch (0,30 = 30 %)
-                discountScope: offerSettings.discountScope === 'geraete' ? 'geraete' : 'material',
+                discountScope: normDiscountScope(offerSettings.discountScope),
                 contactPerson: overlay.querySelector('#offerContact').value.trim(),
                 contactPhone: overlay.querySelector('#offerPhone').value.trim(),
                 contactEmail: overlay.querySelector('#offerEmail').value.trim(),
@@ -7349,7 +7358,7 @@
         const scopeSel = modal.querySelector('#offerDiscountScope');
         if (scopeSel) {
             scopeSel.disabled = !discountToggle.checked;
-            offerSettings.discountScope = scopeSel.value === 'geraete' ? 'geraete' : 'material';
+            offerSettings.discountScope = normDiscountScope(scopeSel.value);
         }
     }
 
@@ -7560,17 +7569,26 @@
 
         // Summenblock genau wie im Angebot/PDF:
         //   Zwischensumme - Rabatt + Arbeitsleistung = Gesamtbetrag
-        html += row('Zwischensumme Material', formatCurrency(R.grossMaterial));
-        if (R.discountEnabled && R.grossDiscount > 0.005) {
-            if (R.discountScope === 'geraete') {
-                html += row('davon Klimageräte', formatCurrency(R.grossDevices), 'sm muted');
-            }
+        //   (bei Rabatt auf das gesamte Angebot steht die Arbeit VOR dem Rabatt)
+        const hatRabatt = R.discountEnabled && R.grossDiscount > 0.005;
+        if (hatRabatt && R.discountScope === 'alles') {
+            html += row('Material und Geräte', formatCurrency(R.grossMaterial));
+            if (R.grossLabor > 0.005) html += row('+ Arbeitsleistung Montage', formatCurrency(R.grossLabor));
+            html += row('Zwischensumme', formatCurrency(R.grossMaterial + R.grossLabor));
             html += row(`− ${discountLabel(R)}`, `- ${formatCurrency(R.grossDiscount)}`, 'discount');
-            if (R.discountScope === 'geraete' && R.grossDevices < 0.005) {
-                html += `<div class="calc-warn">⚠️ Es ist kein Klimagerät im Angebot – der Rabatt wirkt auf nichts.</div>`;
+        } else {
+            html += row('Zwischensumme Material', formatCurrency(R.grossMaterial));
+            if (hatRabatt) {
+                if (R.discountScope === 'geraete') {
+                    html += row('davon Klimageräte', formatCurrency(R.grossDevices), 'sm muted');
+                }
+                html += row(`− ${discountLabel(R)}`, `- ${formatCurrency(R.grossDiscount)}`, 'discount');
+                if (R.discountScope === 'geraete' && R.grossDevices < 0.005) {
+                    html += `<div class="calc-warn">⚠️ Es ist kein Klimagerät im Angebot – der Rabatt wirkt auf nichts.</div>`;
+                }
             }
+            if (R.grossLabor > 0.005) html += row('+ Arbeitsleistung Montage', formatCurrency(R.grossLabor));
         }
-        if (R.grossLabor > 0.005) html += row('+ Arbeitsleistung Montage', formatCurrency(R.grossLabor));
         html += row('Gesamtbetrag', formatCurrency(R.total), 'total');
 
         modal.querySelector('#offerSummaryBox').innerHTML = html;
@@ -7647,7 +7665,7 @@
         html += row('Materialkosten (EK)', formatCurrency(materialEK));
         html += row('Materialverkauf (VK)', formatCurrency(materialVK));
         html += row('Materialgewinn', formatCurrency(materialProfit), materialProfit < 0 ? 'neg' : 'pos');
-        if (discAmountNet > 0.005) html += row(`${offerSettings.discountScope === 'geraete' ? 'Rabatt nur auf Klimageräte' : 'Gesamtrabatt auf Material'} (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(discAmountNet));
+        if (discAmountNet > 0.005) html += row(`${{geraete:'Rabatt nur auf Klimageräte', alles:'Rabatt auf gesamtes Angebot'}[offerSettings.discountScope] || 'Gesamtrabatt auf Material'} (${(globalDiscRate * 100).toFixed(1)}%)`, '- ' + formatCurrency(discAmountNet));
         html += row('Arbeitskosten (VK)', formatCurrency(laborVK));
         html += row('Reingewinn gesamt', formatCurrency(totalProfit), totalProfit < 0 ? 'neg' : 'pos');
         html += row('Gewinnmarge', `${margin.toFixed(1)} %`, margin < 10 ? 'neg' : 'pos');

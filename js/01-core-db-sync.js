@@ -1232,18 +1232,23 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
             // Rabatt-Bezug (offer.discountScope):
             //   'material' = auf das gesamte Material inkl. Geraete (Standard, wie bisher)
             //   'geraete'  = nur auf die Klimageraete
-            // Arbeitsleistung wird in beiden Faellen NICHT rabattiert.
-            const scope = offer.discountScope === 'geraete' ? 'geraete' : 'material';
+            //   'alles'    = gesamtes Angebot inkl. Arbeitsleistung (nur auf ausdruecklichen Wunsch)
+            // Bei 'material' und 'geraete' wird die Arbeitsleistung NICHT rabattiert.
+            const scope = (offer.discountScope === 'geraete' || offer.discountScope === 'alles') ? offer.discountScope : 'material';
             const isDevice = p => KLIMA.has((p.category || '').trim());
 
             let netMaterial = 0, netLabor = 0, vatMaterialFull = 0, vatLabor = 0;
             let netDevices = 0, vatDevices = 0, netBase = 0, vatBase_ = 0;
             positions.forEach((p, i) => {
                 const r = vatOf(p);
-                if (isLabor(p)) { netLabor += netPerPos[i]; vatLabor += netPerPos[i] * r; return; }
+                if (isLabor(p)) {
+                    netLabor += netPerPos[i]; vatLabor += netPerPos[i] * r;
+                    if (scope === 'alles') { netBase += netPerPos[i]; vatBase_ += netPerPos[i] * r; }
+                    return;
+                }
                 netMaterial += netPerPos[i]; vatMaterialFull += netPerPos[i] * r;
                 if (isDevice(p)) { netDevices += netPerPos[i]; vatDevices += netPerPos[i] * r; }
-                if (scope === 'material' || isDevice(p)) { netBase += netPerPos[i]; vatBase_ += netPerPos[i] * r; }
+                if (scope !== 'geraete' || isDevice(p)) { netBase += netPerPos[i]; vatBase_ += netPerPos[i] * r; }
             });
 
             // Bruttowerte - so steht es im Angebot: Material inkl. USt., davon Rabatt,
@@ -1273,11 +1278,13 @@ function compressImage(file, maxWidth = 800, quality = 0.7) {
         // damit der Kunde immer sieht, WORAUF der Rabatt gegeben wurde.
         function discountLabel(R) {
             const pct = (R.rate * 100).toFixed(1).replace('.0', '').replace('.', ',');
-            return R.discountScope === 'geraete'
-                ? `Rabatt (${pct} %) auf Klimageräte`
-                : `Rabatt (${pct} %) auf Material`;
+            if (R.discountScope === 'geraete') return `Rabatt (${pct} %) auf Klimageräte`;
+            if (R.discountScope === 'alles')   return `Rabatt (${pct} %) auf das gesamte Angebot`;
+            return `Rabatt (${pct} %) auf Material`;
         }
         window.discountLabel = discountLabel;
+        // Eine Stelle fuer die Pruefung des Rabatt-Bezugs (Dialoge, Speichern)
+        window.normDiscountScope = s => (s === 'geraete' || s === 'alles') ? s : 'material';
 
         // Baut den Anzeigenamen eines Kunden inkl. Anrede + Titel zusammen.
         // "Herr Dr. Max Mustermann" – Firma-Kunden zeigen die Firma.

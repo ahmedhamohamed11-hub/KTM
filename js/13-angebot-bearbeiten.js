@@ -88,11 +88,14 @@
                                 <input type="text" inputmode="decimal" id="aeDiscRate" value="${((entwurf.discountRate ?? 0) * 100).toFixed(2).replace('.', ',')}">
                             </div>
                             <div class="ae-modus" id="aeDiscScope" style="margin-top:10px;${entwurf.discountEnabled ? '' : 'display:none;'}">
-                                <button type="button" class="ae-modus-btn ${entwurf.discountScope !== 'geraete' ? 'active' : ''}" onclick="app.aeSetzeRabattBezug('material')">
+                                <button type="button" class="ae-modus-btn ${(entwurf.discountScope !== 'geraete' && entwurf.discountScope !== 'alles') ? 'active' : ''}" onclick="app.aeSetzeRabattBezug('material')">
                                     <strong>Auf das gesamte Material</strong><span>Geräte, Zubehör und Material. Arbeitsleistung bleibt ohne Rabatt.</span>
                                 </button>
                                 <button type="button" class="ae-modus-btn ${entwurf.discountScope === 'geraete' ? 'active' : ''}" onclick="app.aeSetzeRabattBezug('geraete')">
                                     <strong>Nur auf die Klimageräte</strong><span>Zubehör und Material bleiben zum vollen Preis.</span>
+                                </button>
+                                <button type="button" class="ae-modus-btn ${entwurf.discountScope === 'alles' ? 'active' : ''}" onclick="app.aeSetzeRabattBezug('alles')">
+                                    <strong>Auf das gesamte Angebot</strong><span>Auch die Arbeitsleistung wird rabattiert.</span>
                                 </button>
                             </div>
                         </div>
@@ -100,10 +103,15 @@
                         <div class="form-group"><label>Anmerkung im Angebot</label><textarea id="aeNotes" rows="2">${escapeHtml(entwurf.notes || '')}</textarea></div>
 
                         <div class="ae-summe">
-                            <div><span>Zwischensumme</span><strong>${formatCurrency(R.grossMaterial != null ? R.grossMaterial : R.net)}</strong></div>
-                            ${R.grossDiscount > 0 && R.discountScope === 'geraete' ? `<div style="font-size:12px;color:var(--text-muted);"><span>davon Klimageräte</span><span>${formatCurrency(R.grossDevices)}</span></div>` : ''}
-                            ${R.grossDiscount > 0 ? `<div><span>${discountLabel(R)}</span><strong>− ${formatCurrency(R.grossDiscount)}</strong></div>` : ''}
-                            ${R.grossLabor > 0 ? `<div><span>Arbeitsleistung Montage</span><strong>${formatCurrency(R.grossLabor)}</strong></div>` : ''}
+                            ${!(R.grossDiscount > 0 && R.discountScope === 'alles') ? `<div><span>Zwischensumme</span><strong>${formatCurrency(R.grossMaterial != null ? R.grossMaterial : R.net)}</strong></div>` : ''}
+                            ${R.grossDiscount > 0 && R.discountScope === 'alles' ? `
+                                <div><span>Material und Geräte</span><strong>${formatCurrency(R.grossMaterial)}</strong></div>
+                                ${R.grossLabor > 0 ? `<div><span>Arbeitsleistung Montage</span><strong>${formatCurrency(R.grossLabor)}</strong></div>` : ''}
+                                <div><span>Zwischensumme</span><strong>${formatCurrency(R.grossMaterial + R.grossLabor)}</strong></div>
+                                <div><span>${discountLabel(R)}</span><strong>− ${formatCurrency(R.grossDiscount)}</strong></div>` : `
+                                ${R.grossDiscount > 0 && R.discountScope === 'geraete' ? `<div style="font-size:12px;color:var(--text-muted);"><span>davon Klimageräte</span><span>${formatCurrency(R.grossDevices)}</span></div>` : ''}
+                                ${R.grossDiscount > 0 ? `<div><span>${discountLabel(R)}</span><strong>− ${formatCurrency(R.grossDiscount)}</strong></div>` : ''}
+                                ${R.grossLabor > 0 ? `<div><span>Arbeitsleistung Montage</span><strong>${formatCurrency(R.grossLabor)}</strong></div>` : ''}`}
                             <div class="ae-summe-total"><span>Gesamtbetrag${entwurf.netMode ? ' (ohne USt.)' : ''}</span><strong>${formatCurrency(R.total)}</strong></div>
                             ${!entwurf.netMode ? `<div style="font-size:11px;color:var(--text-muted);"><span>darin enthaltene USt.</span><span>${formatCurrency(R.vatAmount)}</span></div>` : ''}
                         </div>
@@ -173,11 +181,11 @@
             },
 
             // Rabatt-Bezug: 'material' (gesamtes Material inkl. Geraete) oder
-            // 'geraete' (nur Klimageraete). Arbeitsleistung wird nie rabattiert.
+            // 'geraete' (nur Klimageraete) oder 'alles' (inkl. Arbeitsleistung).
             aeSetzeRabattBezug(bezug) {
                 const e = app.__aeEntwurf;
                 if (!e) return;
-                e.discountScope = bezug === 'geraete' ? 'geraete' : 'material';
+                e.discountScope = normDiscountScope(bezug);
                 app.__aeZeichnen();
             },
 

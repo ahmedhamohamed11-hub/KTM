@@ -337,7 +337,10 @@
                 seitenRahmen();
                 let ky = abschnitt(28, 'Leistungs- & Kostenaufstellung');
 
-                const koerper = positionen.map((p, i) => {
+                // Arbeitsleistung steht NICHT in der Positionstabelle, sondern als eigene Zeile
+                // im Summenblock nach dem Rabatt - so ist die Rechnung fuer den Kunden lueckenlos.
+                const tabellenPos = positionen.filter(p => !((typeof isLaborPos === 'function') && isLaborPos(p)));
+                const koerper = tabellenPos.map((p, i) => {
                     const einzel = (typeof posDisplayPrice === 'function') ? posDisplayPrice(p, offer) : (Number(p.price) || 0);
                     const menge = Number(p.quantity) || 0;
                     const rabatt = Number(p.discount) || 0;
@@ -378,16 +381,59 @@
                     willDrawPage: () => { if (doc.internal.getCurrentPageInfo().pageNumber > 2) { seitenRahmen(); abschnitt(28, 'Leistungs- & Kostenaufstellung'); } }
                 });
 
-                // ANGEBOTSSUMME
-                let sy = doc.lastAutoTable.finalY + 12;
-                if (sy > doc.internal.pageSize.getHeight() - 45) { doc.addPage(); seitenRahmen(); sy = 34; }
+                // SUMMENBLOCK - alles aus recomputeOffer, damit PDF, Dialog und Liste
+                // nie auseinanderlaufen:
+                //   Zwischensumme -> Rabatt (mit Bezug) -> Arbeitsleistung -> Angebotssumme
+                // Bei Rabatt auf das gesamte Angebot (inkl. Arbeit) steht die Arbeit
+                // VOR dem Rabatt, weil der Rabatt dann auch auf sie wirkt.
+                const hatRabatt = R.discountEnabled && R.grossDiscount > 0.005;
+                const hatArbeit = R.grossLabor > 0.005;
+                const sumZeilen = [];
+                if (hatRabatt && R.discountScope === 'alles') {
+                    sumZeilen.push(['Material und Geräte', formatCurrency(R.grossMaterial)]);
+                    if (hatArbeit) sumZeilen.push(['Arbeitsleistung Montage', formatCurrency(R.grossLabor)]);
+                    sumZeilen.push(['Zwischensumme', formatCurrency(R.grossMaterial + R.grossLabor), 'fett']);
+                    sumZeilen.push([discountLabel(R), '- ' + formatCurrency(R.grossDiscount)]);
+                } else if (hatRabatt || hatArbeit) {
+                    sumZeilen.push(['Zwischensumme', formatCurrency(R.grossMaterial), 'fett']);
+                    if (hatRabatt) {
+                        if (R.discountScope === 'geraete') sumZeilen.push(['davon Klimageräte', formatCurrency(R.grossDevices), 'klein']);
+                        sumZeilen.push([discountLabel(R), '- ' + formatCurrency(R.grossDiscount)]);
+                    }
+                    if (hatArbeit) sumZeilen.push(['Arbeitsleistung Montage', formatCurrency(R.grossLabor)]);
+                }
+
                 const bw = 96, bx = pw - mx - bw;
+                let sy = doc.lastAutoTable.finalY + 10;
+                const benoetigt = sumZeilen.length * 6.4 + 6 + 24 + (offer.netMode === true ? 10 : 0);
+                if (sy + benoetigt > doc.internal.pageSize.getHeight() - 20) { doc.addPage(); seitenRahmen(); sy = 34; }
+
+                sumZeilen.forEach(([label, wert, art]) => {
+                    doc.setFont('helvetica', art === 'fett' ? 'bold' : 'normal');
+                    doc.setFontSize(art === 'klein' ? 8.2 : 9.2);
+                    doc.setTextColor(...(art === 'klein' ? PDF_GRAY : PDF_INK));
+                    doc.text(label, bx, sy + 4);
+                    doc.text(wert, pw - mx, sy + 4, { align: 'right' });
+                    sy += 6.4;
+                });
+                if (sumZeilen.length) {
+                    doc.setDrawColor(...PDF_LINE);
+                    doc.setLineWidth(0.2);
+                    doc.line(bx, sy, pw - mx, sy);
+                }
+                sy += 6;
+
                 doc.setFillColor(...PDF_TEAL);
                 doc.roundedRect(bx, sy, bw, 24, 3, 3, 'F');
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(8.5);
                 doc.setTextColor(...PDF_ONBAND);
-                doc.text('ANGEBOTSSUMME', bx + bw - 6, sy + 8, { align: 'right', charSpace: 0.6 });
+                // Rechtsbuendig MIT Zeichenabstand: jsPDF beachtet charSpace bei
+                // align:'right' nicht, die Schrift rutschte dadurch ueber den Rand des
+                // Kastens. Darum Breite selbst berechnen und linksbuendig setzen.
+                const ssLabel = 'ANGEBOTSSUMME';
+                const ssBreite = doc.getTextWidth(ssLabel) + 0.6 * (ssLabel.length - 1);
+                doc.text(ssLabel, bx + bw - 6 - ssBreite, sy + 8, { charSpace: 0.6 });
                 doc.setFontSize(18);
                 doc.setTextColor(255, 255, 255);
                 doc.text(formatCurrency(R.total), bx + bw - 6, sy + 19, { align: 'right' });
